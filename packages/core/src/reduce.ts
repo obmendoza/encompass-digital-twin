@@ -159,6 +159,30 @@ export function reduce(
       })));
     }
 
+    case "RecalculateQualifyingIncome": {
+      if (!action.worksheet.derivedMonthlyIncome || action.worksheet.derivedMonthlyIncome <= 0) {
+        throw new ActionError("INVALID_TRANSITION",
+          "derivedMonthlyIncome must be > 0",
+          { loanId: action.loanId });
+      }
+      const next = withLoan(state, action.loanId, (l) => {
+        const monthly = action.worksheet.derivedMonthlyIncome;
+        const piti = l.transaction.piti;
+        const pi = l.qualifying.piPayment;
+        return {
+          ...l,
+          qualifyingWorksheet: action.worksheet,
+          income: { ...l.income, totalMonthlyIncome: monthly },
+          qualifying: {
+            ...l.qualifying,
+            housingRatio: (pi / monthly) * 100,
+            totalDti: (piti / monthly) * 100,
+          },
+        };
+      });
+      return log(next);
+    }
+
     default:
       return state;
   }
