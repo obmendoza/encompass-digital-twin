@@ -71,6 +71,94 @@ export function reduce(
       return log(next);
     }
 
+    case "AddCondition": {
+      const l0 = requireLoan(state, action.loanId);
+      if (l0.decision === "denied") {
+        throw new ActionError("ACTION_FORBIDDEN_IN_DECISION_STATE",
+          `cannot add conditions on a denied loan`, { loanId: action.loanId, decision: l0.decision });
+      }
+      const nextId = `c${l0.conditions.length + 1}`;
+      const c = {
+        id: nextId,
+        category: action.condition.category,
+        source: action.condition.source,
+        description: action.condition.description,
+        status: action.condition.status ?? "Open",
+        addedBy: action.actor.id,
+        addedAt: at,
+      };
+      return log(withLoan(state, action.loanId, (l) => ({
+        ...l, conditions: [...l.conditions, c],
+      })));
+    }
+
+    case "UpdateCondition": {
+      const l0 = requireLoan(state, action.loanId);
+      if (l0.decision === "denied") {
+        throw new ActionError("ACTION_FORBIDDEN_IN_DECISION_STATE",
+          `cannot update conditions on a denied loan`, { loanId: action.loanId });
+      }
+      const idx = l0.conditions.findIndex((c) => c.id === action.conditionId);
+      if (idx === -1) {
+        throw new ActionError("CONDITION_NOT_FOUND",
+          `condition '${action.conditionId}' not found`, { conditionId: action.conditionId });
+      }
+      return log(withLoan(state, action.loanId, (l) => {
+        const cs = [...l.conditions];
+        cs[idx] = { ...cs[idx]!, ...action.patch, id: cs[idx]!.id };
+        return { ...l, conditions: cs };
+      }));
+    }
+
+    case "ClearCondition": {
+      const l0 = requireLoan(state, action.loanId);
+      const idx = l0.conditions.findIndex((c) => c.id === action.conditionId);
+      if (idx === -1) {
+        throw new ActionError("CONDITION_NOT_FOUND",
+          `condition '${action.conditionId}' not found`, { conditionId: action.conditionId });
+      }
+      const cur = l0.conditions[idx]!;
+      if (cur.status === "Waived" || cur.status === "Cleared") {
+        throw new ActionError("INVALID_TRANSITION",
+          `cannot clear a ${cur.status} condition`, { from: cur.status });
+      }
+      return log(withLoan(state, action.loanId, (l) => {
+        const cs = [...l.conditions];
+        cs[idx] = { ...cur, status: "Cleared", clearedBy: action.actor.id, clearedAt: at, notes: action.notes ?? cur.notes };
+        return { ...l, conditions: cs };
+      }));
+    }
+
+    case "WaiveCondition": {
+      if (!action.rationale || action.rationale.trim() === "") {
+        throw new ActionError("REQUIRED_FIELD_MISSING",
+          "rationale is required for WaiveCondition", { conditionId: action.conditionId });
+      }
+      const l0 = requireLoan(state, action.loanId);
+      const idx = l0.conditions.findIndex((c) => c.id === action.conditionId);
+      if (idx === -1) {
+        throw new ActionError("CONDITION_NOT_FOUND",
+          `condition '${action.conditionId}' not found`, { conditionId: action.conditionId });
+      }
+      return log(withLoan(state, action.loanId, (l) => {
+        const cs = [...l.conditions];
+        cs[idx] = { ...cs[idx]!, status: "Waived", notes: action.rationale };
+        return { ...l, conditions: cs };
+      }));
+    }
+
+    case "RemoveCondition": {
+      const l0 = requireLoan(state, action.loanId);
+      const exists = l0.conditions.some((c) => c.id === action.conditionId);
+      if (!exists) {
+        throw new ActionError("CONDITION_NOT_FOUND",
+          `condition '${action.conditionId}' not found`, { conditionId: action.conditionId });
+      }
+      return log(withLoan(state, action.loanId, (l) => ({
+        ...l, conditions: l.conditions.filter((c) => c.id !== action.conditionId),
+      })));
+    }
+
     default:
       return state;
   }
