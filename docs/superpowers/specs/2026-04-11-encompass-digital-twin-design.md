@@ -97,9 +97,10 @@ encompass-twin/
 │  └─ fixtures/    # NQM loan JSON scenarios + expected golden states
 ```
 
-- `core` is the only place business logic lives. Both `api` and `web` depend on it and are thin.
-- `web` imports `core` directly (Next.js server actions) rather than going through `api` over the wire. This guarantees human clicks and agent API calls execute the same reducer on the same in-process state.
-- `fixtures` is a static package — JSON files loaded synchronously.
+- `core` is the only place business logic lives. All mutation logic (`reduce`) runs inside the `api` process, which owns the authoritative in-memory `WorldState`.
+- `api` is the single state-owning process. It imports `core` and exposes every action and query over HTTP.
+- `web` is a thin HTTP client of `api`. Human clicks in the Next.js UI dispatch the exact same HTTP calls an agent would make. This guarantees humans and agents share one source of truth and execute the same reducer. `web` may also import `core` type definitions (interfaces only) for compile-time safety — but never calls `reduce` itself.
+- `fixtures` is a static package — JSON files loaded synchronously by `api` on scenario load.
 
 ### 5.2 State ownership
 
@@ -312,9 +313,9 @@ DELETE /loans/:loanId/conditions/:cid           { actor }
 
 **State flow:**
 
-- Server components fetch from `core` directly (no round-trip through `api`).
-- Mutations use Next.js Server Actions that import `core.reduce`.
-- Optimistic updates not needed in Slice 1 — everything is in-process.
+- Server components fetch loan data from `api` over HTTP (Next.js server-side fetch, not the browser).
+- Mutations use Next.js Server Actions that `POST`/`PATCH`/`DELETE` against `api`. Humans and agents traverse identical endpoints.
+- After each mutation, the server action revalidates the affected loan view. Optimistic updates are not needed in Slice 1 — `api` runs locally and responses are effectively instant.
 
 **Error display:** Classic Encompass-style modal dialog (gray, navy title bar) for any `ActionError` — not toasts.
 
