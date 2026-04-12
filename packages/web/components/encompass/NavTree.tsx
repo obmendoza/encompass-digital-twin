@@ -14,6 +14,7 @@ const LINKS: Record<string, (loanId: string) => string> = {
   "1003 Page 3": (id) => `/loan/${id}/1003/page3`,
   "Transmittal Summary": (id) => `/loan/${id}/transmittal`,
   "eFolder": (id) => `/loan/${id}/efolder`,
+  "Credit": (id) => `/loan/${id}/credit`,
 };
 
 export function NavTree({ activeItem = "Transmittal Summary", loanId }: { activeItem?: string; loanId: string }) {
