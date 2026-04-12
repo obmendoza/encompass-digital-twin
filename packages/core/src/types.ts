@@ -1,5 +1,22 @@
 export type LoanId = string;
 export type ConditionId = string;
+export type DocumentId = string;
+export type DocumentStatus = "Pending" | "Received" | "Reviewed" | "Rejected";
+export type DocumentType =
+  | "BankStatement" | "TaxReturn" | "PayStub" | "1099" | "PnL"
+  | "CPA_Letter" | "ID" | "Insurance" | "Appraisal" | "Title"
+  | "LeaseAgreement" | "LOX" | "BKDocs" | "CreditReport" | "Other";
+
+export interface Document {
+  id: DocumentId;
+  name: string;
+  docType: DocumentType;
+  linkedConditionId?: ConditionId;
+  status: DocumentStatus;
+  uploadedBy: string;
+  uploadedAt: string;
+  notes?: string;
+}
 
 export type NqmProgram =
   | "BankStatement12" | "BankStatement24"
@@ -153,6 +170,7 @@ export interface Loan {
   credit: CreditSummary;
   aus?: AusResult;
   conditions: Condition[];
+  documents: Document[];
   decision: UwDecision;
   milestones: Milestone[];
 }
@@ -188,4 +206,7 @@ export type Action =
   | { type: "UpdateCondition"; loanId: LoanId; conditionId: ConditionId; patch: Partial<Condition>; actor: Actor }
   | { type: "ClearCondition"; loanId: LoanId; conditionId: ConditionId; notes?: string; actor: Actor }
   | { type: "WaiveCondition"; loanId: LoanId; conditionId: ConditionId; rationale: string; actor: Actor }
-  | { type: "RemoveCondition"; loanId: LoanId; conditionId: ConditionId; actor: Actor };
+  | { type: "RemoveCondition"; loanId: LoanId; conditionId: ConditionId; actor: Actor }
+  | { type: "AddDocument"; loanId: LoanId; doc: { name: string; docType: DocumentType }; actor: Actor }
+  | { type: "LinkDocument"; loanId: LoanId; documentId: DocumentId; conditionId: ConditionId; actor: Actor }
+  | { type: "UpdateDocumentStatus"; loanId: LoanId; documentId: DocumentId; status: DocumentStatus; notes?: string; actor: Actor };

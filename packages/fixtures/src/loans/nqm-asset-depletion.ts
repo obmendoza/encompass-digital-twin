@@ -41,6 +41,7 @@ export const nqmAssetDepletion: Scenario = {
     assets: { totalLiquid: 2_200_000, totalRetirement: 900_000, reservesMonths: 24.0 },
     credit: { repScore: 730, tradelinesOpen: 5, tradelinesTotal: 8 },
     conditions: starter,
+    documents: [],
     decision: "pending",
     milestones: [{ name: "Submitted to UW", by: "system", at: "2026-04-08T09:00:00.000Z" }],
   },

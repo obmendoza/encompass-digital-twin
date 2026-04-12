@@ -43,6 +43,7 @@ export const nqmForeignNational: Scenario = {
     assets: { totalLiquid: 120_000, totalRetirement: 0, reservesMonths: 12.0 },
     credit: { repScore: null, tradelinesOpen: 0, tradelinesTotal: 0 },
     conditions: starter,
+    documents: [],
     decision: "pending",
     milestones: [{ name: "Submitted to UW", by: "system", at: "2026-04-08T09:00:00.000Z" }],
   },

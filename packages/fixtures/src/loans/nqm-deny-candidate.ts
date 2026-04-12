@@ -47,6 +47,7 @@ export const nqmDenyCandidate: Scenario = {
     assets: { totalLiquid: 45000, totalRetirement: 12000, reservesMonths: 5.0 },
     credit: { repScore: 660, tradelinesOpen: 4, tradelinesTotal: 7, lastLate30d: "2025-12" },
     conditions: starter,
+    documents: [],
     decision: "pending",
     milestones: [{ name: "Submitted to UW", by: "system", at: "2026-04-08T09:00:00.000Z" }],
   },

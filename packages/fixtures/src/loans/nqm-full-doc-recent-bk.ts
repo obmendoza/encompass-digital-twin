@@ -39,6 +39,7 @@ export const nqmFullDocRecentBk: Scenario = {
     assets: { totalLiquid: 48000, totalRetirement: 25000, reservesMonths: 6.0 },
     credit: { repScore: 680, tradelinesOpen: 4, tradelinesTotal: 7, lastLate30d: "2023-11" },
     conditions: starter,
+    documents: [],
     decision: "pending",
     milestones: [{ name: "Submitted to UW", by: "system", at: "2026-04-08T09:00:00.000Z" }],
   },

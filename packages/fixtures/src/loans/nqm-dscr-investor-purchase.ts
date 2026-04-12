@@ -41,6 +41,7 @@ export const nqmDscrInvestorPurchase: Scenario = {
     assets: { totalLiquid: 62000, totalRetirement: 30000, reservesMonths: 7.0 },
     credit: { repScore: 740, tradelinesOpen: 6, tradelinesTotal: 9 },
     conditions: starter,
+    documents: [],
     decision: "pending",
     milestones: [{ name: "Submitted to UW", by: "system", at: "2026-04-08T09:00:00.000Z" }],
   },
