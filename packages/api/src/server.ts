@@ -15,7 +15,11 @@ export function buildServer(opts: BuildOpts = {}): { app: FastifyInstance; store
   const app = Fastify({ logger: false });
   const store = createStore({ scenarios, now: opts.now });
 
-  if (opts.preloadScenarioId) {
+  if (opts.preloadScenarioId === "*") {
+    for (const id of Object.keys(scenarios)) {
+      store.dispatch({ type: "LoadScenario", scenarioId: id });
+    }
+  } else if (opts.preloadScenarioId) {
     store.dispatch({ type: "LoadScenario", scenarioId: opts.preloadScenarioId });
   }
 
@@ -29,7 +33,7 @@ export function buildServer(opts: BuildOpts = {}): { app: FastifyInstance; store
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const { app } = buildServer({ preloadScenarioId: "nqm-bankstmt-12mo-clean" });
+  const { app } = buildServer({ preloadScenarioId: "*" });
   const port = Number(process.env.PORT ?? 4000);
   app.listen({ port, host: "127.0.0.1" })
     .then(() => console.log(`api listening on :${port}`))
