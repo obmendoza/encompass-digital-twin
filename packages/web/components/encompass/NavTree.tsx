@@ -17,6 +17,7 @@ const LINKS: Record<string, (loanId: string) => string> = {
   "Credit": (id) => `/loan/${id}/credit`,
   "Appraisal": (id) => `/loan/${id}/appraisal`,
   "Compliance": (id) => `/loan/${id}/compliance`,
+  "Conversation Log": (id) => `/loan/${id}/log`,
 };
 
 export function NavTree({ activeItem = "Transmittal Summary", loanId }: { activeItem?: string; loanId: string }) {
