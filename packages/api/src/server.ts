@@ -42,7 +42,8 @@ export function buildServer(opts: BuildOpts = {}): { app: FastifyInstance; store
 if (import.meta.url === `file://${process.argv[1]}`) {
   const { app } = buildServer({ preloadScenarioId: "*" });
   const port = Number(process.env.PORT ?? 4000);
-  app.listen({ port, host: "127.0.0.1" })
+  const host = process.env.RAILWAY_ENVIRONMENT ? "0.0.0.0" : "127.0.0.1";
+  app.listen({ port, host })
     .then(() => console.log(`api listening on :${port}`))
     .catch((e) => { console.error(e); process.exit(1); });
 }
