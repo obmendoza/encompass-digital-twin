@@ -229,6 +229,26 @@ export interface ComplianceSnapshot {
   flags: ComplianceFlag[];
 }
 
+export interface GuidelineCheck {
+  category: "LTV" | "FICO" | "DTI" | "Reserves" | "DSCR" | "Seasoning" | "Property" | "Income" | "Occupancy" | "Other";
+  rule: string;
+  threshold: string;
+  actual: string;
+  result: "Pass" | "Fail" | "Exception" | "N/A";
+  notes?: string;
+}
+
+export interface ProgramOverlay {
+  programName: string;
+  investorName: string;
+  maxLTV: number;
+  minFICO: number | null;
+  maxDTI: number | null;
+  minDSCR: number | null;
+  minReserves: number;
+  checks: GuidelineCheck[];
+}
+
 export interface Loan {
   id: LoanId;
   nqmProgram: NqmProgram;
@@ -248,6 +268,7 @@ export interface Loan {
   decision: UwDecision;
   milestones: Milestone[];
   compliance: ComplianceSnapshot;
+  overlay: ProgramOverlay;
 }
 
 export interface Scenario {
