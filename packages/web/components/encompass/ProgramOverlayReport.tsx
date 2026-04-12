@@ -94,7 +94,7 @@ export function ProgramOverlayReport({ loan }: Props) {
               </thead>
               <tbody>
                 {checks.map((check, i) => (
-                  <tr key={i} className={i % 2 === 0 ? "bg-white" : "bg-[#f5f3ed]"}>
+                  <tr key={check.category + '-' + check.rule} className={i % 2 === 0 ? "bg-white" : "bg-[#f5f3ed]"}>
                     <td className="px-2 py-[2px] border border-[#ddd]">{i + 1}</td>
                     <td className="px-2 py-[2px] border border-[#ddd]">{check.category}</td>
                     <td className="px-2 py-[2px] border border-[#ddd]">{check.rule}</td>

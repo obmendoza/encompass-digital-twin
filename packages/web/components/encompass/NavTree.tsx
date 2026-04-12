@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 const GROUPS: Array<{ title: string; items: string[] }> = [
   { title: "Loan", items: ["Borrower Summary", "Alerts & Messages"] },
@@ -21,7 +24,25 @@ const LINKS: Record<string, (loanId: string) => string> = {
   "Conversation Log": (id) => `/loan/${id}/log`,
 };
 
-export function NavTree({ activeItem = "Transmittal Summary", loanId }: { activeItem?: string; loanId: string }) {
+function deriveActiveItem(pathname: string): string {
+  if (pathname.endsWith("/transmittal")) return "Transmittal Summary";
+  if (pathname.endsWith("/1003/page1")) return "1003 Page 1";
+  if (pathname.endsWith("/1003/page2")) return "1003 Page 2";
+  if (pathname.endsWith("/1003/page3")) return "1003 Page 3";
+  if (pathname.endsWith("/income")) return "Income Analysis";
+  if (pathname.endsWith("/efolder")) return "eFolder";
+  if (pathname.endsWith("/credit")) return "Credit";
+  if (pathname.endsWith("/appraisal")) return "Appraisal";
+  if (pathname.endsWith("/compliance")) return "Compliance";
+  if (pathname.endsWith("/log")) return "Conversation Log";
+  if (pathname.endsWith("/overlays")) return "Program Overlays";
+  return "Transmittal Summary";
+}
+
+export function NavTree({ loanId }: { loanId: string }) {
+  const pathname = usePathname();
+  const activeItem = deriveActiveItem(pathname);
+
   return (
     <div className="bg-white border-r border-[#6b7a8f] text-[10px] w-[172px]">
       {GROUPS.map((g) => (

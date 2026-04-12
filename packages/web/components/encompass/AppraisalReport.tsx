@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { Loan, ComparableSale } from "@twin/core";
+import { money } from "@/lib/format";
 
 interface Props {
   loan: Loan;
@@ -9,10 +10,6 @@ interface Props {
 
 type SortKey = "address" | "salePrice" | "saleDate" | "sqft" | "distance" | "adjustedValue" | "adjDiff";
 type SortDir = "asc" | "desc";
-
-function money(n: number) {
-  return `$${n.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
-}
 
 function SortHeader({
   label, sortKey, current, dir, onSort,
@@ -177,7 +174,7 @@ export function AppraisalReport({ loan }: Props) {
                   const diff = adjDiff(c);
                   return (
                     <tr
-                      key={i}
+                      key={c.address}
                       className={"border-b border-dotted border-[#dcd7c0] " + (i % 2 === 0 ? "bg-white" : "bg-[#f7f5ee]")}
                     >
                       <td className="px-2 py-[1px] text-[#888]">{i + 1}</td>
