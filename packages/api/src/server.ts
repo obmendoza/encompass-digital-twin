@@ -5,6 +5,7 @@ import { registerErrorHandler } from "./errors.js";
 import { registerWorldRoutes } from "./routes/world.js";
 import { registerLoanRoutes } from "./routes/loans.js";
 import { registerConditionRoutes } from "./routes/conditions.js";
+import { registerDocumentRoutes } from "./routes/documents.js";
 
 export interface BuildOpts {
   now?: () => string;
@@ -27,6 +28,7 @@ export function buildServer(opts: BuildOpts = {}): { app: FastifyInstance; store
   registerWorldRoutes(app, store);
   registerLoanRoutes(app, store);
   registerConditionRoutes(app, store);
+  registerDocumentRoutes(app, store);
 
   app.get("/health", async () => ({ ok: true }));
   return { app, store };

@@ -71,3 +71,25 @@ export const WaiveConditionSchema = z.object({
 });
 
 export const ActorOnlySchema = z.object({ actor: ActorSchema });
+
+export const NewDocumentSchema = z.object({
+  doc: z.object({
+    name: z.string().min(1),
+    docType: z.enum(["BankStatement", "TaxReturn", "PayStub", "1099", "PnL",
+      "CPA_Letter", "ID", "Insurance", "Appraisal", "Title",
+      "LeaseAgreement", "LOX", "BKDocs", "CreditReport", "Other"]),
+  }),
+  actor: ActorSchema,
+});
+
+export const UpdateDocumentSchema = z.object({
+  status: z.enum(["Pending", "Received", "Reviewed", "Rejected"]).optional(),
+  linkedConditionId: z.string().optional(),
+  notes: z.string().optional(),
+  actor: ActorSchema,
+});
+
+export const LinkDocumentSchema = z.object({
+  conditionId: z.string().min(1),
+  actor: ActorSchema,
+});
