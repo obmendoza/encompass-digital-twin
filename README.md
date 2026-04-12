@@ -8,7 +8,15 @@ AI agents drive it via HTTP API. Human underwriters use the same UI. Both execut
 
 ## Demo
 
-**Run locally in 3 commands:**
+### Docker (fastest)
+
+```bash
+docker compose up --build
+```
+
+Open **http://localhost:3000** — that's it.
+
+### Local development
 
 ```bash
 # 1. Install dependencies
