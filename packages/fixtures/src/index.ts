@@ -11,11 +11,21 @@ import { nqmItinBankstmt } from "./loans/nqm-itin-bankstmt.js";
 import { nqmFullDocRecentBk } from "./loans/nqm-full-doc-recent-bk.js";
 import { nqmSuspendCandidate } from "./loans/nqm-suspend-candidate.js";
 import { nqmDenyCandidate } from "./loans/nqm-deny-candidate.js";
+import { nqmEdgeLargeDeposit } from "./loans/nqm-edge-large-deposit.js";
+import { nqmEdgeDecliningIncome } from "./loans/nqm-edge-declining-income.js";
+import { nqmEdgeComingledFunds } from "./loans/nqm-edge-comingled-funds.js";
+import { nqmEdgeShortLeaseDscr } from "./loans/nqm-edge-short-lease-dscr.js";
+import { nqmEdgeRestrictedAssets } from "./loans/nqm-edge-restricted-assets.js";
+import { nqmEdgeNsfCompensating } from "./loans/nqm-edge-nsf-compensating.js";
+import { nqmEdgePropertyFlip } from "./loans/nqm-edge-property-flip.js";
+import { nqmEdgeGiftFundsNqm } from "./loans/nqm-edge-gift-funds-nqm.js";
 
 const all: Scenario[] = [
   nqmBankstmt12moClean, nqmBankstmt24moBusiness, nqmDscrInvestorPurchase, nqmDscrSub1,
   nqmAssetDepletion, nqm1099Only, nqmPnlOnlyCpa, nqmForeignNational, nqmItinBankstmt,
   nqmFullDocRecentBk, nqmSuspendCandidate, nqmDenyCandidate,
+  nqmEdgeLargeDeposit, nqmEdgeDecliningIncome, nqmEdgeComingledFunds, nqmEdgeShortLeaseDscr,
+  nqmEdgeRestrictedAssets, nqmEdgeNsfCompensating, nqmEdgePropertyFlip, nqmEdgeGiftFundsNqm,
 ];
 export const scenarios: Record<string, Scenario> = Object.fromEntries(all.map((s) => [s.id, s]));
 export function listScenarios() {

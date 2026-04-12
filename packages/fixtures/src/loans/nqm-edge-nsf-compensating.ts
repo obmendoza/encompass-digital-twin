@@ -1,0 +1,126 @@
+import type { Scenario, Condition } from "@twin/core";
+import { bankStatementStarterConditions } from "../condition-templates.js";
+
+const starter: Condition[] = bankStatementStarterConditions.map((c, i) => ({
+  id: `c${i + 1}`,
+  category: c.category,
+  source: c.source,
+  description: c.description,
+  status: c.status ?? "Open",
+  addedBy: "system",
+  addedAt: "2026-04-08T09:00:00.000Z",
+}));
+
+const edgeCondition: Condition = {
+  id: `c${bankStatementStarterConditions.length + 1}`,
+  category: "PTA",
+  source: "UW",
+  description: "NSF count (7) exceeds guideline max (3). Evaluate compensating factors: FICO 748, 12mo reserves, 65% LTV, zero lates. All NSFs from resolved auto-pay timing issue.",
+  status: "Open",
+  addedBy: "system",
+  addedAt: "2026-04-08T09:00:00.000Z",
+};
+
+export const nqmEdgeNsfCompensating: Scenario = {
+  id: "nqm-edge-nsf-compensating",
+  name: "NQM Edge — Multiple NSFs with Compensating Factors",
+  description: "7 NSFs exceed investor guideline max of 3, but all from a resolved auto-pay timing issue. Strong compensating factors: FICO 748, 12mo reserves, 65% LTV, zero credit lates.",
+  loan: {
+    id: "2501000206",
+    nqmProgram: "BankStatement12",
+    qualifyingMethod: "BankStatementDeposits",
+    borrower: { fullName: "Washington, Terrence D.", ssnMasked: "xxx-xx-2208", dob: "1980-06-14", maritalStatus: "Unmarried" },
+    property: { street: "3312 Elmwood Court", city: "Atlanta", state: "GA", zip: "30309",
+      propertyType: "SFR Det.", units: 1, yearBuilt: 1999 },
+    transaction: {
+      loanPurpose: "Purchase", loanAmount: 295000, salesPrice: 455000, appraisedValue: 455000,
+      ltv: 65, cltv: 65, hcltv: 65, noteRate: 7.375, term: 360, amortType: "Fixed", lienPosition: 1,
+      occupancy: "Primary", isInvestmentProperty: false, piti: 2565.44,
+    },
+    qualifying: { housingRatio: 33.8, totalDti: 33.8, piPayment: 2035.88, qualifyingRate: 7.375 },
+    qualifyingWorksheet: {
+      method: "BankStatementDeposits",
+      monthsCovered: 12, avgDeposits: 15200, expenseFactor: 0.5, nsfCount: 7,
+      derivedMonthlyIncome: 7600,
+    },
+    income: {
+      totalMonthlyIncome: 7600,
+      notes: "NSF COUNT: 7 NSFs exceed 3-max guideline. All occurred months 4-8 from auto-pay timing on business account (since corrected). Zero NSFs in last 4 months. Compensating: FICO 748, 12mo reserves, LTV 65%, zero credit lates.",
+    },
+    assets: { totalLiquid: 88400, totalRetirement: 42000, reservesMonths: 12.4 },
+    credit: {
+      repScore: 748, tradelinesOpen: 6, tradelinesTotal: 9,
+      tradelines: [
+        { creditorName: "Discover Card", accountType: "Revolving", balance: 2100, monthlyPayment: 63, limit: 14000, monthsOpen: 84, late30: 0, late60: 0, late90: 0, isDisputed: false },
+        { creditorName: "Chase Amazon", accountType: "Revolving", balance: 780, monthlyPayment: 31, limit: 7000, monthsOpen: 60, late30: 0, late60: 0, late90: 0, isDisputed: false },
+        { creditorName: "Nissan Motor Acceptance", accountType: "Installment", balance: 16400, monthlyPayment: 428, limit: undefined, monthsOpen: 42, late30: 0, late60: 0, late90: 0, isDisputed: false },
+        { creditorName: "Navy Federal", accountType: "Revolving", balance: 3400, monthlyPayment: 102, limit: 20000, monthsOpen: 96, late30: 0, late60: 0, late90: 0, isDisputed: false },
+        { creditorName: "Barclays Aviator", accountType: "Revolving", balance: 1200, monthlyPayment: 48, limit: 10000, monthsOpen: 48, late30: 0, late60: 0, late90: 0, isDisputed: false },
+        { creditorName: "TD Auto Finance", accountType: "Installment", balance: 8900, monthlyPayment: 285, limit: undefined, monthsOpen: 24, late30: 0, late60: 0, late90: 0, isDisputed: false },
+      ],
+      liabilities: { totalMonthlyPayments: 957, revolvingBalance: 7480, installmentBalance: 25300, mortgageBalance: 0, collectionsBalance: 0, totalBalance: 32780 },
+    },
+    conditions: [...starter, edgeCondition],
+    documents: [
+      { id: "d1", name: "12mo Bank Statements.pdf", docType: "BankStatement", linkedConditionId: "c1", status: "Received", uploadedBy: "system", uploadedAt: "2026-04-08T09:00:00.000Z" },
+      { id: "d2", name: "LOX — NSF Explanation.pdf", docType: "LOX", linkedConditionId: "c5", status: "Received", uploadedBy: "system", uploadedAt: "2026-04-08T09:00:00.000Z", notes: "Borrower explains auto-pay timing issue, corrected 4 months ago" },
+      { id: "d3", name: "4506-C Signed.pdf", docType: "TaxReturn", linkedConditionId: "c3", status: "Pending", uploadedBy: "system", uploadedAt: "2026-04-08T09:00:00.000Z" },
+    ],
+    appraisal: {
+      appraisalDate: "2026-04-05",
+      appraiserName: "Jackson, Beverly T.",
+      appraisalType: "Full",
+      appraisedValue: 455000,
+      marketCondition: "Increasing",
+      neighborhoodRating: "Good",
+      siteArea: "0.21 acres",
+      grossLivingArea: 2020,
+      roomCount: 8,
+      bedroomCount: 4,
+      bathroomCount: 2.5,
+      garageSpaces: 2,
+      condition: "Good",
+      comparables: [
+        { address: "3298 Elmwood Court, Atlanta GA", salePrice: 448000, saleDate: "2026-02-22", sqft: 1980, distance: "0.1 mi", adjustedValue: 452000 },
+        { address: "4215 Peachtree Hollow Dr, Atlanta GA", salePrice: 462000, saleDate: "2026-01-19", sqft: 2100, distance: "0.4 mi", adjustedValue: 458000 },
+        { address: "2885 Millbrook Lane, Atlanta GA", salePrice: 441000, saleDate: "2026-03-07", sqft: 1950, distance: "0.6 mi", adjustedValue: 448000 },
+      ],
+    },
+    decision: "pending",
+    milestones: [{ name: "Submitted to UW", by: "system", at: "2026-04-08T09:00:00.000Z" }],
+    compliance: {
+      qmStatus: "Non-QM",
+      atrCompliant: true,
+      hpml: false,
+      hoepa: false,
+      higherPricedCoveredTransaction: false,
+      stateLicenseRequired: false,
+      stateHighCostTest: "Pass",
+      tridToleranceCure: "None",
+      totalPointsAndFees: 1820,
+      pointsAndFeesThreshold: 2950,
+      pointsAndFeesPass: true,
+      flags: [
+        { code: "NQM-001", severity: "Info", description: "Loan originated as Non-QM product", regulation: "12 CFR 1026.43(e)" },
+        { code: "NQM-002", severity: "Info", description: "Income verified via bank statement deposits (non-standard documentation)", regulation: "12 CFR 1026.43(c)" },
+        { code: "NQM-015", severity: "Warning", description: "NSF count exceeds investor guideline — compensating factors evaluated per exception request", regulation: "12 CFR 1026.43(c)" },
+      ],
+    },
+    overlay: {
+      programName: "NQM Bank Statement",
+      investorName: "NQM Capital",
+      maxLTV: 90,
+      minFICO: 660,
+      maxDTI: 50,
+      minDSCR: null,
+      minReserves: 6,
+      checks: [
+        { category: "LTV", rule: "Max LTV", threshold: "≤ 90%", actual: "65%", result: "Pass" },
+        { category: "FICO", rule: "Min FICO", threshold: "≥ 660", actual: "748", result: "Pass" },
+        { category: "DTI", rule: "Max DTI", threshold: "≤ 50%", actual: "33.8%", result: "Pass" },
+        { category: "Reserves", rule: "Min Reserves", threshold: "≥ 6 mo", actual: "12.4 mo", result: "Pass" },
+        { category: "Other", rule: "NSF Count", threshold: "≤ 3 NSFs in 12 months", actual: "7 NSFs (months 4-8, resolved)", result: "Fail", notes: "7 NSFs exceeds 3-max guideline. Compensating: FICO 748, 12mo reserves, 65% LTV, zero credit lates, NSFs resolved 4+ months ago. Exception request required." },
+      ],
+    },
+  },
+};

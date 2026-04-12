@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { scenarios, listScenarios } from "../src/index.js";
 
 describe("fixture manifest", () => {
-  it("contains all 12 expected scenarios", () => {
+  it("contains all 20 expected scenarios", () => {
     const ids = Object.keys(scenarios).sort();
     expect(ids).toEqual([
       "nqm-1099-only",
@@ -12,6 +12,14 @@ describe("fixture manifest", () => {
       "nqm-deny-candidate",
       "nqm-dscr-investor-purchase",
       "nqm-dscr-sub-1",
+      "nqm-edge-comingled-funds",
+      "nqm-edge-declining-income",
+      "nqm-edge-gift-funds-nqm",
+      "nqm-edge-large-deposit",
+      "nqm-edge-nsf-compensating",
+      "nqm-edge-property-flip",
+      "nqm-edge-restricted-assets",
+      "nqm-edge-short-lease-dscr",
       "nqm-foreign-national",
       "nqm-full-doc-recent-bk",
       "nqm-itin-bankstmt",
@@ -29,7 +37,7 @@ describe("fixture manifest", () => {
     }
   });
 
-  it("listScenarios returns 12 entries", () => {
-    expect(listScenarios()).toHaveLength(12);
+  it("listScenarios returns 20 entries", () => {
+    expect(listScenarios()).toHaveLength(20);
   });
 });

@@ -1,0 +1,128 @@
+import type { Scenario, Condition } from "@twin/core";
+import { dscrStarterConditions } from "../condition-templates.js";
+
+const starter: Condition[] = dscrStarterConditions.map((c, i) => ({
+  id: `c${i + 1}`,
+  category: c.category,
+  source: c.source,
+  description: c.description,
+  status: c.status ?? "Open",
+  addedBy: "system",
+  addedAt: "2026-04-08T09:00:00.000Z",
+}));
+
+const edgeCondition: Condition = {
+  id: `c${dscrStarterConditions.length + 1}`,
+  category: "PTA",
+  source: "UW",
+  description: "Determine qualifying rent: current lease ($3,200, expiring 60 days) vs market rent ($2,750). DSCR impact: 1.10 → 0.95",
+  status: "Open",
+  addedBy: "system",
+  addedAt: "2026-04-08T09:00:00.000Z",
+};
+
+export const nqmEdgeShortLeaseDscr: Scenario = {
+  id: "nqm-edge-short-lease-dscr",
+  name: "NQM Edge — DSCR with Expiring Lease",
+  description: "Current lease $3,200/mo (DSCR 1.10) expires in 60 days. Market rent $2,750/mo drops DSCR to 0.95. UW must determine which rent to use for qualifying.",
+  loan: {
+    id: "2501000204",
+    nqmProgram: "DSCR",
+    qualifyingMethod: "DSCRCoverage",
+    borrower: { fullName: "Pham, Anthony T.", ssnMasked: "xxx-xx-4481", dob: "1983-07-29", maritalStatus: "Married" },
+    property: { street: "1134 Parkview Circle", city: "Las Vegas", state: "NV", zip: "89128",
+      propertyType: "SFR Det.", units: 1, yearBuilt: 2002 },
+    transaction: {
+      loanPurpose: "Purchase", loanAmount: 365000, salesPrice: 490000, appraisedValue: 490000,
+      ltv: 75, cltv: 75, hcltv: 75, noteRate: 7.500, term: 360, amortType: "Fixed", lienPosition: 1,
+      occupancy: "Investment", isInvestmentProperty: true, rentalIncome: 3200,
+      piti: 2910.00, pitia: 2910.00, dscrRatio: 1.10,
+    },
+    qualifying: { housingRatio: 0, totalDti: 0, piPayment: 2452.35, qualifyingRate: 7.500 },
+    qualifyingWorksheet: {
+      method: "DSCRCoverage",
+      dscrNumerator: 3200, dscrDenominator: 2910,
+      derivedMonthlyIncome: 3200,
+    },
+    income: {
+      totalMonthlyIncome: 3200,
+      notes: "LEASE EXPIRY: Current lease $3,200/mo expires in 60 days. Market rent (1007): $2,750/mo. Using market rent: DSCR drops to 0.95. Tenant has been in place 14 months, no late payments.",
+    },
+    assets: { totalLiquid: 74500, totalRetirement: 38000, reservesMonths: 9.1 },
+    credit: {
+      repScore: 750, tradelinesOpen: 6, tradelinesTotal: 9,
+      tradelines: [
+        { creditorName: "Chase Freedom", accountType: "Revolving", balance: 2800, monthlyPayment: 84, limit: 18000, monthsOpen: 108, late30: 0, late60: 0, late90: 0, isDisputed: false },
+        { creditorName: "Capital One Venture", accountType: "Revolving", balance: 1650, monthlyPayment: 50, limit: 12000, monthsOpen: 72, late30: 0, late60: 0, late90: 0, isDisputed: false },
+        { creditorName: "Ford Motor Credit", accountType: "Installment", balance: 19500, monthlyPayment: 520, limit: undefined, monthsOpen: 36, late30: 0, late60: 0, late90: 0, isDisputed: false },
+        { creditorName: "SunWest Mortgage", accountType: "Mortgage", balance: 265000, monthlyPayment: 1780, limit: undefined, monthsOpen: 60, late30: 0, late60: 0, late90: 0, isDisputed: false },
+        { creditorName: "Amex Blue Cash", accountType: "Revolving", balance: 950, monthlyPayment: 38, limit: 8000, monthsOpen: 48, late30: 0, late60: 0, late90: 0, isDisputed: false },
+        { creditorName: "Walmart Credit", accountType: "Revolving", balance: 220, monthlyPayment: 15, limit: 2000, monthsOpen: 30, late30: 0, late60: 0, late90: 0, isDisputed: false },
+      ],
+      liabilities: { totalMonthlyPayments: 2487, revolvingBalance: 5620, installmentBalance: 19500, mortgageBalance: 265000, collectionsBalance: 0, totalBalance: 290120 },
+    },
+    conditions: [...starter, edgeCondition],
+    documents: [
+      { id: "d1", name: "Current Lease Agreement.pdf", docType: "LeaseAgreement", linkedConditionId: "c1", status: "Received", uploadedBy: "system", uploadedAt: "2026-04-08T09:00:00.000Z", notes: "Lease expires in 60 days" },
+      { id: "d2", name: "Form 1007 Market Rent.pdf", docType: "Appraisal", linkedConditionId: "c1", status: "Received", uploadedBy: "system", uploadedAt: "2026-04-08T09:00:00.000Z", notes: "Market rent opinion: $2,750/mo" },
+      { id: "d3", name: "Tenant Payment History.pdf", docType: "Other", status: "Received", uploadedBy: "system", uploadedAt: "2026-04-08T09:00:00.000Z", notes: "14 months, zero late payments" },
+    ],
+    appraisal: {
+      appraisalDate: "2026-04-03",
+      appraiserName: "Williams, Patricia C.",
+      appraisalType: "Full",
+      appraisedValue: 490000,
+      marketCondition: "Stable",
+      neighborhoodRating: "Average",
+      siteArea: "0.16 acres",
+      grossLivingArea: 1820,
+      roomCount: 7,
+      bedroomCount: 3,
+      bathroomCount: 2,
+      garageSpaces: 2,
+      condition: "Average",
+      comparables: [
+        { address: "1118 Parkview Circle, Las Vegas NV", salePrice: 483000, saleDate: "2026-02-25", sqft: 1780, distance: "0.1 mi", adjustedValue: 487000 },
+        { address: "2205 Desert Rose Ave, Las Vegas NV", salePrice: 498000, saleDate: "2026-01-18", sqft: 1900, distance: "0.5 mi", adjustedValue: 494000 },
+        { address: "985 Sunridge Way, Las Vegas NV", salePrice: 475000, saleDate: "2026-03-08", sqft: 1750, distance: "0.7 mi", adjustedValue: 482000 },
+      ],
+      notes: "Market rent opinion: $2,750/mo per Form 1007. Current lease at $3,200 is above market.",
+    },
+    decision: "pending",
+    milestones: [{ name: "Submitted to UW", by: "system", at: "2026-04-08T09:00:00.000Z" }],
+    compliance: {
+      qmStatus: "Non-QM",
+      atrCompliant: true,
+      hpml: false,
+      hoepa: false,
+      higherPricedCoveredTransaction: false,
+      stateLicenseRequired: false,
+      stateHighCostTest: "Pass",
+      tridToleranceCure: "None",
+      totalPointsAndFees: 2250,
+      pointsAndFeesThreshold: 3650,
+      pointsAndFeesPass: true,
+      flags: [
+        { code: "NQM-001", severity: "Info", description: "Loan originated as Non-QM product", regulation: "12 CFR 1026.43(e)" },
+        { code: "NQM-003", severity: "Info", description: "Non-QM: qualified using DSCR coverage (no personal income verification)", regulation: "12 CFR 1026.43(c)" },
+        { code: "NQM-013", severity: "Warning", description: "Lease expires within 90 days — qualifying rent subject to market rent analysis", regulation: "12 CFR 1026.43(c)" },
+      ],
+    },
+    overlay: {
+      programName: "NQM DSCR",
+      investorName: "NQM Capital",
+      maxLTV: 80,
+      minFICO: 620,
+      maxDTI: null,
+      minDSCR: 1.0,
+      minReserves: 6,
+      checks: [
+        { category: "LTV", rule: "Max LTV", threshold: "≤ 80%", actual: "75%", result: "Pass" },
+        { category: "FICO", rule: "Min FICO", threshold: "≥ 620", actual: "750", result: "Pass" },
+        { category: "DSCR", rule: "Min DSCR", threshold: "≥ 1.00", actual: "1.10 (current lease) / 0.95 (market rent)", result: "Exception", notes: "DSCR 1.10 with current lease (expiring 60 days); drops to 0.95 using market rent ($2,750) — below 1.00 minimum" },
+        { category: "Reserves", rule: "Min Reserves", threshold: "≥ 6 mo", actual: "9.1 mo", result: "Pass" },
+        { category: "Property", rule: "Property Type", threshold: "Investment property required", actual: "Investment", result: "Pass" },
+      ],
+    },
+  },
+};
