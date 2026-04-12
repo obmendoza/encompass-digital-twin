@@ -71,5 +71,22 @@ export const nqmFullDocRecentBk: Scenario = {
     },
     decision: "pending",
     milestones: [{ name: "Submitted to UW", by: "system", at: "2026-04-08T09:00:00.000Z" }],
+    compliance: {
+      qmStatus: "Non-QM",
+      atrCompliant: true,
+      hpml: false,
+      hoepa: false,
+      higherPricedCoveredTransaction: false,
+      stateLicenseRequired: false,
+      stateHighCostTest: "Pass",
+      tridToleranceCure: "None",
+      totalPointsAndFees: 2400,
+      pointsAndFeesThreshold: 3850,
+      pointsAndFeesPass: true,
+      flags: [
+        { code: "NQM-001", severity: "Info", description: "Loan originated as Non-QM product", regulation: "12 CFR 1026.43(e)" },
+        { code: "NQM-006", severity: "Info", description: "Non-QM: credit event (bankruptcy) within standard seasoning period", regulation: "12 CFR 1026.43(c)" },
+      ],
+    },
   },
 };

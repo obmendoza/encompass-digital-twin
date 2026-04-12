@@ -83,5 +83,22 @@ export const nqm1099Only: Scenario = {
     },
     decision: "pending",
     milestones: [{ name: "Submitted to UW", by: "system", at: "2026-04-08T09:00:00.000Z" }],
+    compliance: {
+      qmStatus: "Non-QM",
+      atrCompliant: true,
+      hpml: false,
+      hoepa: false,
+      higherPricedCoveredTransaction: false,
+      stateLicenseRequired: false,
+      stateHighCostTest: "Pass",
+      tridToleranceCure: "None",
+      totalPointsAndFees: 2450,
+      pointsAndFeesThreshold: 3950,
+      pointsAndFeesPass: true,
+      flags: [
+        { code: "NQM-001", severity: "Info", description: "Loan originated as Non-QM product", regulation: "12 CFR 1026.43(e)" },
+        { code: "NQM-002", severity: "Info", description: "Income verified via 1099 gross (non-standard documentation)", regulation: "12 CFR 1026.43(c)" },
+      ],
+    },
   },
 };

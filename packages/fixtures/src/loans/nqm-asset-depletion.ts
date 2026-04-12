@@ -74,5 +74,22 @@ export const nqmAssetDepletion: Scenario = {
     },
     decision: "pending",
     milestones: [{ name: "Submitted to UW", by: "system", at: "2026-04-08T09:00:00.000Z" }],
+    compliance: {
+      qmStatus: "Non-QM",
+      atrCompliant: true,
+      hpml: false,
+      hoepa: false,
+      higherPricedCoveredTransaction: false,
+      stateLicenseRequired: false,
+      stateHighCostTest: "Pass",
+      tridToleranceCure: "None",
+      totalPointsAndFees: 4000,
+      pointsAndFeesThreshold: 6500,
+      pointsAndFeesPass: true,
+      flags: [
+        { code: "NQM-001", severity: "Info", description: "Loan originated as Non-QM product", regulation: "12 CFR 1026.43(e)" },
+        { code: "NQM-004", severity: "Info", description: "Non-QM: qualified using asset depletion methodology", regulation: "12 CFR 1026.43(c)" },
+      ],
+    },
   },
 };

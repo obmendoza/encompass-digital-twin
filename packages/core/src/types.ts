@@ -207,6 +207,28 @@ export interface Milestone {
   by: string;
 }
 
+export interface ComplianceFlag {
+  code: string;
+  severity: "Info" | "Warning" | "Violation";
+  description: string;
+  regulation: string;
+}
+
+export interface ComplianceSnapshot {
+  qmStatus: "QM-Safe Harbor" | "QM-Rebuttable" | "Non-QM" | "Exempt";
+  atrCompliant: boolean;
+  hpml: boolean;
+  hoepa: boolean;
+  higherPricedCoveredTransaction: boolean;
+  stateLicenseRequired: boolean;
+  stateHighCostTest: "Pass" | "Fail" | "N/A";
+  tridToleranceCure: "None" | "10%" | "Unlimited";
+  totalPointsAndFees: number;
+  pointsAndFeesThreshold: number;
+  pointsAndFeesPass: boolean;
+  flags: ComplianceFlag[];
+}
+
 export interface Loan {
   id: LoanId;
   nqmProgram: NqmProgram;
@@ -225,6 +247,7 @@ export interface Loan {
   documents: Document[];
   decision: UwDecision;
   milestones: Milestone[];
+  compliance: ComplianceSnapshot;
 }
 
 export interface Scenario {

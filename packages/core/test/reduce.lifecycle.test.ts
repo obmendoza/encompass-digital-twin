@@ -31,6 +31,13 @@ function makeLoan(id: string): Loan {
     conditions: [],
     decision: "pending",
     milestones: [],
+    compliance: {
+      qmStatus: "Non-QM", atrCompliant: true, hpml: false, hoepa: false,
+      higherPricedCoveredTransaction: false, stateLicenseRequired: false,
+      stateHighCostTest: "Pass", tridToleranceCure: "None",
+      totalPointsAndFees: 2500, pointsAndFeesThreshold: 4000, pointsAndFeesPass: true,
+      flags: [],
+    },
   };
 }
 
