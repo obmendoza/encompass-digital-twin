@@ -39,18 +39,18 @@ export function ConditionsTable({ loanId, conditions }: { loanId: string; condit
             <td className="px-1">{c.addedAt.slice(5, 10).replace("-", "/")}</td>
             <td className="px-1 flex gap-1">
               <button className="enc-btn" disabled={pending}
-                onClick={() => startTransition(() => actionClearCondition(loanId, c.id, "verified"))}>
+                onClick={() => startTransition(() => { actionClearCondition(loanId, c.id, "verified"); })}>
                 Clear
               </button>
               <button className="enc-btn" disabled={pending}
                 onClick={() => {
                   const r = prompt("Waive rationale?");
-                  if (r) startTransition(() => actionWaiveCondition(loanId, c.id, r));
+                  if (r) startTransition(() => { actionWaiveCondition(loanId, c.id, r); });
                 }}>
                 Waive
               </button>
               <button className="enc-btn" disabled={pending}
-                onClick={() => startTransition(() => actionRemoveCondition(loanId, c.id))}>
+                onClick={() => startTransition(() => { actionRemoveCondition(loanId, c.id); })}>
                 ×
               </button>
             </td>
