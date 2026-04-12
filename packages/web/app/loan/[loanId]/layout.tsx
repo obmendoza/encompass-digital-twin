@@ -26,7 +26,7 @@ export default async function LoanLayout({
       <Toolbar />
       <LoanHeader loan={loan} />
       <div className="grid grid-cols-[172px_1fr] min-h-[540px]">
-        <NavTree />
+        <NavTree loanId={loanId} />
         <div className="bg-white p-1">{children}</div>
       </div>
     </div>
