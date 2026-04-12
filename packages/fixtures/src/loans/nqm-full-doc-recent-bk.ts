@@ -88,5 +88,22 @@ export const nqmFullDocRecentBk: Scenario = {
         { code: "NQM-006", severity: "Info", description: "Non-QM: credit event (bankruptcy) within standard seasoning period", regulation: "12 CFR 1026.43(c)" },
       ],
     },
+    // LTV 70 <= 75 Pass, FICO 680 >= 660 Pass, DTI 34.2 <= 50 Pass, Reserves 6.0 >= 6 Pass, Seasoning BK >= 2 years Pass
+    overlay: {
+      programName: "NQM Full Doc (BK Seasoning)",
+      investorName: "NQM Capital",
+      maxLTV: 75,
+      minFICO: 660,
+      maxDTI: 50,
+      minDSCR: null,
+      minReserves: 6,
+      checks: [
+        { category: "LTV", rule: "Max LTV", threshold: "≤ 75%", actual: "70%", result: "Pass" },
+        { category: "FICO", rule: "Min FICO", threshold: "≥ 660", actual: "680", result: "Pass" },
+        { category: "DTI", rule: "Max DTI", threshold: "≤ 50%", actual: "34.2%", result: "Pass" },
+        { category: "Reserves", rule: "Min Reserves", threshold: "≥ 6 mo", actual: "6.0 mo", result: "Pass" },
+        { category: "Seasoning", rule: "BK Seasoning", threshold: "BK seasoning ≥ 2 years", actual: "BK discharged 2024 (≥ 2 years)", result: "Pass" },
+      ],
+    },
   },
 };

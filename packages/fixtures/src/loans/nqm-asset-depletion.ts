@@ -91,5 +91,21 @@ export const nqmAssetDepletion: Scenario = {
         { code: "NQM-004", severity: "Info", description: "Non-QM: qualified using asset depletion methodology", regulation: "12 CFR 1026.43(c)" },
       ],
     },
+    // LTV 65 <= 70 Pass, FICO 730 >= 700 Pass, Reserves 24.0 >= 12 Pass
+    overlay: {
+      programName: "NQM Asset Utilization",
+      investorName: "NQM Capital",
+      maxLTV: 70,
+      minFICO: 700,
+      maxDTI: null,
+      minDSCR: null,
+      minReserves: 12,
+      checks: [
+        { category: "LTV", rule: "Max LTV", threshold: "≤ 70%", actual: "65%", result: "Pass" },
+        { category: "FICO", rule: "Min FICO", threshold: "≥ 700", actual: "730", result: "Pass" },
+        { category: "Reserves", rule: "Min Reserves", threshold: "≥ 12 mo", actual: "24.0 mo", result: "Pass" },
+        { category: "Income", rule: "Income Documentation", threshold: "Asset depletion methodology required", actual: "Asset depletion $3,100,000 / 60 months provided", result: "Pass" },
+      ],
+    },
   },
 };

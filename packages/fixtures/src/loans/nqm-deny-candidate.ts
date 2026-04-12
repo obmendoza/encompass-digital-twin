@@ -98,5 +98,22 @@ export const nqmDenyCandidate: Scenario = {
         { code: "CRED-001", severity: "Warning", description: "Recent 30-day late payment (12/2025) and active collection accounts present", regulation: "12 CFR 1026.43(c)(3)" },
       ],
     },
+    // LTV 80 <= 80 Pass, FICO 660 >= 620 Pass, DSCR 0.72 < 0.75 Fail, Reserves 5.0 < 6 Fail, Property Investment Pass
+    overlay: {
+      programName: "NQM DSCR",
+      investorName: "NQM Capital",
+      maxLTV: 80,
+      minFICO: 620,
+      maxDTI: null,
+      minDSCR: 0.75,
+      minReserves: 6,
+      checks: [
+        { category: "LTV", rule: "Max LTV", threshold: "≤ 80%", actual: "80%", result: "Pass" },
+        { category: "FICO", rule: "Min FICO", threshold: "≥ 620", actual: "660", result: "Pass" },
+        { category: "DSCR", rule: "Min DSCR", threshold: "≥ 0.75", actual: "0.72", result: "Fail" },
+        { category: "Reserves", rule: "Min Reserves", threshold: "≥ 6 mo", actual: "5.0 mo", result: "Fail" },
+        { category: "Property", rule: "Property Type", threshold: "Investment property required", actual: "Investment", result: "Pass" },
+      ],
+    },
   },
 };

@@ -93,5 +93,22 @@ export const nqmDscrSub1: Scenario = {
         { code: "NQM-003", severity: "Info", description: "Non-QM: qualified using DSCR coverage (no personal income verification)", regulation: "12 CFR 1026.43(c)" },
       ],
     },
+    // LTV 70 <= 80 Pass, FICO 760 >= 620 Pass, DSCR 0.85 >= 0.75 Pass, Reserves 8.0 >= 6 Pass
+    overlay: {
+      programName: "NQM DSCR",
+      investorName: "NQM Capital",
+      maxLTV: 80,
+      minFICO: 620,
+      maxDTI: null,
+      minDSCR: 0.75,
+      minReserves: 6,
+      checks: [
+        { category: "LTV", rule: "Max LTV", threshold: "≤ 80%", actual: "70%", result: "Pass" },
+        { category: "FICO", rule: "Min FICO", threshold: "≥ 620", actual: "760", result: "Pass" },
+        { category: "DSCR", rule: "Min DSCR", threshold: "≥ 0.75", actual: "0.85", result: "Pass" },
+        { category: "Reserves", rule: "Min Reserves", threshold: "≥ 6 mo", actual: "8.0 mo", result: "Pass" },
+        { category: "Property", rule: "Property Type", threshold: "Investment property required", actual: "Investment", result: "Pass" },
+      ],
+    },
   },
 };

@@ -100,5 +100,22 @@ export const nqm1099Only: Scenario = {
         { code: "NQM-002", severity: "Info", description: "Income verified via 1099 gross (non-standard documentation)", regulation: "12 CFR 1026.43(c)" },
       ],
     },
+    // LTV 80 <= 85 Pass, FICO 710 >= 680 Pass, DTI 34.9 <= 50 Pass, Reserves 6.0 >= 6 Pass
+    overlay: {
+      programName: "NQM 1099",
+      investorName: "NQM Capital",
+      maxLTV: 85,
+      minFICO: 680,
+      maxDTI: 50,
+      minDSCR: null,
+      minReserves: 6,
+      checks: [
+        { category: "LTV", rule: "Max LTV", threshold: "≤ 85%", actual: "80%", result: "Pass" },
+        { category: "FICO", rule: "Min FICO", threshold: "≥ 680", actual: "710", result: "Pass" },
+        { category: "DTI", rule: "Max DTI", threshold: "≤ 50%", actual: "34.9%", result: "Pass" },
+        { category: "Reserves", rule: "Min Reserves", threshold: "≥ 6 mo", actual: "6.0 mo", result: "Pass" },
+        { category: "Income", rule: "Income Documentation", threshold: "1099 documentation required", actual: "Two years 1099 forms provided", result: "Pass" },
+      ],
+    },
   },
 };

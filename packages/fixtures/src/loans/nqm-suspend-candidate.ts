@@ -96,5 +96,22 @@ export const nqmSuspendCandidate: Scenario = {
         { code: "HPCT-001", severity: "Warning", description: "Higher-priced covered transaction — additional disclosures and escrow required", regulation: "12 CFR 1026.35" },
       ],
     },
+    // LTV 85 <= 90 Exception (high LTV requires conditions), FICO 680 >= 660 Pass, DTI 58.2 > 50 Fail, Reserves 4.0 < 6 Fail
+    overlay: {
+      programName: "NQM Bank Statement",
+      investorName: "NQM Capital",
+      maxLTV: 90,
+      minFICO: 660,
+      maxDTI: 50,
+      minDSCR: null,
+      minReserves: 6,
+      checks: [
+        { category: "LTV", rule: "Max LTV", threshold: "≤ 90%", actual: "85%", result: "Exception", notes: "LTV > 85% requires additional conditions and compensating factors" },
+        { category: "FICO", rule: "Min FICO", threshold: "≥ 660", actual: "680", result: "Pass" },
+        { category: "DTI", rule: "Max DTI", threshold: "≤ 50%", actual: "58.2%", result: "Fail" },
+        { category: "Reserves", rule: "Min Reserves", threshold: "≥ 6 mo", actual: "4.0 mo", result: "Fail" },
+        { category: "Income", rule: "Income Documentation", threshold: "Bank statement documentation required", actual: "12mo personal bank statements provided", result: "Pass" },
+      ],
+    },
   },
 };
