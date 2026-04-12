@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { api } from "@/lib/api-client";
-import type { Actor, UwDecision, NewCondition } from "@twin/core";
+import type { Actor, UwDecision, NewCondition, QualifyingIncomeWorksheet } from "@twin/core";
 
 const humanActor: Actor = { kind: "human", id: "uw-local" };
 
@@ -53,4 +53,8 @@ export async function actionWaiveCondition(loanId: string, conditionId: string, 
 
 export async function actionRemoveCondition(loanId: string, conditionId: string) {
   return run(loanId, () => api.removeCondition(loanId, conditionId, humanActor));
+}
+
+export async function actionRecalcIncome(loanId: string, worksheet: QualifyingIncomeWorksheet) {
+  return run(loanId, () => api.recalcIncome(loanId, worksheet, humanActor));
 }
