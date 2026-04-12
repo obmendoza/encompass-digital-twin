@@ -80,5 +80,22 @@ export const nqmPnlOnlyCpa: Scenario = {
     },
     decision: "pending",
     milestones: [{ name: "Submitted to UW", by: "system", at: "2026-04-08T09:00:00.000Z" }],
+    compliance: {
+      qmStatus: "Non-QM",
+      atrCompliant: true,
+      hpml: false,
+      hoepa: false,
+      higherPricedCoveredTransaction: false,
+      stateLicenseRequired: false,
+      stateHighCostTest: "Pass",
+      tridToleranceCure: "None",
+      totalPointsAndFees: 3100,
+      pointsAndFeesThreshold: 5000,
+      pointsAndFeesPass: true,
+      flags: [
+        { code: "NQM-001", severity: "Info", description: "Loan originated as Non-QM product", regulation: "12 CFR 1026.43(e)" },
+        { code: "NQM-005", severity: "Info", description: "Non-QM: income qualified via CPA-certified P&L (non-standard documentation)", regulation: "12 CFR 1026.43(c)" },
+      ],
+    },
   },
 };
