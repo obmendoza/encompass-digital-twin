@@ -3,7 +3,7 @@ import Link from "next/link";
 const GROUPS: Array<{ title: string; items: string[] }> = [
   { title: "Loan", items: ["Borrower Summary", "Alerts & Messages"] },
   { title: "Forms", items: ["1003 Page 1", "1003 Page 2", "1003 Page 3", "Transmittal Summary", "URLA – Additional", "GFE", "HUD-1"] },
-  { title: "Tools", items: ["Income Analysis", "Conditions", "Conversation Log", "AUS Tracking", "Compliance"] },
+  { title: "Tools", items: ["Income Analysis", "Conditions", "Conversation Log", "AUS Tracking", "Compliance", "Program Overlays"] },
   { title: "Services", items: ["eFolder", "Credit", "AUS (DU / LPA)", "Product & Pricing", "Appraisal"] },
 ];
 
@@ -17,6 +17,7 @@ const LINKS: Record<string, (loanId: string) => string> = {
   "Credit": (id) => `/loan/${id}/credit`,
   "Appraisal": (id) => `/loan/${id}/appraisal`,
   "Compliance": (id) => `/loan/${id}/compliance`,
+  "Program Overlays": (id) => `/loan/${id}/overlays`,
   "Conversation Log": (id) => `/loan/${id}/log`,
 };
 
