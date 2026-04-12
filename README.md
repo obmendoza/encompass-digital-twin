@@ -6,7 +6,17 @@ AI agents drive it via HTTP API. Human underwriters use the same UI. Both execut
 
 ---
 
-## Demo
+## Live Demo
+
+**https://web-production-f532b.up.railway.app**
+
+API: `https://api-production-8666.up.railway.app` ([OpenAPI spec](https://api-production-8666.up.railway.app/openapi.json))
+
+> 20 NQM loan scenarios preloaded. Click any loan in the Pipeline to open the full underwriting cockpit. Use "Reset All Loans" to restore original state after testing.
+
+---
+
+## Run Locally
 
 ### Docker (fastest)
 
