@@ -14,7 +14,7 @@ export default async function LoanLayout({
   try {
     await api.getLoan(loanId);
   } catch {
-    await api.loadScenario("nqm-bankstmt-12mo-clean");
+    await api.loadByLoan(loanId);
   }
 
   const loan = await api.getLoan(loanId);

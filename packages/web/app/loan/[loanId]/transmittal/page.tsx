@@ -9,7 +9,13 @@ export default async function TransmittalPage({
   params,
 }: { params: Promise<{ loanId: string }> }) {
   const { loanId } = await params;
-  const loan = await api.getLoan(loanId);
+  let loan;
+  try {
+    loan = await api.getLoan(loanId);
+  } catch {
+    await api.loadByLoan(loanId);
+    loan = await api.getLoan(loanId);
+  }
   const money = (n: number) => `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   const openCount = loan.conditions.filter((c) => c.status === "Open").length;

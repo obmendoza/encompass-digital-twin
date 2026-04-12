@@ -38,7 +38,11 @@ export function reduce(
         throw new ActionError("SCENARIO_NOT_FOUND",
           `scenario '${action.scenarioId}' not found`, { scenarioId: action.scenarioId });
       }
-      return log({ ...state, scenarioId: sc.id, loans: { [sc.loan.id]: structuredClone(sc.loan) } });
+      return log({
+        ...state,
+        scenarioId: sc.id,
+        loans: { ...state.loans, [sc.loan.id]: structuredClone(sc.loan) },
+      });
     }
 
     case "ResetWorld":
