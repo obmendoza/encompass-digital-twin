@@ -147,6 +147,33 @@ export interface CreditSummary {
   liabilities: LiabilitySummary;
 }
 
+export interface ComparableSale {
+  address: string;
+  salePrice: number;
+  saleDate: string;
+  sqft: number;
+  distance: string;
+  adjustedValue: number;
+}
+
+export interface AppraisalDetails {
+  appraisalDate: string;
+  appraiserName: string;
+  appraisalType: "Full" | "Exterior-Only" | "Desktop" | "Hybrid";
+  appraisedValue: number;
+  marketCondition: "Stable" | "Increasing" | "Declining";
+  neighborhoodRating: "Good" | "Average" | "Fair" | "Poor";
+  siteArea: string;
+  grossLivingArea: number;
+  roomCount: number;
+  bedroomCount: number;
+  bathroomCount: number;
+  garageSpaces: number;
+  condition: "Good" | "Average" | "Fair" | "Poor";
+  comparables: ComparableSale[];
+  notes?: string;
+}
+
 export interface AusResult {
   engine: "DU" | "LPA";
   recommendation: string;
@@ -193,6 +220,7 @@ export interface Loan {
   assets: AssetSummary;
   credit: CreditSummary;
   aus?: AusResult;
+  appraisal: AppraisalDetails;
   conditions: Condition[];
   documents: Document[];
   decision: UwDecision;
