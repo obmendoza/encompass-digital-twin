@@ -16,13 +16,12 @@ COPY packages/web/ packages/web/
 RUN pnpm -F @twin/core build && pnpm -F @twin/fixtures build
 
 FROM base AS builder
-RUN TWIN_API_URL=http://api:4000 pnpm -F @twin/web build
+RUN pnpm -F @twin/web build
 
 FROM node:22-slim AS runner
 RUN corepack enable && corepack prepare pnpm@9.9.0 --activate
 WORKDIR /app
 ENV NODE_ENV=production
-ENV TWIN_API_URL=http://api:4000
 
 COPY --from=builder /app/package.json /app/pnpm-workspace.yaml /app/pnpm-lock.yaml ./
 COPY --from=builder /app/packages/web/package.json packages/web/package.json
