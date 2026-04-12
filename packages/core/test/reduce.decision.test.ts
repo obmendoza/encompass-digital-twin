@@ -19,7 +19,7 @@ function loan(id: string): Loan {
     qualifyingWorksheet: { method: "DSCRCoverage", derivedMonthlyIncome: 0 },
     income: { totalMonthlyIncome: 0 },
     assets: { totalLiquid: 60000, totalRetirement: 0, reservesMonths: 6 },
-    credit: { repScore: 740, tradelinesOpen: 4, tradelinesTotal: 7 },
+    credit: { repScore: 740, tradelinesOpen: 4, tradelinesTotal: 7, tradelines: [], liabilities: { totalMonthlyPayments: 0, revolvingBalance: 0, installmentBalance: 0, mortgageBalance: 0, collectionsBalance: 0, totalBalance: 0 } },
     conditions: [],
     decision: "pending",
     milestones: [],

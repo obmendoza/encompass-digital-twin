@@ -39,7 +39,17 @@ export const nqmAssetDepletion: Scenario = {
     },
     income: { totalMonthlyIncome: 51666, notes: "Asset depletion: $3,100,000 / 60 months" },
     assets: { totalLiquid: 2_200_000, totalRetirement: 900_000, reservesMonths: 24.0 },
-    credit: { repScore: 730, tradelinesOpen: 5, tradelinesTotal: 8 },
+    credit: {
+      repScore: 730, tradelinesOpen: 5, tradelinesTotal: 8,
+      tradelines: [
+        { creditorName: "Schwab Visa Signature", accountType: "Revolving", balance: 3200, monthlyPayment: 96, limit: 25000, monthsOpen: 144, late30: 0, late60: 0, late90: 0, isDisputed: false },
+        { creditorName: "Fidelity Rewards Visa", accountType: "Revolving", balance: 1500, monthlyPayment: 45, limit: 20000, monthsOpen: 120, late30: 0, late60: 0, late90: 0, isDisputed: false },
+        { creditorName: "Lexus Financial", accountType: "Installment", balance: 42000, monthlyPayment: 850, limit: undefined, monthsOpen: 36, late30: 0, late60: 0, late90: 0, isDisputed: false },
+        { creditorName: "Wells Fargo Home Equity", accountType: "Revolving", balance: 0, monthlyPayment: 0, limit: 200000, monthsOpen: 60, late30: 0, late60: 0, late90: 0, isDisputed: false },
+        { creditorName: "Citibank Mortgage", accountType: "Mortgage", balance: 0, monthlyPayment: 0, limit: undefined, monthsOpen: 180, late30: 0, late60: 0, late90: 0, isDisputed: false },
+      ],
+      liabilities: { totalMonthlyPayments: 991, revolvingBalance: 4700, installmentBalance: 42000, mortgageBalance: 0, collectionsBalance: 0, totalBalance: 46700 },
+    },
     conditions: starter,
     documents: [],
     decision: "pending",

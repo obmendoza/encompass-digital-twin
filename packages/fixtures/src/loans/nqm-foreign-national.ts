@@ -41,7 +41,11 @@ export const nqmForeignNational: Scenario = {
     },
     income: { totalMonthlyIncome: 0, notes: "Foreign national — DSCR only, no personal income qualifying" },
     assets: { totalLiquid: 120_000, totalRetirement: 0, reservesMonths: 12.0 },
-    credit: { repScore: null, tradelinesOpen: 0, tradelinesTotal: 0 },
+    credit: {
+      repScore: null, tradelinesOpen: 0, tradelinesTotal: 0,
+      tradelines: [],
+      liabilities: { totalMonthlyPayments: 0, revolvingBalance: 0, installmentBalance: 0, mortgageBalance: 0, collectionsBalance: 0, totalBalance: 0 },
+    },
     conditions: starter,
     documents: [],
     decision: "pending",

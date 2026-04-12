@@ -44,7 +44,17 @@ export const nqmBankstmt24moBusiness: Scenario = {
     },
     income: { totalMonthlyIncome: 9500, notes: "24mo business bank statement avg × 50% expense factor" },
     assets: { totalLiquid: 95000, totalRetirement: 60000, reservesMonths: 7.2 },
-    credit: { repScore: 700, tradelinesOpen: 5, tradelinesTotal: 8 },
+    credit: {
+      repScore: 700, tradelinesOpen: 5, tradelinesTotal: 8,
+      tradelines: [
+        { creditorName: "Bank of America Visa", accountType: "Revolving", balance: 5200, monthlyPayment: 130, limit: 12000, monthsOpen: 72, late30: 0, late60: 0, late90: 0, isDisputed: false },
+        { creditorName: "Capital One", accountType: "Revolving", balance: 1800, monthlyPayment: 55, limit: 6000, monthsOpen: 48, late30: 1, late60: 0, late90: 0, isDisputed: false },
+        { creditorName: "Ford Credit", accountType: "Installment", balance: 22500, monthlyPayment: 540, limit: undefined, monthsOpen: 42, late30: 0, late60: 0, late90: 0, isDisputed: false },
+        { creditorName: "Chase Sapphire", accountType: "Revolving", balance: 3100, monthlyPayment: 95, limit: 10000, monthsOpen: 60, late30: 0, late60: 0, late90: 0, isDisputed: false },
+        { creditorName: "SBA Loan", accountType: "Installment", balance: 45000, monthlyPayment: 880, limit: undefined, monthsOpen: 30, late30: 0, late60: 0, late90: 0, isDisputed: false },
+      ],
+      liabilities: { totalMonthlyPayments: 1700, revolvingBalance: 10100, installmentBalance: 67500, mortgageBalance: 0, collectionsBalance: 0, totalBalance: 77600 },
+    },
     conditions: starter,
     documents: [],
     decision: "pending",

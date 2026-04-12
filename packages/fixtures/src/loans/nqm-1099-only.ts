@@ -48,7 +48,17 @@ export const nqm1099Only: Scenario = {
     },
     income: { totalMonthlyIncome: 9100, notes: "1099 gross $156,000 × 70% income factor / 12" },
     assets: { totalLiquid: 55000, totalRetirement: 20000, reservesMonths: 6.0 },
-    credit: { repScore: 710, tradelinesOpen: 5, tradelinesTotal: 8 },
+    credit: {
+      repScore: 710, tradelinesOpen: 5, tradelinesTotal: 8,
+      tradelines: [
+        { creditorName: "Chase Freedom Flex", accountType: "Revolving", balance: 2800, monthlyPayment: 84, limit: 10000, monthsOpen: 60, late30: 0, late60: 0, late90: 0, isDisputed: false },
+        { creditorName: "Synchrony Home", accountType: "Revolving", balance: 1100, monthlyPayment: 40, limit: 5000, monthsOpen: 36, late30: 0, late60: 0, late90: 0, isDisputed: false },
+        { creditorName: "Honda Financial", accountType: "Installment", balance: 16800, monthlyPayment: 395, limit: undefined, monthsOpen: 30, late30: 0, late60: 0, late90: 0, isDisputed: false },
+        { creditorName: "Student Aid Federal", accountType: "Installment", balance: 22000, monthlyPayment: 250, limit: undefined, monthsOpen: 72, late30: 0, late60: 0, late90: 0, isDisputed: false },
+        { creditorName: "Target RedCard", accountType: "Revolving", balance: 460, monthlyPayment: 18, limit: 2500, monthsOpen: 24, late30: 0, late60: 0, late90: 0, isDisputed: false },
+      ],
+      liabilities: { totalMonthlyPayments: 787, revolvingBalance: 4360, installmentBalance: 38800, mortgageBalance: 0, collectionsBalance: 0, totalBalance: 43160 },
+    },
     conditions: starter,
     documents: [],
     decision: "pending",

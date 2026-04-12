@@ -19,7 +19,7 @@ function baseLoan(): Loan {
     qualifyingWorksheet: { method: "BankStatementDeposits", derivedMonthlyIncome: 0 },
     income: { totalMonthlyIncome: 0 },
     assets: { totalLiquid: 80000, totalRetirement: 0, reservesMonths: 6 },
-    credit: { repScore: 720, tradelinesOpen: 5, tradelinesTotal: 8 },
+    credit: { repScore: 720, tradelinesOpen: 5, tradelinesTotal: 8, tradelines: [], liabilities: { totalMonthlyPayments: 0, revolvingBalance: 0, installmentBalance: 0, mortgageBalance: 0, collectionsBalance: 0, totalBalance: 0 } },
     conditions: [], decision: "pending", milestones: [],
   };
 }

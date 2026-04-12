@@ -44,7 +44,16 @@ export const nqmSuspendCandidate: Scenario = {
     },
     income: { totalMonthlyIncome: 5500, notes: "12mo personal bank statement avg × 50% expense factor; 3 NSFs noted" },
     assets: { totalLiquid: 32000, totalRetirement: 10000, reservesMonths: 4.0 },
-    credit: { repScore: 680, tradelinesOpen: 4, tradelinesTotal: 7 },
+    credit: {
+      repScore: 680, tradelinesOpen: 4, tradelinesTotal: 7,
+      tradelines: [
+        { creditorName: "Milestone Mastercard", accountType: "Revolving", balance: 1800, monthlyPayment: 65, limit: 2000, monthsOpen: 36, late30: 2, late60: 0, late90: 0, isDisputed: false },
+        { creditorName: "Surge Card", accountType: "Revolving", balance: 950, monthlyPayment: 40, limit: 1200, monthsOpen: 24, late30: 1, late60: 0, late90: 0, isDisputed: true },
+        { creditorName: "Carmax Auto Finance", accountType: "Installment", balance: 19500, monthlyPayment: 450, limit: undefined, monthsOpen: 18, late30: 0, late60: 0, late90: 0, isDisputed: false },
+        { creditorName: "Jefferson Capital (Coll.)", accountType: "Collection", balance: 880, monthlyPayment: 0, limit: undefined, monthsOpen: 8, late30: 0, late60: 0, late90: 0, isDisputed: false },
+      ],
+      liabilities: { totalMonthlyPayments: 555, revolvingBalance: 2750, installmentBalance: 19500, mortgageBalance: 0, collectionsBalance: 880, totalBalance: 23130 },
+    },
     conditions: starter,
     documents: [],
     decision: "pending",

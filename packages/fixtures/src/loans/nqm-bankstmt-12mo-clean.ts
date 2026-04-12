@@ -35,7 +35,17 @@ export const nqmBankstmt12moClean: Scenario = {
     },
     income: { totalMonthlyIncome: 9000, notes: "12mo personal bank statement avg × 50% expense factor" },
     assets: { totalLiquid: 78420, totalRetirement: 45000, reservesMonths: 6.4 },
-    credit: { repScore: 742, tradelinesOpen: 6, tradelinesTotal: 9 },
+    credit: {
+      repScore: 742, tradelinesOpen: 6, tradelinesTotal: 9,
+      tradelines: [
+        { creditorName: "Chase Visa", accountType: "Revolving", balance: 2400, monthlyPayment: 72, limit: 15000, monthsOpen: 84, late30: 0, late60: 0, late90: 0, isDisputed: false },
+        { creditorName: "Citi Mastercard", accountType: "Revolving", balance: 890, monthlyPayment: 35, limit: 8000, monthsOpen: 60, late30: 0, late60: 0, late90: 0, isDisputed: false },
+        { creditorName: "Toyota Financial", accountType: "Installment", balance: 18200, monthlyPayment: 485, limit: undefined, monthsOpen: 36, late30: 0, late60: 0, late90: 0, isDisputed: false },
+        { creditorName: "Wells Fargo", accountType: "Mortgage", balance: 0, monthlyPayment: 0, limit: undefined, monthsOpen: 120, late30: 0, late60: 0, late90: 0, isDisputed: false },
+        { creditorName: "Amazon Store", accountType: "Revolving", balance: 340, monthlyPayment: 25, limit: 3000, monthsOpen: 24, late30: 0, late60: 0, late90: 0, isDisputed: false },
+      ],
+      liabilities: { totalMonthlyPayments: 617, revolvingBalance: 3630, installmentBalance: 18200, mortgageBalance: 0, collectionsBalance: 0, totalBalance: 21830 },
+    },
     conditions: starter,
     documents: [
       { id: "d1", name: "12mo Bank Statements.pdf", docType: "BankStatement", linkedConditionId: "c1", status: "Received", uploadedBy: "system", uploadedAt: "2026-04-08T09:00:00.000Z" },
