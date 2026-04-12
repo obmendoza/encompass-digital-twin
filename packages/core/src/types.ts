@@ -116,11 +116,35 @@ export interface AssetSummary {
   reservesMonths: number;
 }
 
+export interface Tradeline {
+  creditorName: string;
+  accountType: "Revolving" | "Installment" | "Mortgage" | "Collection" | "Other";
+  balance: number;
+  monthlyPayment: number;
+  limit?: number;
+  monthsOpen: number;
+  late30: number;
+  late60: number;
+  late90: number;
+  isDisputed: boolean;
+}
+
+export interface LiabilitySummary {
+  totalMonthlyPayments: number;
+  revolvingBalance: number;
+  installmentBalance: number;
+  mortgageBalance: number;
+  collectionsBalance: number;
+  totalBalance: number;
+}
+
 export interface CreditSummary {
   repScore: number | null;
   tradelinesOpen: number;
   tradelinesTotal: number;
   lastLate30d?: string;
+  tradelines: Tradeline[];
+  liabilities: LiabilitySummary;
 }
 
 export interface AusResult {
