@@ -1,5 +1,5 @@
 import type {
-  Loan, NewCondition, QualifyingIncomeWorksheet, UwDecision, Actor, Condition, LoggedAction,
+  Loan, NewCondition, QualifyingIncomeWorksheet, UwDecision, Actor, Condition, LoggedAction, Document,
 } from "@twin/core";
 
 const base = process.env.TWIN_API_URL ?? "http://127.0.0.1:4000";
@@ -56,5 +56,18 @@ export const api = {
   removeCondition: (loanId: string, conditionId: string, actor: Actor) =>
     req<Loan>(`/loans/${loanId}/conditions/${conditionId}`, {
       method: "DELETE", body: JSON.stringify({ actor }),
+    }),
+  getDocuments: (loanId: string) => req<Document[]>(`/loans/${loanId}/documents`),
+  addDocument: (loanId: string, doc: { name: string; docType: string }, actor: Actor) =>
+    req<Loan>(`/loans/${loanId}/documents`, {
+      method: "POST", body: JSON.stringify({ doc, actor }),
+    }),
+  updateDocument: (loanId: string, docId: string, patch: { status?: string; linkedConditionId?: string; notes?: string }, actor: Actor) =>
+    req<Loan>(`/loans/${loanId}/documents/${docId}`, {
+      method: "PATCH", body: JSON.stringify({ ...patch, actor }),
+    }),
+  linkDocument: (loanId: string, docId: string, conditionId: string, actor: Actor) =>
+    req<Loan>(`/loans/${loanId}/documents/${docId}/link`, {
+      method: "POST", body: JSON.stringify({ conditionId, actor }),
     }),
 };

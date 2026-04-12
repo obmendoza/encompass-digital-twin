@@ -58,3 +58,15 @@ export async function actionRemoveCondition(loanId: string, conditionId: string)
 export async function actionRecalcIncome(loanId: string, worksheet: QualifyingIncomeWorksheet) {
   return run(loanId, () => api.recalcIncome(loanId, worksheet, humanActor));
 }
+
+export async function actionAddDocument(loanId: string, doc: { name: string; docType: string }) {
+  return run(loanId, () => api.addDocument(loanId, doc, humanActor));
+}
+
+export async function actionUpdateDocumentStatus(loanId: string, docId: string, status: string) {
+  return run(loanId, () => api.updateDocument(loanId, docId, { status }, humanActor));
+}
+
+export async function actionLinkDocument(loanId: string, docId: string, conditionId: string) {
+  return run(loanId, () => api.linkDocument(loanId, docId, conditionId, humanActor));
+}
