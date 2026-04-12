@@ -38,4 +38,13 @@ describe("world routes", () => {
     expect(res.statusCode).toBe(200);
     expect(res.json().scenarioId).toBeNull();
   });
+
+  it("GET /openapi.json returns a valid spec", async () => {
+    const { app } = buildServer({ now: fixed });
+    const res = await app.inject({ method: "GET", url: "/openapi.json" });
+    expect(res.statusCode).toBe(200);
+    const spec = res.json();
+    expect(spec.openapi).toBe("3.1.0");
+    expect(Object.keys(spec.paths).length).toBeGreaterThan(15);
+  });
 });

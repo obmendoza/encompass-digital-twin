@@ -6,6 +6,7 @@ import { registerWorldRoutes } from "./routes/world.js";
 import { registerLoanRoutes } from "./routes/loans.js";
 import { registerConditionRoutes } from "./routes/conditions.js";
 import { registerDocumentRoutes } from "./routes/documents.js";
+import { buildOpenApiSpec } from "./openapi.js";
 
 export interface BuildOpts {
   now?: () => string;
@@ -31,6 +32,10 @@ export function buildServer(opts: BuildOpts = {}): { app: FastifyInstance; store
   registerDocumentRoutes(app, store);
 
   app.get("/health", async () => ({ ok: true }));
+
+  const spec = buildOpenApiSpec();
+  app.get("/openapi.json", async () => spec);
+
   return { app, store };
 }
 
