@@ -45,7 +45,16 @@ export const nqmDenyCandidate: Scenario = {
     },
     income: { totalMonthlyIncome: 0, notes: "DSCR qualifying — no personal income used" },
     assets: { totalLiquid: 45000, totalRetirement: 12000, reservesMonths: 5.0 },
-    credit: { repScore: 660, tradelinesOpen: 4, tradelinesTotal: 7, lastLate30d: "2025-12" },
+    credit: {
+      repScore: 660, tradelinesOpen: 4, tradelinesTotal: 7, lastLate30d: "2025-12",
+      tradelines: [
+        { creditorName: "Avant Credit Card", accountType: "Revolving", balance: 2400, monthlyPayment: 90, limit: 2500, monthsOpen: 30, late30: 3, late60: 1, late90: 0, isDisputed: true },
+        { creditorName: "LoanMart Auto", accountType: "Installment", balance: 14500, monthlyPayment: 380, limit: undefined, monthsOpen: 24, late30: 1, late60: 0, late90: 0, isDisputed: false },
+        { creditorName: "LVNV Funding (Coll.)", accountType: "Collection", balance: 1450, monthlyPayment: 0, limit: undefined, monthsOpen: 14, late30: 0, late60: 0, late90: 0, isDisputed: false },
+        { creditorName: "Portfolio Recovery (Coll.)", accountType: "Collection", balance: 620, monthlyPayment: 0, limit: undefined, monthsOpen: 6, late30: 0, late60: 0, late90: 0, isDisputed: false },
+      ],
+      liabilities: { totalMonthlyPayments: 470, revolvingBalance: 2400, installmentBalance: 14500, mortgageBalance: 0, collectionsBalance: 2070, totalBalance: 18970 },
+    },
     conditions: starter,
     documents: [],
     decision: "pending",

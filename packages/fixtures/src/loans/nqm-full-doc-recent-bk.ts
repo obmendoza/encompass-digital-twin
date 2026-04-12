@@ -37,7 +37,16 @@ export const nqmFullDocRecentBk: Scenario = {
     },
     income: { totalMonthlyIncome: 8800, notes: "Full doc W2 + tax returns" },
     assets: { totalLiquid: 48000, totalRetirement: 25000, reservesMonths: 6.0 },
-    credit: { repScore: 680, tradelinesOpen: 4, tradelinesTotal: 7, lastLate30d: "2023-11" },
+    credit: {
+      repScore: 680, tradelinesOpen: 4, tradelinesTotal: 7, lastLate30d: "2023-11",
+      tradelines: [
+        { creditorName: "Capital One Secured", accountType: "Revolving", balance: 480, monthlyPayment: 20, limit: 1500, monthsOpen: 24, late30: 1, late60: 0, late90: 0, isDisputed: false },
+        { creditorName: "Credit One Bank", accountType: "Revolving", balance: 650, monthlyPayment: 25, limit: 1500, monthsOpen: 18, late30: 0, late60: 0, late90: 0, isDisputed: false },
+        { creditorName: "Regional Finance Inst.", accountType: "Installment", balance: 8500, monthlyPayment: 220, limit: undefined, monthsOpen: 18, late30: 0, late60: 0, late90: 0, isDisputed: false },
+        { creditorName: "Wells Fargo Auto Refi", accountType: "Installment", balance: 12400, monthlyPayment: 310, limit: undefined, monthsOpen: 12, late30: 0, late60: 0, late90: 0, isDisputed: false },
+      ],
+      liabilities: { totalMonthlyPayments: 575, revolvingBalance: 1130, installmentBalance: 20900, mortgageBalance: 0, collectionsBalance: 0, totalBalance: 22030 },
+    },
     conditions: starter,
     documents: [],
     decision: "pending",

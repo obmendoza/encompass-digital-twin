@@ -40,7 +40,15 @@ export const nqmItinBankstmt: Scenario = {
     },
     income: { totalMonthlyIncome: 4750, notes: "12mo personal bank statement avg × 50% expense factor" },
     assets: { totalLiquid: 38000, totalRetirement: 0, reservesMonths: 6.0 },
-    credit: { repScore: 690, tradelinesOpen: 4, tradelinesTotal: 7 },
+    credit: {
+      repScore: 690, tradelinesOpen: 4, tradelinesTotal: 7,
+      tradelines: [
+        { creditorName: "Secured Visa (local CU)", accountType: "Revolving", balance: 350, monthlyPayment: 15, limit: 1000, monthsOpen: 24, late30: 0, late60: 0, late90: 0, isDisputed: false },
+        { creditorName: "Rent Reporter Account", accountType: "Other", balance: 0, monthlyPayment: 0, limit: undefined, monthsOpen: 18, late30: 0, late60: 0, late90: 0, isDisputed: false },
+        { creditorName: "Utility Credit Builder", accountType: "Other", balance: 0, monthlyPayment: 0, limit: undefined, monthsOpen: 12, late30: 0, late60: 0, late90: 0, isDisputed: false },
+      ],
+      liabilities: { totalMonthlyPayments: 15, revolvingBalance: 350, installmentBalance: 0, mortgageBalance: 0, collectionsBalance: 0, totalBalance: 350 },
+    },
     conditions: starter,
     documents: [],
     decision: "pending",
