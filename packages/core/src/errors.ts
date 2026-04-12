@@ -4,7 +4,8 @@ export type ActionErrorCode =
   | "INVALID_TRANSITION"
   | "SCENARIO_NOT_FOUND"
   | "REQUIRED_FIELD_MISSING"
-  | "ACTION_FORBIDDEN_IN_DECISION_STATE";
+  | "ACTION_FORBIDDEN_IN_DECISION_STATE"
+  | "DOCUMENT_NOT_FOUND";
 
 export class ActionError extends Error {
   public readonly code: ActionErrorCode;
