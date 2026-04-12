@@ -46,6 +46,7 @@ export const nqmPnlOnlyCpa: Scenario = {
     assets: { totalLiquid: 88000, totalRetirement: 55000, reservesMonths: 8.5 },
     credit: { repScore: 720, tradelinesOpen: 6, tradelinesTotal: 9 },
     conditions: starter,
+    documents: [],
     decision: "pending",
     milestones: [{ name: "Submitted to UW", by: "system", at: "2026-04-08T09:00:00.000Z" }],
   },

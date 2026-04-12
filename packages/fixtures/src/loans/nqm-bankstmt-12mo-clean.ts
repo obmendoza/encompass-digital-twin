@@ -37,6 +37,11 @@ export const nqmBankstmt12moClean: Scenario = {
     assets: { totalLiquid: 78420, totalRetirement: 45000, reservesMonths: 6.4 },
     credit: { repScore: 742, tradelinesOpen: 6, tradelinesTotal: 9 },
     conditions: starter,
+    documents: [
+      { id: "d1", name: "12mo Bank Statements.pdf", docType: "BankStatement", linkedConditionId: "c1", status: "Received", uploadedBy: "system", uploadedAt: "2026-04-08T09:00:00.000Z" },
+      { id: "d2", name: "4506-C Signed.pdf", docType: "TaxReturn", linkedConditionId: "c3", status: "Pending", uploadedBy: "system", uploadedAt: "2026-04-08T09:00:00.000Z" },
+      { id: "d3", name: "Income Worksheet.xlsx", docType: "Other", status: "Pending", uploadedBy: "system", uploadedAt: "2026-04-08T09:00:00.000Z" },
+    ],
     decision: "pending",
     milestones: [{ name: "Submitted to UW", by: "system", at: "2026-04-08T09:00:00.000Z" }],
   },

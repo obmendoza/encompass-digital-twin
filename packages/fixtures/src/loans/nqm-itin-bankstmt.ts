@@ -42,6 +42,7 @@ export const nqmItinBankstmt: Scenario = {
     assets: { totalLiquid: 38000, totalRetirement: 0, reservesMonths: 6.0 },
     credit: { repScore: 690, tradelinesOpen: 4, tradelinesTotal: 7 },
     conditions: starter,
+    documents: [],
     decision: "pending",
     milestones: [{ name: "Submitted to UW", by: "system", at: "2026-04-08T09:00:00.000Z" }],
   },
