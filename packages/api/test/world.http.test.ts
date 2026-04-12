@@ -4,11 +4,11 @@ import { buildServer } from "../src/server.js";
 const fixed = () => "2026-04-11T12:00:00.000Z";
 
 describe("world routes", () => {
-  it("GET /scenarios lists all 12 scenarios", async () => {
+  it("GET /scenarios lists all 20 scenarios", async () => {
     const { app } = buildServer({ now: fixed });
     const res = await app.inject({ method: "GET", url: "/scenarios" });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toHaveLength(12);
+    expect(res.json()).toHaveLength(20);
   });
 
   it("POST /world/load-scenario hydrates the store", async () => {

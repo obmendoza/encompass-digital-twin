@@ -1,0 +1,125 @@
+import type { Scenario, Condition } from "@twin/core";
+import { bankStatementStarterConditions } from "../condition-templates.js";
+
+const starter: Condition[] = bankStatementStarterConditions.map((c, i) => ({
+  id: `c${i + 1}`,
+  category: c.category,
+  source: c.source,
+  description: c.description,
+  status: c.status ?? "Open",
+  addedBy: "system",
+  addedAt: "2026-04-08T09:00:00.000Z",
+}));
+
+const edgeCondition: Condition = {
+  id: `c${bankStatementStarterConditions.length + 1}`,
+  category: "PTA",
+  source: "UW",
+  description: "Determine eligibility of $85K deposit in month 7 — source, recurrence, and impact on qualifying income",
+  status: "Open",
+  addedBy: "system",
+  addedAt: "2026-04-08T09:00:00.000Z",
+};
+
+export const nqmEdgeLargeDeposit: Scenario = {
+  id: "nqm-edge-large-deposit",
+  name: "NQM Edge — Large Deposit Anomaly",
+  description: "Month 7 has $85K inheritance deposit inflating 12-mo average. DTI swings from 45.8% to 82.1% depending on whether deposit is included.",
+  loan: {
+    id: "2501000201",
+    nqmProgram: "BankStatement12",
+    qualifyingMethod: "BankStatementDeposits",
+    borrower: { fullName: "Kim, David S.", ssnMasked: "xxx-xx-3317", dob: "1982-09-22", maritalStatus: "Married" },
+    property: { street: "4418 Ridgeway Blvd", city: "Sacramento", state: "CA", zip: "95831",
+      propertyType: "SFR Det.", units: 1, yearBuilt: 2003 },
+    transaction: {
+      loanPurpose: "Purchase", loanAmount: 380000, salesPrice: 475000, appraisedValue: 475000,
+      ltv: 80, cltv: 80, hcltv: 80, noteRate: 7.125, term: 360, amortType: "Fixed", lienPosition: 1,
+      occupancy: "Primary", isInvestmentProperty: false, piti: 3321.47,
+    },
+    qualifying: { housingRatio: 45.8, totalDti: 45.8, piPayment: 2558.92, qualifyingRate: 7.125 },
+    qualifyingWorksheet: {
+      method: "BankStatementDeposits",
+      monthsCovered: 12, avgDeposits: 14500, expenseFactor: 0.5, nsfCount: 0,
+      derivedMonthlyIncome: 7250,
+    },
+    income: {
+      totalMonthlyIncome: 7250,
+      notes: "WARNING: Month 7 deposit of $85,000 (inheritance) inflates 12-mo average. Excluding large deposit: 11-mo avg $8,090 → net $4,045/mo. DTI swings from 45.8% to 82.1%.",
+    },
+    assets: { totalLiquid: 54200, totalRetirement: 32000, reservesMonths: 6.3 },
+    credit: {
+      repScore: 718, tradelinesOpen: 5, tradelinesTotal: 7,
+      tradelines: [
+        { creditorName: "Bank of America Visa", accountType: "Revolving", balance: 3100, monthlyPayment: 93, limit: 12000, monthsOpen: 72, late30: 0, late60: 0, late90: 0, isDisputed: false },
+        { creditorName: "Capital One", accountType: "Revolving", balance: 1450, monthlyPayment: 44, limit: 6000, monthsOpen: 48, late30: 0, late60: 0, late90: 0, isDisputed: false },
+        { creditorName: "Honda Financial", accountType: "Installment", balance: 14800, monthlyPayment: 395, limit: undefined, monthsOpen: 30, late30: 0, late60: 0, late90: 0, isDisputed: false },
+        { creditorName: "Chase Sapphire", accountType: "Revolving", balance: 2200, monthlyPayment: 66, limit: 10000, monthsOpen: 60, late30: 0, late60: 0, late90: 0, isDisputed: false },
+        { creditorName: "Discover", accountType: "Revolving", balance: 680, monthlyPayment: 27, limit: 4500, monthsOpen: 36, late30: 0, late60: 0, late90: 0, isDisputed: false },
+      ],
+      liabilities: { totalMonthlyPayments: 625, revolvingBalance: 7430, installmentBalance: 14800, mortgageBalance: 0, collectionsBalance: 0, totalBalance: 22230 },
+    },
+    conditions: [...starter, edgeCondition],
+    documents: [
+      { id: "d1", name: "12mo Bank Statements.pdf", docType: "BankStatement", linkedConditionId: "c1", status: "Received", uploadedBy: "system", uploadedAt: "2026-04-08T09:00:00.000Z" },
+      { id: "d2", name: "4506-C Signed.pdf", docType: "TaxReturn", linkedConditionId: "c3", status: "Pending", uploadedBy: "system", uploadedAt: "2026-04-08T09:00:00.000Z" },
+      { id: "d3", name: "Income Worksheet.xlsx", docType: "Other", status: "Pending", uploadedBy: "system", uploadedAt: "2026-04-08T09:00:00.000Z" },
+    ],
+    appraisal: {
+      appraisalDate: "2026-04-03",
+      appraiserName: "Martinez, Sandra K.",
+      appraisalType: "Full",
+      appraisedValue: 475000,
+      marketCondition: "Stable",
+      neighborhoodRating: "Good",
+      siteArea: "0.19 acres",
+      grossLivingArea: 1980,
+      roomCount: 8,
+      bedroomCount: 4,
+      bathroomCount: 2.5,
+      garageSpaces: 2,
+      condition: "Good",
+      comparables: [
+        { address: "4402 Ridgeway Blvd, Sacramento CA", salePrice: 469000, saleDate: "2026-02-20", sqft: 1940, distance: "0.1 mi", adjustedValue: 472000 },
+        { address: "5110 Meadow Glen Dr, Sacramento CA", salePrice: 481000, saleDate: "2026-01-15", sqft: 2050, distance: "0.5 mi", adjustedValue: 477000 },
+        { address: "3985 Crestline Way, Sacramento CA", salePrice: 462000, saleDate: "2026-03-10", sqft: 1900, distance: "0.7 mi", adjustedValue: 469000 },
+      ],
+    },
+    decision: "pending",
+    milestones: [{ name: "Submitted to UW", by: "system", at: "2026-04-08T09:00:00.000Z" }],
+    compliance: {
+      qmStatus: "Non-QM",
+      atrCompliant: true,
+      hpml: false,
+      hoepa: false,
+      higherPricedCoveredTransaction: false,
+      stateLicenseRequired: false,
+      stateHighCostTest: "Pass",
+      tridToleranceCure: "None",
+      totalPointsAndFees: 2350,
+      pointsAndFeesThreshold: 3800,
+      pointsAndFeesPass: true,
+      flags: [
+        { code: "NQM-001", severity: "Info", description: "Loan originated as Non-QM product", regulation: "12 CFR 1026.43(e)" },
+        { code: "NQM-002", severity: "Info", description: "Income verified via bank statement deposits (non-standard documentation)", regulation: "12 CFR 1026.43(c)" },
+        { code: "NQM-010", severity: "Warning", description: "Large single deposit ($85K) in bank statement period — source and eligibility unverified", regulation: "12 CFR 1026.43(c)" },
+      ],
+    },
+    overlay: {
+      programName: "NQM Bank Statement",
+      investorName: "NQM Capital",
+      maxLTV: 90,
+      minFICO: 660,
+      maxDTI: 50,
+      minDSCR: null,
+      minReserves: 6,
+      checks: [
+        { category: "LTV", rule: "Max LTV", threshold: "≤ 90%", actual: "80%", result: "Pass" },
+        { category: "FICO", rule: "Min FICO", threshold: "≥ 660", actual: "718", result: "Pass" },
+        { category: "DTI", rule: "Max DTI", threshold: "≤ 50%", actual: "45.8% (with large deposit)", result: "Exception", notes: "DTI 45.8% with large deposit, 82.1% without — requires manual determination" },
+        { category: "Reserves", rule: "Min Reserves", threshold: "≥ 6 mo", actual: "6.3 mo", result: "Pass" },
+        { category: "Income", rule: "Income Documentation", threshold: "Bank statement documentation required", actual: "12mo personal bank statements provided", result: "Pass" },
+      ],
+    },
+  },
+};

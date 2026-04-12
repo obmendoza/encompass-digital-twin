@@ -1,0 +1,126 @@
+import type { Scenario, Condition } from "@twin/core";
+import { assetDepletionStarterConditions } from "../condition-templates.js";
+
+const starter: Condition[] = assetDepletionStarterConditions.map((c, i) => ({
+  id: `c${i + 1}`,
+  category: c.category,
+  source: c.source,
+  description: c.description,
+  status: c.status ?? "Open",
+  addedBy: "system",
+  addedAt: "2026-04-08T09:00:00.000Z",
+}));
+
+const edgeCondition: Condition = {
+  id: `c${assetDepletionStarterConditions.length + 1}`,
+  category: "PTA",
+  source: "UW",
+  description: "Verify eligible assets — 401(k) accessibility after early withdrawal penalty, RSU vesting schedule. Reported $2.8M, estimated eligible $1.86M",
+  status: "Open",
+  addedBy: "system",
+  addedAt: "2026-04-08T09:00:00.000Z",
+};
+
+export const nqmEdgeRestrictedAssets: Scenario = {
+  id: "nqm-edge-restricted-assets",
+  name: "NQM Edge — Asset Depletion with Restricted Funds",
+  description: "Reported $2.8M assets includes $1.6M 401(k) (60% accessible) and $400K restricted RSUs (25% vested). Eligible assets $1.86M vs reported $2.8M changes depletion income from $46,667 to $31,000/mo.",
+  loan: {
+    id: "2501000205",
+    nqmProgram: "AssetDepletion",
+    qualifyingMethod: "AssetDepletionMonths",
+    borrower: { fullName: "Rodriguez, Carmen L.", ssnMasked: "xxx-xx-9914", dob: "1968-02-17", maritalStatus: "Married" },
+    property: { street: "8820 Bel Air Canyon Rd", city: "Los Angeles", state: "CA", zip: "90077",
+      propertyType: "SFR Det.", units: 1, yearBuilt: 1988 },
+    transaction: {
+      loanPurpose: "Purchase", loanAmount: 720000, salesPrice: 1200000, appraisedValue: 1200000,
+      ltv: 60, cltv: 60, hcltv: 60, noteRate: 6.750, term: 360, amortType: "Fixed", lienPosition: 1,
+      occupancy: "Primary", isInvestmentProperty: false, piti: 6051.38,
+    },
+    qualifying: { housingRatio: 13.0, totalDti: 13.0, piPayment: 4669.80, qualifyingRate: 6.750 },
+    qualifyingWorksheet: {
+      method: "AssetDepletionMonths",
+      totalAssets: 2800000, depletionMonths: 60,
+      derivedMonthlyIncome: 46667,
+    },
+    income: {
+      totalMonthlyIncome: 46667,
+      notes: "ASSET ELIGIBILITY: Reported $2.8M includes restricted assets. 401(k) $1.6M (60% accessible = $960K after penalty), RSU $400K (25% vested = $100K), Liquid $800K. Eligible total: $1.86M → depletion income $31,000/mo. DTI swings from 11% to 16.5%.",
+    },
+    assets: { totalLiquid: 800000, totalRetirement: 1600000, reservesMonths: 48.2 },
+    credit: {
+      repScore: 755, tradelinesOpen: 5, tradelinesTotal: 8,
+      tradelines: [
+        { creditorName: "American Express Platinum", accountType: "Revolving", balance: 12000, monthlyPayment: 360, limit: 50000, monthsOpen: 144, late30: 0, late60: 0, late90: 0, isDisputed: false },
+        { creditorName: "Chase Sapphire Reserve", accountType: "Revolving", balance: 8500, monthlyPayment: 255, limit: 35000, monthsOpen: 96, late30: 0, late60: 0, late90: 0, isDisputed: false },
+        { creditorName: "Tesla Model S Loan", accountType: "Installment", balance: 55000, monthlyPayment: 980, limit: undefined, monthsOpen: 24, late30: 0, late60: 0, late90: 0, isDisputed: false },
+        { creditorName: "BofA Mortgage", accountType: "Mortgage", balance: 0, monthlyPayment: 0, limit: undefined, monthsOpen: 240, late30: 0, late60: 0, late90: 0, isDisputed: false },
+        { creditorName: "Citi Prestige", accountType: "Revolving", balance: 3400, monthlyPayment: 102, limit: 20000, monthsOpen: 72, late30: 0, late60: 0, late90: 0, isDisputed: false },
+      ],
+      liabilities: { totalMonthlyPayments: 1697, revolvingBalance: 23900, installmentBalance: 55000, mortgageBalance: 0, collectionsBalance: 0, totalBalance: 78900 },
+    },
+    conditions: [...starter, edgeCondition],
+    documents: [
+      { id: "d1", name: "60-Day Asset Statements — Brokerage.pdf", docType: "BankStatement", linkedConditionId: "c1", status: "Received", uploadedBy: "system", uploadedAt: "2026-04-08T09:00:00.000Z" },
+      { id: "d2", name: "401k Statement.pdf", docType: "Other", linkedConditionId: "c4", status: "Received", uploadedBy: "system", uploadedAt: "2026-04-08T09:00:00.000Z", notes: "$1.6M balance — early withdrawal penalty terms unclear" },
+      { id: "d3", name: "RSU Vesting Schedule.pdf", docType: "Other", linkedConditionId: "c4", status: "Received", uploadedBy: "system", uploadedAt: "2026-04-08T09:00:00.000Z", notes: "$400K total; 25% vested as of application date" },
+      { id: "d4", name: "Asset Depletion Worksheet.xlsx", docType: "Other", linkedConditionId: "c2", status: "Pending", uploadedBy: "system", uploadedAt: "2026-04-08T09:00:00.000Z" },
+    ],
+    appraisal: {
+      appraisalDate: "2026-04-02",
+      appraiserName: "Chen, Michael H.",
+      appraisalType: "Full",
+      appraisedValue: 1200000,
+      marketCondition: "Stable",
+      neighborhoodRating: "Good",
+      siteArea: "0.41 acres",
+      grossLivingArea: 4100,
+      roomCount: 14,
+      bedroomCount: 5,
+      bathroomCount: 4,
+      garageSpaces: 3,
+      condition: "Good",
+      comparables: [
+        { address: "8744 Bel Air Canyon Rd, Los Angeles CA", salePrice: 1185000, saleDate: "2026-01-28", sqft: 4050, distance: "0.2 mi", adjustedValue: 1192000 },
+        { address: "9105 Hillcrest Estates Dr, Los Angeles CA", salePrice: 1225000, saleDate: "2026-02-14", sqft: 4200, distance: "0.6 mi", adjustedValue: 1215000 },
+        { address: "8495 Canyon View Terrace, Los Angeles CA", salePrice: 1165000, saleDate: "2026-03-01", sqft: 3950, distance: "0.9 mi", adjustedValue: 1180000 },
+      ],
+    },
+    decision: "pending",
+    milestones: [{ name: "Submitted to UW", by: "system", at: "2026-04-08T09:00:00.000Z" }],
+    compliance: {
+      qmStatus: "Non-QM",
+      atrCompliant: true,
+      hpml: false,
+      hoepa: false,
+      higherPricedCoveredTransaction: false,
+      stateLicenseRequired: false,
+      stateHighCostTest: "Pass",
+      tridToleranceCure: "None",
+      totalPointsAndFees: 4400,
+      pointsAndFeesThreshold: 7200,
+      pointsAndFeesPass: true,
+      flags: [
+        { code: "NQM-001", severity: "Info", description: "Loan originated as Non-QM product", regulation: "12 CFR 1026.43(e)" },
+        { code: "NQM-004", severity: "Info", description: "Income qualified via asset depletion methodology", regulation: "12 CFR 1026.43(c)" },
+        { code: "NQM-014", severity: "Warning", description: "Reported assets include retirement and restricted equity accounts — eligible amount requires verification", regulation: "12 CFR 1026.43(c)" },
+      ],
+    },
+    overlay: {
+      programName: "NQM Asset Depletion",
+      investorName: "NQM Capital",
+      maxLTV: 75,
+      minFICO: 660,
+      maxDTI: 50,
+      minDSCR: null,
+      minReserves: 12,
+      checks: [
+        { category: "LTV", rule: "Max LTV", threshold: "≤ 75%", actual: "60%", result: "Pass" },
+        { category: "FICO", rule: "Min FICO", threshold: "≥ 660", actual: "755", result: "Pass" },
+        { category: "DTI", rule: "Max DTI", threshold: "≤ 50%", actual: "13.0% (reported) / 16.5% (eligible assets)", result: "Exception", notes: "DTI based on reported $2.8M assets; using eligible $1.86M raises DTI to 16.5% — both pass but asset eligibility must be confirmed" },
+        { category: "Reserves", rule: "Min Reserves", threshold: "≥ 12 mo", actual: "48.2 mo (reported)", result: "Pass" },
+        { category: "Income", rule: "Asset Eligibility", threshold: "Only accessible assets count", actual: "Restricted assets included in calculation", result: "Exception", notes: "401(k) penalty haircut and RSU vesting reduce eligible assets from $2.8M to estimated $1.86M" },
+      ],
+    },
+  },
+};

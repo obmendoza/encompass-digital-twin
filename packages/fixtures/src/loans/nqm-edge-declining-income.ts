@@ -1,0 +1,126 @@
+import type { Scenario, Condition } from "@twin/core";
+import { bankStatementStarterConditions } from "../condition-templates.js";
+
+const starter: Condition[] = bankStatementStarterConditions.map((c, i) => ({
+  id: `c${i + 1}`,
+  category: c.category,
+  source: c.source,
+  description: c.description,
+  status: c.status ?? "Open",
+  addedBy: "system",
+  addedAt: "2026-04-08T09:00:00.000Z",
+}));
+
+const edgeCondition: Condition = {
+  id: `c${bankStatementStarterConditions.length + 1}`,
+  category: "PTA",
+  source: "UW",
+  description: "Evaluate declining income trend (38.6% drop) — determine if 12-mo average or weighted recent average is appropriate",
+  status: "Open",
+  addedBy: "system",
+  addedAt: "2026-04-08T09:00:00.000Z",
+};
+
+export const nqmEdgeDecliningIncome: Scenario = {
+  id: "nqm-edge-declining-income",
+  name: "NQM Edge — Declining Income Trend",
+  description: "12-mo deposit average masks 38.6% income decline. Months 1-6 avg $22K vs months 7-12 avg $13.5K. UW must determine appropriate qualifying income.",
+  loan: {
+    id: "2501000202",
+    nqmProgram: "BankStatement12",
+    qualifyingMethod: "BankStatementDeposits",
+    borrower: { fullName: "Foster, Rachel M.", ssnMasked: "xxx-xx-7742", dob: "1979-04-11", maritalStatus: "Married" },
+    property: { street: "7821 Westbrook Terrace", city: "Phoenix", state: "AZ", zip: "85254",
+      propertyType: "SFR Det.", units: 1, yearBuilt: 2008 },
+    transaction: {
+      loanPurpose: "Purchase", loanAmount: 520000, salesPrice: 695000, appraisedValue: 695000,
+      ltv: 75, cltv: 75, hcltv: 75, noteRate: 7.250, term: 360, amortType: "Fixed", lienPosition: 1,
+      occupancy: "Primary", isInvestmentProperty: false, piti: 4518.83,
+    },
+    qualifying: { housingRatio: 50.9, totalDti: 50.9, piPayment: 3546.22, qualifyingRate: 7.250 },
+    qualifyingWorksheet: {
+      method: "BankStatementDeposits",
+      monthsCovered: 12, avgDeposits: 17750, expenseFactor: 0.5, nsfCount: 0,
+      derivedMonthlyIncome: 8875,
+    },
+    income: {
+      totalMonthlyIncome: 8875,
+      notes: "TREND ALERT: Months 1-6 avg $22,000, Months 7-12 avg $13,500. 38.6% decline. 12-mo average $17,750 may overstate current earning capacity.",
+    },
+    assets: { totalLiquid: 98500, totalRetirement: 55000, reservesMonths: 8.2 },
+    credit: {
+      repScore: 735, tradelinesOpen: 6, tradelinesTotal: 10,
+      tradelines: [
+        { creditorName: "American Express", accountType: "Revolving", balance: 5200, monthlyPayment: 156, limit: 25000, monthsOpen: 96, late30: 0, late60: 0, late90: 0, isDisputed: false },
+        { creditorName: "Chase Visa", accountType: "Revolving", balance: 2100, monthlyPayment: 63, limit: 15000, monthsOpen: 72, late30: 0, late60: 0, late90: 0, isDisputed: false },
+        { creditorName: "BMW Financial", accountType: "Installment", balance: 28500, monthlyPayment: 685, limit: undefined, monthsOpen: 42, late30: 0, late60: 0, late90: 0, isDisputed: false },
+        { creditorName: "Wells Fargo Mortgage", accountType: "Mortgage", balance: 312000, monthlyPayment: 2100, limit: undefined, monthsOpen: 96, late30: 0, late60: 0, late90: 0, isDisputed: false },
+        { creditorName: "Citi Rewards", accountType: "Revolving", balance: 880, monthlyPayment: 35, limit: 8000, monthsOpen: 60, late30: 0, late60: 0, late90: 0, isDisputed: false },
+        { creditorName: "Target RedCard", accountType: "Revolving", balance: 310, monthlyPayment: 18, limit: 2000, monthsOpen: 24, late30: 0, late60: 0, late90: 0, isDisputed: false },
+      ],
+      liabilities: { totalMonthlyPayments: 3057, revolvingBalance: 8490, installmentBalance: 28500, mortgageBalance: 312000, collectionsBalance: 0, totalBalance: 348990 },
+    },
+    conditions: [...starter, edgeCondition],
+    documents: [
+      { id: "d1", name: "12mo Bank Statements.pdf", docType: "BankStatement", linkedConditionId: "c1", status: "Received", uploadedBy: "system", uploadedAt: "2026-04-08T09:00:00.000Z" },
+      { id: "d2", name: "4506-C Signed.pdf", docType: "TaxReturn", linkedConditionId: "c3", status: "Pending", uploadedBy: "system", uploadedAt: "2026-04-08T09:00:00.000Z" },
+      { id: "d3", name: "Income Trend Analysis.xlsx", docType: "Other", status: "Pending", uploadedBy: "system", uploadedAt: "2026-04-08T09:00:00.000Z" },
+    ],
+    appraisal: {
+      appraisalDate: "2026-04-04",
+      appraiserName: "Thompson, Gary R.",
+      appraisalType: "Full",
+      appraisedValue: 695000,
+      marketCondition: "Stable",
+      neighborhoodRating: "Good",
+      siteArea: "0.28 acres",
+      grossLivingArea: 2850,
+      roomCount: 10,
+      bedroomCount: 5,
+      bathroomCount: 3,
+      garageSpaces: 2,
+      condition: "Good",
+      comparables: [
+        { address: "7905 Westbrook Terrace, Phoenix AZ", salePrice: 685000, saleDate: "2026-02-12", sqft: 2800, distance: "0.1 mi", adjustedValue: 691000 },
+        { address: "2210 Sunset Ridge Rd, Phoenix AZ", salePrice: 710000, saleDate: "2026-01-30", sqft: 2950, distance: "0.4 mi", adjustedValue: 698000 },
+        { address: "8340 Clearwater Dr, Phoenix AZ", salePrice: 672000, saleDate: "2026-03-05", sqft: 2720, distance: "0.8 mi", adjustedValue: 688000 },
+      ],
+    },
+    decision: "pending",
+    milestones: [{ name: "Submitted to UW", by: "system", at: "2026-04-08T09:00:00.000Z" }],
+    compliance: {
+      qmStatus: "Non-QM",
+      atrCompliant: true,
+      hpml: false,
+      hoepa: false,
+      higherPricedCoveredTransaction: false,
+      stateLicenseRequired: false,
+      stateHighCostTest: "Pass",
+      tridToleranceCure: "None",
+      totalPointsAndFees: 3200,
+      pointsAndFeesThreshold: 5200,
+      pointsAndFeesPass: true,
+      flags: [
+        { code: "NQM-001", severity: "Info", description: "Loan originated as Non-QM product", regulation: "12 CFR 1026.43(e)" },
+        { code: "NQM-002", severity: "Info", description: "Income verified via bank statement deposits (non-standard documentation)", regulation: "12 CFR 1026.43(c)" },
+        { code: "NQM-011", severity: "Warning", description: "Bank statement deposits show declining trend — 12-mo average may overstate current income", regulation: "12 CFR 1026.43(c)" },
+      ],
+    },
+    overlay: {
+      programName: "NQM Bank Statement",
+      investorName: "NQM Capital",
+      maxLTV: 90,
+      minFICO: 660,
+      maxDTI: 50,
+      minDSCR: null,
+      minReserves: 6,
+      checks: [
+        { category: "LTV", rule: "Max LTV", threshold: "≤ 90%", actual: "75%", result: "Pass" },
+        { category: "FICO", rule: "Min FICO", threshold: "≥ 660", actual: "735", result: "Pass" },
+        { category: "DTI", rule: "Max DTI", threshold: "≤ 50%", actual: "50.9%", result: "Exception", notes: "DTI 50.9% exceeds max at 12-mo average income; recent 6-mo trend would produce higher DTI — trend review required" },
+        { category: "Reserves", rule: "Min Reserves", threshold: "≥ 6 mo", actual: "8.2 mo", result: "Pass" },
+        { category: "Income", rule: "Income Documentation", threshold: "Bank statement documentation required", actual: "12mo personal bank statements provided", result: "Pass" },
+      ],
+    },
+  },
+};
