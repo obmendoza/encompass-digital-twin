@@ -10,7 +10,7 @@ export function DecisionBar({ loanId, current }: { loanId: string; current: UwDe
 
   const run = (decision: UwDecision) => {
     if (!rationale.trim()) { alert("Rationale required"); return; }
-    startTransition(() => actionSetDecision(loanId, decision, rationale));
+    startTransition(() => { actionSetDecision(loanId, decision, rationale); });
   };
 
   return (
