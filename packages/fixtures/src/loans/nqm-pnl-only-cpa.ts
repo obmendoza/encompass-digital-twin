@@ -97,5 +97,22 @@ export const nqmPnlOnlyCpa: Scenario = {
         { code: "NQM-005", severity: "Info", description: "Non-QM: income qualified via CPA-certified P&L (non-standard documentation)", regulation: "12 CFR 1026.43(c)" },
       ],
     },
+    // LTV 75 <= 80 Pass, FICO 720 >= 700 Pass, DTI 27.8 <= 45 Pass, Reserves 8.5 >= 6 Pass
+    overlay: {
+      programName: "NQM P&L",
+      investorName: "NQM Capital",
+      maxLTV: 80,
+      minFICO: 700,
+      maxDTI: 45,
+      minDSCR: null,
+      minReserves: 6,
+      checks: [
+        { category: "LTV", rule: "Max LTV", threshold: "≤ 80%", actual: "75%", result: "Pass" },
+        { category: "FICO", rule: "Min FICO", threshold: "≥ 700", actual: "720", result: "Pass" },
+        { category: "DTI", rule: "Max DTI", threshold: "≤ 45%", actual: "27.8%", result: "Pass" },
+        { category: "Reserves", rule: "Min Reserves", threshold: "≥ 6 mo", actual: "8.5 mo", result: "Pass" },
+        { category: "Income", rule: "Income Documentation", threshold: "CPA-certified P&L required", actual: "CPA-certified P&L provided", result: "Pass" },
+      ],
+    },
   },
 };

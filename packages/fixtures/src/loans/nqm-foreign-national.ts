@@ -88,5 +88,22 @@ export const nqmForeignNational: Scenario = {
         { code: "FN-001", severity: "Info", description: "Foreign national borrower — state-specific licensing verification required", regulation: "CA Fin. Code §22100" },
       ],
     },
+    // LTV 65 <= 70 Pass, DSCR 1.14 >= 1.0 Pass, Reserves 12.0 >= 12 Pass, Property Investment Pass, Occupancy Investment Pass
+    overlay: {
+      programName: "NQM Foreign National",
+      investorName: "NQM Capital",
+      maxLTV: 70,
+      minFICO: null,
+      maxDTI: null,
+      minDSCR: 1.0,
+      minReserves: 12,
+      checks: [
+        { category: "LTV", rule: "Max LTV", threshold: "≤ 70%", actual: "65%", result: "Pass" },
+        { category: "DSCR", rule: "Min DSCR", threshold: "≥ 1.0", actual: "1.14", result: "Pass" },
+        { category: "Reserves", rule: "Min Reserves", threshold: "≥ 12 mo", actual: "12.0 mo", result: "Pass" },
+        { category: "Property", rule: "Property Type", threshold: "Investment property required", actual: "Investment", result: "Pass" },
+        { category: "Occupancy", rule: "Occupancy", threshold: "Investment occupancy required", actual: "Investment", result: "Pass" },
+      ],
+    },
   },
 };

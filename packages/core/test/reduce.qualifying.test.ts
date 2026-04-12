@@ -36,6 +36,11 @@ function baseLoan(): Loan {
       totalPointsAndFees: 2500, pointsAndFeesThreshold: 4000, pointsAndFeesPass: true,
       flags: [],
     },
+    overlay: {
+      programName: "Test Program", investorName: "Test Investor",
+      maxLTV: 90, minFICO: 660, maxDTI: 50, minDSCR: null, minReserves: 6,
+      checks: [],
+    },
   };
 }
 

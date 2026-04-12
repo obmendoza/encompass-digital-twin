@@ -96,5 +96,22 @@ export const nqmBankstmt24moBusiness: Scenario = {
         { code: "NQM-002", severity: "Info", description: "Income verified via bank statement deposits (non-standard documentation)", regulation: "12 CFR 1026.43(c)" },
       ],
     },
+    // LTV 75 <= 90 Pass, FICO 700 >= 660 Pass, DTI 43.4 <= 50 Pass, Reserves 7.2 >= 6 Pass
+    overlay: {
+      programName: "NQM Bank Statement",
+      investorName: "NQM Capital",
+      maxLTV: 90,
+      minFICO: 660,
+      maxDTI: 50,
+      minDSCR: null,
+      minReserves: 6,
+      checks: [
+        { category: "LTV", rule: "Max LTV", threshold: "≤ 90%", actual: "75%", result: "Pass" },
+        { category: "FICO", rule: "Min FICO", threshold: "≥ 660", actual: "700", result: "Pass" },
+        { category: "DTI", rule: "Max DTI", threshold: "≤ 50%", actual: "43.4%", result: "Pass" },
+        { category: "Reserves", rule: "Min Reserves", threshold: "≥ 6 mo", actual: "7.2 mo", result: "Pass" },
+        { category: "Income", rule: "Income Documentation", threshold: "Bank statement documentation required", actual: "24mo business bank statements provided", result: "Pass" },
+      ],
+    },
   },
 };
