@@ -1,6 +1,8 @@
 import { api } from "@/lib/api-client";
 import { Section } from "@/components/encompass/Section";
 import { Field } from "@/components/encompass/Field";
+import { TabBar } from "@/components/encompass/TabBar";
+import { money, pct } from "@/lib/format";
 
 export default async function Page3({
   params,
@@ -16,26 +18,29 @@ export default async function Page3({
   const t = loan.transaction;
   const q = loan.qualifying;
   const w = loan.qualifyingWorksheet;
-  const money = (n: number) => `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   return (
     <>
-      <div className="flex gap-[2px] border-b-2 border-[#1f4478] mb-1">
-        <div className="px-3 py-[2px] bg-[#d4d0c8] border border-b-0 border-[#6b7a8f] text-[10px]">Page 1</div>
-        <div className="px-3 py-[2px] bg-[#d4d0c8] border border-b-0 border-[#6b7a8f] text-[10px]">Page 2</div>
-        <div className="px-3 py-[2px] bg-white font-bold border border-b-0 border-[#6b7a8f] text-[10px]">Page 3</div>
-      </div>
+      <TabBar
+        tabs={[
+          { label: "Transmittal", href: `/loan/${loanId}/transmittal` },
+          { label: "1003 Page 1", href: `/loan/${loanId}/1003/page1` },
+          { label: "1003 Page 2", href: `/loan/${loanId}/1003/page2` },
+          { label: "1003 Page 3", href: `/loan/${loanId}/1003/page3` },
+        ]}
+        activeLabel="1003 Page 3"
+      />
 
       <Section title="VII. Transaction Details">
         <Field label="Purpose" value={t.loanPurpose} />
         <Field label="Loan Amount" value={money(t.loanAmount)} />
         <Field label="Sales Price" value={t.salesPrice ? money(t.salesPrice) : "—"} />
         <Field label="Appraised Value" value={money(t.appraisedValue)} />
-        <Field label="LTV" value={`${t.ltv.toFixed(2)}%`} />
-        <Field label="CLTV" value={`${t.cltv.toFixed(2)}%`} />
-        <Field label="HCLTV" value={`${t.hcltv.toFixed(2)}%`} />
+        <Field label="LTV" value={pct(t.ltv)} />
+        <Field label="CLTV" value={pct(t.cltv)} />
+        <Field label="HCLTV" value={pct(t.hcltv)} />
         <Field label="Down Payment" value={t.salesPrice ? money(t.salesPrice - t.loanAmount) : "—"} />
-        <Field label="Note Rate" value={`${t.noteRate.toFixed(4)}%`} />
+        <Field label="Note Rate" value={pct(t.noteRate, 4)} />
         <Field label="Term (months)" value={t.term} />
         <Field label="Amort Type" value={t.amortType} />
         <Field label="Lien Position" value={t.lienPosition === 1 ? "1st" : "2nd"} />
@@ -49,19 +54,19 @@ export default async function Page3({
         <Field label="Program" value={loan.nqmProgram} />
         <Field label="Method" value={w.method} />
         <Field label="Derived Income" value={money(w.derivedMonthlyIncome)} />
-        <Field label="Expense Factor" value={w.expenseFactor !== undefined ? `${(w.expenseFactor * 100).toFixed(0)}%` : "—"} />
-        <Field label="NSF Count" value={w.nsfCount !== undefined ? w.nsfCount : "—"} />
-        <Field label="DSCR Ratio" value={t.dscrRatio !== undefined ? t.dscrRatio.toFixed(2) : "—"} />
-        <Field label="Months Covered" value={w.monthsCovered ?? "—"} />
-        <Field label="Avg Deposits" value={w.avgDeposits ? money(w.avgDeposits) : "—"} />
-        <Field label="Total Assets" value={w.totalAssets ? money(w.totalAssets) : "—"} />
-        <Field label="Depletion (mo)" value={w.depletionMonths ?? "—"} />
-        <Field label="Gross 1099" value={w.gross1099 ? money(w.gross1099) : "—"} />
-        <Field label="CPA Net Inc." value={w.cpaCertifiedNetIncome ? money(w.cpaCertifiedNetIncome) : "—"} />
-        <Field label="Housing Ratio" value={`${q.housingRatio.toFixed(2)}%`} />
-        <Field label="Total DTI" value={`${q.totalDti.toFixed(2)}%`} />
+        <Field label="Expense Factor" value={w.expenseFactor != null ? `${(w.expenseFactor * 100).toFixed(0)}%` : "—"} />
+        <Field label="NSF Count" value={w.nsfCount != null ? w.nsfCount : "—"} />
+        <Field label="DSCR Ratio" value={t.dscrRatio != null ? t.dscrRatio.toFixed(2) : "—"} />
+        <Field label="Months Covered" value={w.monthsCovered != null ? w.monthsCovered : "—"} />
+        <Field label="Avg Deposits" value={w.avgDeposits != null ? money(w.avgDeposits) : "—"} />
+        <Field label="Total Assets" value={w.totalAssets != null ? money(w.totalAssets) : "—"} />
+        <Field label="Depletion (mo)" value={w.depletionMonths != null ? w.depletionMonths : "—"} />
+        <Field label="Gross 1099" value={w.gross1099 != null ? money(w.gross1099) : "—"} />
+        <Field label="CPA Net Inc." value={w.cpaCertifiedNetIncome != null ? money(w.cpaCertifiedNetIncome) : "—"} />
+        <Field label="Housing Ratio" value={pct(q.housingRatio)} />
+        <Field label="Total DTI" value={pct(q.totalDti)} />
         <Field label="PI Payment" value={money(q.piPayment)} />
-        <Field label="Qual Rate" value={`${q.qualifyingRate.toFixed(4)}%`} />
+        <Field label="Qual Rate" value={pct(q.qualifyingRate, 4)} />
       </Section>
 
       <Section title="IX. Declarations">

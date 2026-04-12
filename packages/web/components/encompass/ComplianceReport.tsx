@@ -1,13 +1,10 @@
 "use client";
 
 import type { Loan, ComplianceFlag } from "@twin/core";
+import { money } from "@/lib/format";
 
 interface Props {
   loan: Loan;
-}
-
-function money(n: number) {
-  return `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function BoolPill({ value, trueLabel = "Yes", falseLabel = "No" }: { value: boolean; trueLabel?: string; falseLabel?: string }) {

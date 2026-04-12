@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { Loan, Tradeline } from "@twin/core";
+import { money } from "@/lib/format";
 
 interface Props {
   loan: Loan;
@@ -9,10 +10,6 @@ interface Props {
 
 type SortKey = "creditorName" | "accountType" | "balance" | "monthlyPayment";
 type SortDir = "asc" | "desc";
-
-function money(n: number) {
-  return `$${n.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
-}
 
 function utilization(t: Tradeline): string {
   if (t.accountType !== "Revolving" || t.limit == null || t.limit === 0) return "—";
@@ -112,7 +109,7 @@ export function CreditReport({ loan }: Props) {
               ) : (
                 sorted.map((t, i) => (
                   <tr
-                    key={i}
+                    key={t.creditorName + '-' + i}
                     className={"border-b border-dotted border-[#dcd7c0] " + (i % 2 === 0 ? "bg-white" : "bg-[#f7f5ee]")}
                   >
                     <td className="px-2 py-[1px] text-[#888]">{i + 1}</td>

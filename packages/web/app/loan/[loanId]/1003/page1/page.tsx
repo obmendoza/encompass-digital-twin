@@ -1,6 +1,8 @@
 import { api } from "@/lib/api-client";
 import { Section } from "@/components/encompass/Section";
 import { Field } from "@/components/encompass/Field";
+import { TabBar } from "@/components/encompass/TabBar";
+import { money } from "@/lib/format";
 
 export default async function Page1({
   params,
@@ -18,11 +20,15 @@ export default async function Page1({
 
   return (
     <>
-      <div className="flex gap-[2px] border-b-2 border-[#1f4478] mb-1">
-        <div className="px-3 py-[2px] bg-white font-bold border border-b-0 border-[#6b7a8f] text-[10px]">Page 1</div>
-        <div className="px-3 py-[2px] bg-[#d4d0c8] border border-b-0 border-[#6b7a8f] text-[10px]">Page 2</div>
-        <div className="px-3 py-[2px] bg-[#d4d0c8] border border-b-0 border-[#6b7a8f] text-[10px]">Page 3</div>
-      </div>
+      <TabBar
+        tabs={[
+          { label: "Transmittal", href: `/loan/${loanId}/transmittal` },
+          { label: "1003 Page 1", href: `/loan/${loanId}/1003/page1` },
+          { label: "1003 Page 2", href: `/loan/${loanId}/1003/page2` },
+          { label: "1003 Page 3", href: `/loan/${loanId}/1003/page3` },
+        ]}
+        activeLabel="1003 Page 1"
+      />
 
       <Section title="I. Borrower Information">
         <Field label="Borrower Name" value={b.fullName} />
@@ -51,7 +57,7 @@ export default async function Page1({
         <Field label="Position / Title" value="—" />
         <Field label="Yrs on Job" value="—" />
         <Field label="Business Phone" value="—" />
-        <Field label="Monthly Income" value={`$${loan.income.totalMonthlyIncome.toLocaleString()}`} />
+        <Field label="Monthly Income" value={money(loan.income.totalMonthlyIncome)} />
         <Field label="Self-Employed" value={
           ["BankStatement12", "BankStatement24", "1099Only", "PnL"].includes(loan.nqmProgram) ? "Yes" : "No"
         } />

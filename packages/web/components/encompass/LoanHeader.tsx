@@ -1,4 +1,5 @@
 import type { Loan } from "@twin/core";
+import { money, pct } from "@/lib/format";
 
 function Cell({ label, value }: { label: string; value: string | number }) {
   return (
@@ -15,10 +16,10 @@ export function LoanHeader({ loan }: { loan: Loan }) {
       <Cell label="Borrower" value={loan.borrower.fullName} />
       <Cell label="Loan #" value={loan.id} />
       <Cell label="Program" value={loan.nqmProgram} />
-      <Cell label="Loan Amt" value={`$${loan.transaction.loanAmount.toLocaleString()}`} />
-      <Cell label="Rate" value={`${loan.transaction.noteRate.toFixed(4)}%`} />
-      <Cell label="LTV/CLTV" value={`${loan.transaction.ltv.toFixed(2)} / ${loan.transaction.cltv.toFixed(2)}`} />
-      <Cell label="DTI" value={`${loan.qualifying.housingRatio.toFixed(1)} / ${loan.qualifying.totalDti.toFixed(1)}`} />
+      <Cell label="Loan Amt" value={money(loan.transaction.loanAmount)} />
+      <Cell label="Rate" value={pct(loan.transaction.noteRate, 4)} />
+      <Cell label="LTV/CLTV" value={`${pct(loan.transaction.ltv)} / ${pct(loan.transaction.cltv)}`} />
+      <Cell label="DTI" value={`${pct(loan.qualifying.housingRatio, 1)} / ${pct(loan.qualifying.totalDti, 1)}`} />
       <Cell label="Decision" value={loan.decision} />
     </div>
   );

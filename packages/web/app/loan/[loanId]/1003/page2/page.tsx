@@ -1,6 +1,8 @@
 import { api } from "@/lib/api-client";
 import { Section } from "@/components/encompass/Section";
 import { Field } from "@/components/encompass/Field";
+import { TabBar } from "@/components/encompass/TabBar";
+import { money, pct } from "@/lib/format";
 
 export default async function Page2({
   params,
@@ -15,20 +17,23 @@ export default async function Page2({
   }
   const a = loan.assets;
   const c = loan.credit;
-  const money = (n: number) => `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   return (
     <>
-      <div className="flex gap-[2px] border-b-2 border-[#1f4478] mb-1">
-        <div className="px-3 py-[2px] bg-[#d4d0c8] border border-b-0 border-[#6b7a8f] text-[10px]">Page 1</div>
-        <div className="px-3 py-[2px] bg-white font-bold border border-b-0 border-[#6b7a8f] text-[10px]">Page 2</div>
-        <div className="px-3 py-[2px] bg-[#d4d0c8] border border-b-0 border-[#6b7a8f] text-[10px]">Page 3</div>
-      </div>
+      <TabBar
+        tabs={[
+          { label: "Transmittal", href: `/loan/${loanId}/transmittal` },
+          { label: "1003 Page 1", href: `/loan/${loanId}/1003/page1` },
+          { label: "1003 Page 2", href: `/loan/${loanId}/1003/page2` },
+          { label: "1003 Page 3", href: `/loan/${loanId}/1003/page3` },
+        ]}
+        activeLabel="1003 Page 2"
+      />
 
       <Section title="IV. Assets">
         <Field label="Total Liquid" value={money(a.totalLiquid)} />
         <Field label="Total Retirement" value={money(a.totalRetirement)} />
-        <Field label="Reserves (months)" value={a.reservesMonths.toFixed(1)} />
+        <Field label="Reserves (months)" value={a.reservesMonths != null ? a.reservesMonths.toFixed(1) : "—"} />
         <Field label="Total Assets" value={money(a.totalLiquid + a.totalRetirement)} />
         <Field label="Gift Funds" value="—" />
         <Field label="Checking" value="—" />
@@ -55,7 +60,7 @@ export default async function Page2({
         <Field label="Other" value="—" />
         <Field label="Alimony / CS" value="—" />
         <Field label="Student Loans" value="—" />
-        <Field label="Total DTI" value={`${loan.qualifying.totalDti.toFixed(2)}%`} />
+        <Field label="Total DTI" value={pct(loan.qualifying.totalDti)} />
       </Section>
     </>
   );

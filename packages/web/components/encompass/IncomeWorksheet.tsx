@@ -3,13 +3,10 @@
 import { useState, useMemo, useTransition } from "react";
 import type { Loan, QualifyingIncomeWorksheet, QualifyingMethod } from "@twin/core";
 import { actionRecalcIncome } from "@/app/loan/[loanId]/actions";
+import { money, pct } from "@/lib/format";
 
 interface Props {
   loan: Loan;
-}
-
-function money(n: number) {
-  return `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function InputField({ label, value, onChange, type = "number", readOnly = false }: {
@@ -115,11 +112,11 @@ export function IncomeWorksheet({ loan }: Props) {
           <div className="enc-field"><label>Method</label><div className="v">{method}</div></div>
           <div className="enc-field"><label>Program</label><div className="v">{loan.nqmProgram}</div></div>
           <div className="enc-field"><label>Current Income</label><div className="v">{money(loan.qualifyingWorksheet.derivedMonthlyIncome)}</div></div>
-          <div className="enc-field"><label>Housing Ratio</label><div className="v">{loan.qualifying.housingRatio.toFixed(2)}%</div></div>
-          <div className="enc-field"><label>Total DTI</label><div className="v">{loan.qualifying.totalDti.toFixed(2)}%</div></div>
+          <div className="enc-field"><label>Housing Ratio</label><div className="v">{pct(loan.qualifying.housingRatio)}</div></div>
+          <div className="enc-field"><label>Total DTI</label><div className="v">{pct(loan.qualifying.totalDti)}</div></div>
           <div className="enc-field"><label>PITI</label><div className="v">{money(loan.transaction.piti)}</div></div>
           <div className="enc-field"><label>PI Payment</label><div className="v">{money(loan.qualifying.piPayment)}</div></div>
-          <div className="enc-field"><label>Qual Rate</label><div className="v">{loan.qualifying.qualifyingRate.toFixed(4)}%</div></div>
+          <div className="enc-field"><label>Qual Rate</label><div className="v">{pct(loan.qualifying.qualifyingRate, 4)}</div></div>
         </div>
       </div>
 
