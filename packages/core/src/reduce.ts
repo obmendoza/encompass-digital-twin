@@ -187,6 +187,54 @@ export function reduce(
       return log(next);
     }
 
+    case "AddDocument": {
+      return log(withLoan(state, action.loanId, (l) => {
+        const nextId = `d${l.documents.length + 1}`;
+        const doc = {
+          id: nextId,
+          name: action.doc.name,
+          docType: action.doc.docType,
+          status: "Pending" as const,
+          uploadedBy: action.actor.id,
+          uploadedAt: at,
+        };
+        return { ...l, documents: [...l.documents, doc] };
+      }));
+    }
+
+    case "LinkDocument": {
+      const l0 = requireLoan(state, action.loanId);
+      const dIdx = l0.documents.findIndex((d) => d.id === action.documentId);
+      if (dIdx === -1) {
+        throw new ActionError("DOCUMENT_NOT_FOUND",
+          `document '${action.documentId}' not found`, { documentId: action.documentId });
+      }
+      const cExists = l0.conditions.some((c) => c.id === action.conditionId);
+      if (!cExists) {
+        throw new ActionError("CONDITION_NOT_FOUND",
+          `condition '${action.conditionId}' not found`, { conditionId: action.conditionId });
+      }
+      return log(withLoan(state, action.loanId, (l) => {
+        const ds = [...l.documents];
+        ds[dIdx] = { ...ds[dIdx]!, linkedConditionId: action.conditionId };
+        return { ...l, documents: ds };
+      }));
+    }
+
+    case "UpdateDocumentStatus": {
+      const l0 = requireLoan(state, action.loanId);
+      const dIdx = l0.documents.findIndex((d) => d.id === action.documentId);
+      if (dIdx === -1) {
+        throw new ActionError("DOCUMENT_NOT_FOUND",
+          `document '${action.documentId}' not found`, { documentId: action.documentId });
+      }
+      return log(withLoan(state, action.loanId, (l) => {
+        const ds = [...l.documents];
+        ds[dIdx] = { ...ds[dIdx]!, status: action.status, notes: action.notes ?? ds[dIdx]!.notes };
+        return { ...l, documents: ds };
+      }));
+    }
+
     default:
       return state;
   }
