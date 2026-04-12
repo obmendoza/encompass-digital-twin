@@ -1,7 +1,7 @@
 "use client";
 
 import { useTransition } from "react";
-import type { Condition } from "@twin/core";
+import type { Condition, Document } from "@twin/core";
 import { actionClearCondition, actionWaiveCondition, actionRemoveCondition } from "@/app/loan/[loanId]/actions";
 
 const PILL: Record<Condition["status"], string> = {
@@ -12,7 +12,7 @@ const PILL: Record<Condition["status"], string> = {
   Waived: "enc-pill enc-pill--waived",
 };
 
-export function ConditionsTable({ loanId, conditions }: { loanId: string; conditions: Condition[] }) {
+export function ConditionsTable({ loanId, conditions, documents = [] }: { loanId: string; conditions: Condition[]; documents?: Document[] }) {
   const [pending, startTransition] = useTransition();
 
   return (
@@ -25,6 +25,7 @@ export function ConditionsTable({ loanId, conditions }: { loanId: string; condit
           <th className="text-left px-1 py-[2px] border-r border-[#08407d]">Description</th>
           <th className="text-left px-1 py-[2px] border-r border-[#08407d]">Status</th>
           <th className="text-left px-1 py-[2px] border-r border-[#08407d]">Added</th>
+          <th className="text-left px-1 py-[2px] border-r border-[#08407d]">Docs</th>
           <th className="text-left px-1 py-[2px]">Actions</th>
         </tr>
       </thead>
@@ -37,6 +38,7 @@ export function ConditionsTable({ loanId, conditions }: { loanId: string; condit
             <td className="px-1">{c.description}</td>
             <td className="px-1"><span className={PILL[c.status]}>{c.status}</span></td>
             <td className="px-1">{c.addedAt.slice(5, 10).replace("-", "/")}</td>
+            <td className="px-1 text-center">{documents.filter((d) => d.linkedConditionId === c.id).length || "—"}</td>
             <td className="px-1 flex gap-1">
               <button className="enc-btn" disabled={pending}
                 onClick={() => startTransition(() => { actionClearCondition(loanId, c.id, "verified"); })}>
