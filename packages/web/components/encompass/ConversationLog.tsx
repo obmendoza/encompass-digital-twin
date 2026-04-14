@@ -4,18 +4,20 @@ import { useState } from "react";
 import type { LoggedAction, Action } from "@twin/core";
 
 type ActorFilter = "All" | "Human" | "Agent";
-type CategoryFilter = "All" | "Conditions" | "Decisions" | "Documents" | "Other";
+type CategoryFilter = "All" | "Conditions" | "Decisions" | "Documents" | "Agent" | "Other";
 
 const CONDITION_TYPES = new Set([
   "AddCondition", "UpdateCondition", "ClearCondition", "WaiveCondition", "RemoveCondition",
 ]);
 const DECISION_TYPES = new Set(["SetDecision", "AdvanceMilestone"]);
 const DOCUMENT_TYPES = new Set(["AddDocument", "LinkDocument", "UpdateDocumentStatus"]);
+const AGENT_TYPES = new Set(["RecordAgentStep", "StageRecommendation", "AcceptRecommendation", "ClearRecommendation"]);
 
 function getCategory(type: Action["type"]): CategoryFilter {
   if (CONDITION_TYPES.has(type)) return "Conditions";
   if (DECISION_TYPES.has(type)) return "Decisions";
   if (DOCUMENT_TYPES.has(type)) return "Documents";
+  if (AGENT_TYPES.has(type)) return "Agent";
   return "Other";
 }
 
@@ -35,6 +37,10 @@ function formatActionType(type: Action["type"]): string {
     case "AddDocument": return "Add Document";
     case "LinkDocument": return "Link Document";
     case "UpdateDocumentStatus": return "Update Doc Status";
+    case "RecordAgentStep": return "Agent Step";
+    case "StageRecommendation": return "Stage Recommendation";
+    case "AcceptRecommendation": return "Accept Recommendation";
+    case "ClearRecommendation": return "Clear Recommendation";
     default: return type;
   }
 }
@@ -69,6 +75,23 @@ function formatDetail(action: Action): string {
       return `Linked document ${action.documentId} → condition ${action.conditionId}`;
     case "UpdateDocumentStatus":
       return `Document ${action.documentId} status → ${action.status}`;
+    case "RecordAgentStep": {
+      const step = action.step;
+      const icon = ({
+        thinking: "💭",
+        tool_call: "🔧",
+        tool_result: "📊",
+        message: "💬",
+        decision: "📋",
+      } as Record<string, string>)[step.phase] ?? "🤖";
+      return `${icon} [${step.phase}] ${step.content.slice(0, 120)}${step.content.length > 120 ? "…" : ""}`;
+    }
+    case "StageRecommendation":
+      return `Staged recommendation: ${action.recommendation.recommendation} (${Math.round(action.recommendation.confidence * 100)}% confidence)`;
+    case "AcceptRecommendation":
+      return `Accepted recommendation for loan ${action.loanId}`;
+    case "ClearRecommendation":
+      return `Cleared recommendation for loan ${action.loanId}`;
     default:
       return "";
   }
@@ -123,7 +146,7 @@ export function ConversationLog({ entries }: { entries: LoggedAction[] }) {
         </div>
         <div className="flex items-center gap-1">
           <label className="font-semibold text-[#1a2b4a]">Category:</label>
-          {(["All", "Conditions", "Decisions", "Documents", "Other"] as CategoryFilter[]).map((v) => (
+          {(["All", "Conditions", "Decisions", "Documents", "Agent", "Other"] as CategoryFilter[]).map((v) => (
             <button
               key={v}
               onClick={() => setCategoryFilter(v)}

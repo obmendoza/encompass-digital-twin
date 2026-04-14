@@ -5,6 +5,8 @@ import { DecisionBar } from "@/components/encompass/DecisionBar";
 import { ConditionsTable } from "@/components/encompass/ConditionsTable";
 import { ConditionModal } from "@/components/encompass/ConditionModal";
 import { TabBar } from "@/components/encompass/TabBar";
+import { RunAgentButton } from "@/components/encompass/RunAgentButton";
+import { RecommendationPanel } from "@/components/encompass/RecommendationPanel";
 import { money, pct } from "@/lib/format";
 
 export default async function TransmittalPage({
@@ -92,6 +94,15 @@ export default async function TransmittalPage({
       </Section>
 
       <DecisionBar loanId={loan.id} current={loan.decision} />
+
+      <div className="mt-2 flex items-center gap-3 p-2 bg-[#f6f8fb] border border-[#6b7a8f]">
+        <span className="text-[11px] font-bold text-[#1f4478]">AI Assist:</span>
+        <RunAgentButton loanId={loan.id} hasRecommendation={!!loan.pendingRecommendation} />
+      </div>
+
+      {loan.pendingRecommendation && (
+        <RecommendationPanel loanId={loan.id} rec={loan.pendingRecommendation} />
+      )}
 
       <div className="enc-sec mt-2">
         <h4>Conditions — {openCount} Open · {rcvdCount} Received · {clrCount} Cleared</h4>
