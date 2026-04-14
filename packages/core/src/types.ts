@@ -36,6 +36,25 @@ export type QualifyingMethod =
 export type UwDecision =
   | "pending" | "approved" | "suspended" | "counter" | "denied";
 
+export type AgentStepPhase = "thinking" | "tool_call" | "tool_result" | "message" | "decision";
+
+export interface AgentStep {
+  phase: AgentStepPhase;
+  content: string;
+  metadata?: Record<string, unknown>;
+  at: string;
+}
+
+export interface PendingRecommendation {
+  recommendation: UwDecision;
+  rationale: string;
+  confidence: number;
+  conditions: string[];
+  trace: AgentStep[];
+  stagedAt: string;
+  stagedBy: string;
+}
+
 export type ConditionCategory = "PTA" | "PTD" | "PTF" | "PTP";
 export type ConditionSource = "UW" | "AUS" | "Compliance" | "Investor";
 export type ConditionStatus =
@@ -266,6 +285,7 @@ export interface Loan {
   conditions: Condition[];
   documents: Document[];
   decision: UwDecision;
+  pendingRecommendation?: PendingRecommendation;
   milestones: Milestone[];
   compliance: ComplianceSnapshot;
   overlay: ProgramOverlay;
@@ -305,4 +325,8 @@ export type Action =
   | { type: "RemoveCondition"; loanId: LoanId; conditionId: ConditionId; actor: Actor }
   | { type: "AddDocument"; loanId: LoanId; doc: { name: string; docType: DocumentType }; actor: Actor }
   | { type: "LinkDocument"; loanId: LoanId; documentId: DocumentId; conditionId: ConditionId; actor: Actor }
-  | { type: "UpdateDocumentStatus"; loanId: LoanId; documentId: DocumentId; status: DocumentStatus; notes?: string; actor: Actor };
+  | { type: "UpdateDocumentStatus"; loanId: LoanId; documentId: DocumentId; status: DocumentStatus; notes?: string; actor: Actor }
+  | { type: "RecordAgentStep"; loanId: LoanId; step: AgentStep; actor: Actor }
+  | { type: "StageRecommendation"; loanId: LoanId; recommendation: { recommendation: UwDecision; rationale: string; confidence: number; conditions: string[]; trace: AgentStep[] }; actor: Actor }
+  | { type: "AcceptRecommendation"; loanId: LoanId; actor: Actor }
+  | { type: "ClearRecommendation"; loanId: LoanId; actor: Actor };

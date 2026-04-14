@@ -201,6 +201,57 @@ export function buildOpenApiSpec() {
           responses: { "200": { description: "Updated loan" } },
         },
       },
+      "/loans/{loanId}/agent-step": {
+        post: {
+          summary: "Record an agent reasoning step (no loan mutation, audit-log only)",
+          parameters: [{ name: "loanId", in: "path", required: true, schema: { type: "string" } }],
+          requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["step", "actor"], properties: {
+            step: { type: "object", required: ["phase", "content", "at"], properties: {
+              phase: { type: "string", enum: ["thinking", "tool_call", "tool_result", "message", "decision"] },
+              content: { type: "string" },
+              metadata: { type: "object" },
+              at: { type: "string" },
+            } },
+            actor: { type: "object", required: ["kind", "id"], properties: { kind: { type: "string", enum: ["human", "agent"] }, id: { type: "string" } } },
+          } } } } },
+          responses: { "200": { description: "{ ok: true }" }, "400": { description: "LOAN_NOT_FOUND" } },
+        },
+      },
+      "/loans/{loanId}/recommendation": {
+        post: {
+          summary: "Stage a pending recommendation from the agent",
+          parameters: [{ name: "loanId", in: "path", required: true, schema: { type: "string" } }],
+          requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["recommendation", "actor"], properties: {
+            recommendation: { type: "object", required: ["recommendation", "rationale", "confidence", "conditions", "trace"], properties: {
+              recommendation: { type: "string", enum: ["pending", "approved", "suspended", "counter", "denied"] },
+              rationale: { type: "string" },
+              confidence: { type: "number", minimum: 0, maximum: 1 },
+              conditions: { type: "array", items: { type: "string" } },
+              trace: { type: "array", items: { type: "object" } },
+            } },
+            actor: { type: "object", required: ["kind", "id"], properties: { kind: { type: "string", enum: ["human", "agent"] }, id: { type: "string" } } },
+          } } } } },
+          responses: { "200": { description: "Updated loan with pendingRecommendation set" }, "400": { description: "LOAN_NOT_FOUND" } },
+        },
+        delete: {
+          summary: "Clear pending recommendation without applying it",
+          parameters: [{ name: "loanId", in: "path", required: true, schema: { type: "string" } }],
+          requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["actor"], properties: {
+            actor: { type: "object", required: ["kind", "id"], properties: { kind: { type: "string", enum: ["human", "agent"] }, id: { type: "string" } } },
+          } } } } },
+          responses: { "200": { description: "Updated loan with pendingRecommendation cleared" }, "400": { description: "INVALID_TRANSITION if no pending recommendation" } },
+        },
+      },
+      "/loans/{loanId}/recommendation/accept": {
+        post: {
+          summary: "Accept staged recommendation — converts it to the loan decision",
+          parameters: [{ name: "loanId", in: "path", required: true, schema: { type: "string" } }],
+          requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["actor"], properties: {
+            actor: { type: "object", required: ["kind", "id"], properties: { kind: { type: "string", enum: ["human", "agent"] }, id: { type: "string" } } },
+          } } } } },
+          responses: { "200": { description: "Updated loan with decision set and pendingRecommendation cleared" }, "400": { description: "INVALID_TRANSITION if no pending recommendation" } },
+        },
+      },
       "/loans/{loanId}/documents/{docId}/link": {
         post: {
           summary: "Link a document to a condition",
