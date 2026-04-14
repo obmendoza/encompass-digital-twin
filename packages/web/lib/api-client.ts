@@ -1,5 +1,5 @@
 import type {
-  Loan, NewCondition, QualifyingIncomeWorksheet, UwDecision, Actor, Condition, LoggedAction, Document,
+  Loan, NewCondition, QualifyingIncomeWorksheet, UwDecision, Actor, Condition, LoggedAction, Document, PendingRecommendation,
 } from "@twin/core";
 
 const base = process.env.TWIN_API_URL ?? "http://127.0.0.1:4000";
@@ -69,5 +69,17 @@ export const api = {
   linkDocument: (loanId: string, docId: string, conditionId: string, actor: Actor) =>
     req<Loan>(`/loans/${loanId}/documents/${docId}/link`, {
       method: "POST", body: JSON.stringify({ conditionId, actor }),
+    }),
+  stageRecommendation: (loanId: string, rec: { recommendation: string; rationale: string; confidence: number; conditions: string[]; trace: unknown[] }, actor: Actor) =>
+    req<Loan>(`/loans/${loanId}/recommendation`, {
+      method: "POST", body: JSON.stringify({ recommendation: rec, actor }),
+    }),
+  acceptRecommendation: (loanId: string, actor: Actor) =>
+    req<Loan>(`/loans/${loanId}/recommendation/accept`, {
+      method: "POST", body: JSON.stringify({ actor }),
+    }),
+  clearRecommendation: (loanId: string, actor: Actor) =>
+    req<Loan>(`/loans/${loanId}/recommendation`, {
+      method: "DELETE", body: JSON.stringify({ actor }),
     }),
 };
