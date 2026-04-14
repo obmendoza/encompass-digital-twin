@@ -70,3 +70,33 @@ export async function actionUpdateDocumentStatus(loanId: string, docId: string, 
 export async function actionLinkDocument(loanId: string, docId: string, conditionId: string) {
   return run(loanId, () => api.linkDocument(loanId, docId, conditionId, humanActor));
 }
+
+export async function actionRunAgent(loanId: string): Promise<ActionResult> {
+  const agentUrl = process.env.AGENT_SERVICE_URL ?? "http://localhost:8000";
+  try {
+    const res = await fetch(`${agentUrl}/api/twin/underwrite/${loanId}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      cache: "no-store",
+      next: { revalidate: 0 },
+      signal: AbortSignal.timeout(90_000),
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`Agent service returned ${res.status}: ${body.slice(0, 200)}`);
+    }
+    revalidatePath(`/loan/${loanId}`, "layout");
+    return { ok: true };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, error: { code: "AGENT_ERROR", message: msg } };
+  }
+}
+
+export async function actionAcceptRecommendation(loanId: string) {
+  return run(loanId, () => api.acceptRecommendation(loanId, humanActor));
+}
+
+export async function actionClearRecommendation(loanId: string) {
+  return run(loanId, () => api.clearRecommendation(loanId, humanActor));
+}
