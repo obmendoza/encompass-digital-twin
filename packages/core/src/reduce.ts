@@ -235,6 +235,55 @@ export function reduce(
       }));
     }
 
+    case "RecordAgentStep": {
+      requireLoan(state, action.loanId);
+      return log(state);
+    }
+
+    case "StageRecommendation": {
+      const next = withLoan(state, action.loanId, (l) => ({
+        ...l,
+        pendingRecommendation: {
+          recommendation: action.recommendation.recommendation,
+          rationale: action.recommendation.rationale,
+          confidence: action.recommendation.confidence,
+          conditions: action.recommendation.conditions,
+          trace: action.recommendation.trace,
+          stagedAt: at,
+          stagedBy: action.actor.id,
+        },
+      }));
+      return log(next);
+    }
+
+    case "AcceptRecommendation": {
+      const l0 = requireLoan(state, action.loanId);
+      if (!l0.pendingRecommendation) {
+        throw new ActionError("INVALID_TRANSITION",
+          "no pending recommendation to accept", { loanId: action.loanId });
+      }
+      const rec = l0.pendingRecommendation;
+      const next = withLoan(state, action.loanId, (l) => ({
+        ...l,
+        decision: rec.recommendation,
+        pendingRecommendation: undefined,
+        milestones: [...l.milestones, milestone(`Decision:${rec.recommendation} (agent-accepted)`, action.actor.id, at)],
+      }));
+      return log(next);
+    }
+
+    case "ClearRecommendation": {
+      const l0 = requireLoan(state, action.loanId);
+      if (!l0.pendingRecommendation) {
+        throw new ActionError("INVALID_TRANSITION",
+          "no pending recommendation to clear", { loanId: action.loanId });
+      }
+      const next = withLoan(state, action.loanId, (l) => ({
+        ...l, pendingRecommendation: undefined,
+      }));
+      return log(next);
+    }
+
     default:
       return state;
   }
