@@ -6,6 +6,7 @@ import { registerWorldRoutes } from "./routes/world.js";
 import { registerLoanRoutes } from "./routes/loans.js";
 import { registerConditionRoutes } from "./routes/conditions.js";
 import { registerDocumentRoutes } from "./routes/documents.js";
+import { registerRecommendationRoutes } from "./routes/recommendation.js";
 import { buildOpenApiSpec } from "./openapi.js";
 
 export interface BuildOpts {
@@ -30,6 +31,7 @@ export function buildServer(opts: BuildOpts = {}): { app: FastifyInstance; store
   registerLoanRoutes(app, store);
   registerConditionRoutes(app, store);
   registerDocumentRoutes(app, store);
+  registerRecommendationRoutes(app, store);
 
   app.get("/health", async () => ({ ok: true }));
 

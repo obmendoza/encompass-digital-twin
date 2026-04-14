@@ -72,6 +72,29 @@ export const WaiveConditionSchema = z.object({
 
 export const ActorOnlySchema = z.object({ actor: ActorSchema });
 
+export const AgentStepSchema = z.object({
+  phase: z.enum(["thinking", "tool_call", "tool_result", "message", "decision"]),
+  content: z.string(),
+  metadata: z.record(z.unknown()).optional(),
+  at: z.string(),
+});
+
+export const RecordAgentStepSchema = z.object({
+  step: AgentStepSchema,
+  actor: ActorSchema,
+});
+
+export const StageRecommendationSchema = z.object({
+  recommendation: z.object({
+    recommendation: z.enum(["pending", "approved", "suspended", "counter", "denied"]),
+    rationale: z.string().min(1),
+    confidence: z.number().min(0).max(1),
+    conditions: z.array(z.string()),
+    trace: z.array(AgentStepSchema),
+  }),
+  actor: ActorSchema,
+});
+
 export const NewDocumentSchema = z.object({
   doc: z.object({
     name: z.string().min(1),
