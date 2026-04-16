@@ -11,7 +11,7 @@ const starter: Condition[] = dscrStarterConditions.map((c, i) => ({
   addedAt: "2026-04-08T09:00:00.000Z",
 }));
 
-// loanAmount 340000, appraised 460000, LTV 75, FICO 740, PITI 2890.10
+// loanAmount 340000, appraised 460000, LTV 73.91 (340000/460000*100), FICO 740, PITI 2890.10
 // DSCR: no personal income ratios; piPayment ~ PITI - 490 = 2400.10
 // dscrRatio: rentalIncome 3400 / pitia 2890.10 = 1.18
 export const nqmDscrInvestorPurchase: Scenario = {
@@ -27,7 +27,7 @@ export const nqmDscrInvestorPurchase: Scenario = {
       propertyType: "SFR Det.", units: 1, yearBuilt: 2005 },
     transaction: {
       loanPurpose: "Purchase", loanAmount: 340000, salesPrice: 460000, appraisedValue: 460000,
-      ltv: 75, cltv: 75, hcltv: 75, noteRate: 7.375, term: 360, amortType: "Fixed", lienPosition: 1,
+      ltv: 73.91, cltv: 73.91, hcltv: 73.91, noteRate: 7.375, term: 360, amortType: "Fixed", lienPosition: 1,
       occupancy: "Investment", isInvestmentProperty: true, rentalIncome: 3400,
       piti: 2890.10, pitia: 2890.10, dscrRatio: 1.18,
     },
@@ -102,7 +102,7 @@ export const nqmDscrInvestorPurchase: Scenario = {
       minDSCR: 0.75,
       minReserves: 6,
       checks: [
-        { category: "LTV", rule: "Max LTV", threshold: "≤ 80%", actual: "75%", result: "Pass" },
+        { category: "LTV", rule: "Max LTV", threshold: "≤ 80%", actual: "73.91%", result: "Pass" },
         { category: "FICO", rule: "Min FICO", threshold: "≥ 620", actual: "740", result: "Pass" },
         { category: "DSCR", rule: "Min DSCR", threshold: "≥ 0.75", actual: "1.18", result: "Pass" },
         { category: "Reserves", rule: "Min Reserves", threshold: "≥ 6 mo", actual: "7.0 mo", result: "Pass" },
