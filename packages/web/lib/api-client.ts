@@ -82,4 +82,8 @@ export const api = {
     req<Loan>(`/loans/${loanId}/recommendation`, {
       method: "DELETE", body: JSON.stringify({ actor }),
     }),
+  injectLoan: (loan: unknown) =>
+    req<{ ok: boolean; loanId: string }>("/world/inject-loan", {
+      method: "POST", body: JSON.stringify({ loan }),
+    }),
 };
