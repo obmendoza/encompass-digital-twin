@@ -4,20 +4,26 @@ import { MenuBar } from "@/components/encompass/MenuBar";
 import { Toolbar } from "@/components/encompass/Toolbar";
 import { LoanHeader } from "@/components/encompass/LoanHeader";
 import { NavTree } from "@/components/encompass/NavTree";
+import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
+import type { Loan } from "@twin/core";
 
 export default async function LoanLayout({
   children, params,
 }: { children: ReactNode; params: Promise<{ loanId: string }> }) {
   const { loanId } = await params;
 
+  let loan: Loan;
   try {
-    await api.getLoan(loanId);
+    loan = await api.getLoan(loanId);
   } catch {
-    await api.loadByLoan(loanId);
+    try {
+      await api.loadByLoan(loanId);
+      loan = await api.getLoan(loanId);
+    } catch {
+      redirect("/");
+    }
   }
-
-  const loan = await api.getLoan(loanId);
 
   return (
     <div className="border border-[#6b7a8f] m-2">
