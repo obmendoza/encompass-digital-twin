@@ -116,3 +116,7 @@ export const LinkDocumentSchema = z.object({
   conditionId: z.string().min(1),
   actor: ActorSchema,
 });
+
+export const InjectLoanSchema = z.object({
+  loan: z.any(),  // Full Loan object — validated structurally by the reducer
+});

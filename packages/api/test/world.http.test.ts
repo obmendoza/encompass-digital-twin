@@ -47,4 +47,41 @@ describe("world routes", () => {
     expect(spec.openapi).toBe("3.1.0");
     expect(Object.keys(spec.paths).length).toBeGreaterThan(15);
   });
+
+  it("POST /world/inject-loan adds a custom loan", async () => {
+    const { app } = buildServer({ now: fixed });
+    const customLoan = {
+      id: "INJECT-TEST-001", nqmProgram: "DSCR", qualifyingMethod: "DSCRCoverage",
+      borrower: { fullName: "Injected, Test", ssnMasked: "xxx-xx-0000", dob: "1990-01-01", maritalStatus: "Unmarried" },
+      property: { street: "1 Inject", city: "Test", state: "CA", zip: "90001", propertyType: "SFR Det.", units: 1, yearBuilt: 2005 },
+      transaction: { loanPurpose: "Purchase", loanAmount: 300000, appraisedValue: 400000, salesPrice: 400000,
+        ltv: 75, cltv: 75, hcltv: 75, noteRate: 7, term: 360, amortType: "Fixed", lienPosition: 1,
+        occupancy: "Investment", isInvestmentProperty: true, piti: 2500 },
+      qualifying: { housingRatio: 0, totalDti: 0, piPayment: 2100, qualifyingRate: 7 },
+      qualifyingWorksheet: { method: "DSCRCoverage", derivedMonthlyIncome: 1 },
+      income: { totalMonthlyIncome: 0 },
+      assets: { totalLiquid: 50000, totalRetirement: 0, reservesMonths: 6 },
+      credit: { repScore: 720, tradelinesOpen: 5, tradelinesTotal: 8,
+        tradelines: [], liabilities: { totalMonthlyPayments: 0, revolvingBalance: 0, installmentBalance: 0, mortgageBalance: 0, collectionsBalance: 0, totalBalance: 0 } },
+      conditions: [], documents: [], decision: "pending", milestones: [],
+      appraisal: { appraisalDate: "2026-04-01", appraiserName: "T", appraisalType: "Full",
+        appraisedValue: 400000, marketCondition: "Stable", neighborhoodRating: "Good",
+        siteArea: "0.2", grossLivingArea: 1600, roomCount: 6, bedroomCount: 3,
+        bathroomCount: 2, garageSpaces: 1, condition: "Good", comparables: [] },
+      compliance: { qmStatus: "Non-QM", atrCompliant: true, hpml: false, hoepa: false,
+        higherPricedCoveredTransaction: false, stateLicenseRequired: false,
+        stateHighCostTest: "Pass", tridToleranceCure: "None",
+        totalPointsAndFees: 2500, pointsAndFeesThreshold: 4000, pointsAndFeesPass: true, flags: [] },
+      overlay: { programName: "Test", investorName: "Test", maxLTV: 80, minFICO: 660,
+        maxDTI: null, minDSCR: null, minReserves: 6, checks: [] },
+    };
+    const res = await app.inject({
+      method: "POST", url: "/world/inject-loan", payload: { loan: customLoan },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().loanId).toBe("INJECT-TEST-001");
+    const loan = await app.inject({ method: "GET", url: "/loans/INJECT-TEST-001" });
+    expect(loan.statusCode).toBe(200);
+    expect(loan.json().nqmProgram).toBe("DSCR");
+  });
 });

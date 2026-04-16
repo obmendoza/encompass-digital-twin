@@ -34,6 +34,13 @@ export function buildOpenApiSpec() {
       "/world/reset": {
         post: { summary: "Reset world state (clears all loans)", responses: { "200": { description: "World reset" } } },
       },
+      "/world/inject-loan": {
+        post: {
+          summary: "Inject an externally-generated loan into the live pipeline",
+          requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["loan"], properties: { loan: { type: "object", description: "Full Loan object" } } } } } },
+          responses: { "200": { description: "Loan injected", content: { "application/json": { schema: { type: "object", properties: { ok: { type: "boolean" }, loanId: { type: "string" } } } } } } },
+        },
+      },
       "/loans": {
         get: { summary: "Pipeline — list all loans in current world state", responses: { "200": { description: "Array of pipeline summary rows" } } },
       },

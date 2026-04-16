@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { ActionError, type Store } from "@twin/core";
 import { scenarios } from "@twin/fixtures";
-import { LoadScenarioSchema } from "../schemas.js";
+import { LoadScenarioSchema, InjectLoanSchema } from "../schemas.js";
 import { z } from "zod";
 
 const LoadByLoanSchema = z.object({ loanId: z.string().min(1) });
@@ -29,5 +29,11 @@ export function registerWorldRoutes(app: FastifyInstance, store: Store) {
   app.post("/world/reset", async (_req, reply) => {
     store.dispatch({ type: "ResetWorld" });
     reply.send({ scenarioId: store.getState().scenarioId });
+  });
+
+  app.post("/world/inject-loan", async (req, reply) => {
+    const body = InjectLoanSchema.parse(req.body);
+    store.dispatch({ type: "InjectLoan", loan: body.loan });
+    reply.send({ ok: true, loanId: body.loan.id });
   });
 }

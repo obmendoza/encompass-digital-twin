@@ -284,6 +284,13 @@ export function reduce(
       return log(next);
     }
 
+    case "InjectLoan": {
+      return log({
+        ...state,
+        loans: { ...state.loans, [action.loan.id]: structuredClone(action.loan) },
+      });
+    }
+
     default:
       return state;
   }
