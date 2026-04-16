@@ -329,4 +329,5 @@ export type Action =
   | { type: "RecordAgentStep"; loanId: LoanId; step: AgentStep; actor: Actor }
   | { type: "StageRecommendation"; loanId: LoanId; recommendation: { recommendation: UwDecision; rationale: string; confidence: number; conditions: string[]; trace: AgentStep[] }; actor: Actor }
   | { type: "AcceptRecommendation"; loanId: LoanId; actor: Actor }
-  | { type: "ClearRecommendation"; loanId: LoanId; actor: Actor };
+  | { type: "ClearRecommendation"; loanId: LoanId; actor: Actor }
+  | { type: "InjectLoan"; loan: Loan };
