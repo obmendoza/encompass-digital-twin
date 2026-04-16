@@ -44,7 +44,7 @@ export const nqmEdgeGiftFundsNqm: Scenario = {
       propertyType: "SFR Det.", units: 1, yearBuilt: 2011 },
     transaction: {
       loanPurpose: "Purchase", loanAmount: 412000, salesPrice: 515000, appraisedValue: 520000,
-      ltv: 80, cltv: 80, hcltv: 80, noteRate: 7.500, term: 360, amortType: "Fixed", lienPosition: 1,
+      ltv: 79.23, cltv: 79.23, hcltv: 79.23, noteRate: 7.500, term: 360, amortType: "Fixed", lienPosition: 1,
       occupancy: "Primary", isInvestmentProperty: false, piti: 3591.68,
     },
     qualifying: { housingRatio: 56.1, totalDti: 56.1, piPayment: 2880.06, qualifyingRate: 7.500 },
@@ -123,7 +123,7 @@ export const nqmEdgeGiftFundsNqm: Scenario = {
       minDSCR: null,
       minReserves: 6,
       checks: [
-        { category: "LTV", rule: "Max LTV", threshold: "≤ 90%", actual: "80% (with gift)", result: "Pass", notes: "80% LTV assumes gift eligibility. Without gift: 90% LTV exceeds program max." },
+        { category: "LTV", rule: "Max LTV", threshold: "≤ 90%", actual: "79.23% (with gift)", result: "Pass", notes: "79.23% LTV assumes gift eligibility. Without gift: ~90% LTV exceeds program max." },
         { category: "FICO", rule: "Min FICO", threshold: "≥ 660", actual: "705", result: "Pass" },
         { category: "DTI", rule: "Max DTI", threshold: "≤ 50%", actual: "56.1%", result: "Fail" },
         { category: "Reserves", rule: "Min Reserves", threshold: "≥ 6 mo", actual: "4.2 mo (includes gift)", result: "Fail", notes: "Reserves 4.2 months includes gift funds. If gift excluded: reserves may drop below 3 months minimum." },

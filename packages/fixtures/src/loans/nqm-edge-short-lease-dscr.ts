@@ -34,7 +34,7 @@ export const nqmEdgeShortLeaseDscr: Scenario = {
       propertyType: "SFR Det.", units: 1, yearBuilt: 2002 },
     transaction: {
       loanPurpose: "Purchase", loanAmount: 365000, salesPrice: 490000, appraisedValue: 490000,
-      ltv: 75, cltv: 75, hcltv: 75, noteRate: 7.500, term: 360, amortType: "Fixed", lienPosition: 1,
+      ltv: 74.49, cltv: 74.49, hcltv: 74.49, noteRate: 7.500, term: 360, amortType: "Fixed", lienPosition: 1,
       occupancy: "Investment", isInvestmentProperty: true, rentalIncome: 3200,
       piti: 2910.00, pitia: 2910.00, dscrRatio: 1.10,
     },
@@ -117,7 +117,7 @@ export const nqmEdgeShortLeaseDscr: Scenario = {
       minDSCR: 1.0,
       minReserves: 6,
       checks: [
-        { category: "LTV", rule: "Max LTV", threshold: "≤ 80%", actual: "75%", result: "Pass" },
+        { category: "LTV", rule: "Max LTV", threshold: "≤ 80%", actual: "74.49%", result: "Pass" },
         { category: "FICO", rule: "Min FICO", threshold: "≥ 620", actual: "750", result: "Pass" },
         { category: "DSCR", rule: "Min DSCR", threshold: "≥ 1.00", actual: "1.10 (current lease) / 0.95 (market rent)", result: "Exception", notes: "DSCR 1.10 with current lease (expiring 60 days); drops to 0.95 using market rent ($2,750) — below 1.00 minimum" },
         { category: "Reserves", rule: "Min Reserves", threshold: "≥ 6 mo", actual: "9.1 mo", result: "Pass" },

@@ -11,7 +11,7 @@ const starter: Condition[] = dscrStarterConditions.map((c, i) => ({
   addedAt: "2026-04-08T09:00:00.000Z",
 }));
 
-// loanAmount 310000, appraised 450000, LTV 70, FICO 760, PITI 2650.00
+// loanAmount 310000, appraised 450000, LTV 68.89 (310000/450000*100), FICO 760, PITI 2650.00
 // DSCR sub-1: rentalIncome 2250 / pitia 2650 = 0.85
 // piPayment ~ PITI - 450 = 2200.00
 export const nqmDscrSub1: Scenario = {
@@ -27,7 +27,7 @@ export const nqmDscrSub1: Scenario = {
       propertyType: "SFR Det.", units: 1, yearBuilt: 1999 },
     transaction: {
       loanPurpose: "Purchase", loanAmount: 310000, salesPrice: 450000, appraisedValue: 450000,
-      ltv: 70, cltv: 70, hcltv: 70, noteRate: 7.625, term: 360, amortType: "Fixed", lienPosition: 1,
+      ltv: 68.89, cltv: 68.89, hcltv: 68.89, noteRate: 7.625, term: 360, amortType: "Fixed", lienPosition: 1,
       occupancy: "Investment", isInvestmentProperty: true, rentalIncome: 2250,
       piti: 2650.00, pitia: 2650.00, dscrRatio: 0.85,
     },
@@ -93,7 +93,7 @@ export const nqmDscrSub1: Scenario = {
         { code: "NQM-003", severity: "Info", description: "Non-QM: qualified using DSCR coverage (no personal income verification)", regulation: "12 CFR 1026.43(c)" },
       ],
     },
-    // LTV 70 <= 80 Pass, FICO 760 >= 620 Pass, DSCR 0.85 >= 0.75 Pass, Reserves 8.0 >= 6 Pass
+    // LTV 68.89 <= 80 Pass, FICO 760 >= 620 Pass, DSCR 0.85 >= 0.75 Pass, Reserves 8.0 >= 6 Pass
     overlay: {
       programName: "NQM DSCR",
       investorName: "NQM Capital",
@@ -103,7 +103,7 @@ export const nqmDscrSub1: Scenario = {
       minDSCR: 0.75,
       minReserves: 6,
       checks: [
-        { category: "LTV", rule: "Max LTV", threshold: "≤ 80%", actual: "70%", result: "Pass" },
+        { category: "LTV", rule: "Max LTV", threshold: "≤ 80%", actual: "68.89%", result: "Pass" },
         { category: "FICO", rule: "Min FICO", threshold: "≥ 620", actual: "760", result: "Pass" },
         { category: "DSCR", rule: "Min DSCR", threshold: "≥ 0.75", actual: "0.85", result: "Pass" },
         { category: "Reserves", rule: "Min Reserves", threshold: "≥ 6 mo", actual: "8.0 mo", result: "Pass" },

@@ -86,6 +86,39 @@ function parseFindings(text: string): Finding[] {
     }
   }
 
+  // Second pass — 3-column format: | Item | ✅ value | Detail |
+  const threeColRegex = /\|\s*\*?\*?(.+?)\*?\*?\s*\|\s*(✅|❌|⚠️)\s+(.+?)\s*\|\s*(.+?)\s*\|/g;
+  let match3: RegExpExecArray | null;
+  while ((match3 = threeColRegex.exec(text)) !== null) {
+    const item = match3[1]!.replace(/\*\*/g, "").trim();
+    // Skip if already found, skip separator/header rows
+    if (
+      findings.some((f) => f.item === item) ||
+      /^[-=]+$/.test(item) ||
+      item.toLowerCase() === "test" ||
+      item.toLowerCase() === "item"
+    )
+      continue;
+
+    const emoji = match3[2]!;
+    const status: Finding["status"] =
+      emoji === "✅" ? "pass" : emoji === "❌" ? "fail" : "warning";
+
+    // Parse value string: "80% ≤ 85% max" → actual=80%, guideline=≤85%
+    const valueStr = match3[3]!.trim();
+    const numbers = valueStr.match(/(\d+\.?\d*%?)/g);
+    const actual = numbers?.[0];
+    const guideline = numbers && numbers.length > 1 ? `≤ ${numbers[1]}` : undefined;
+
+    findings.push({
+      item,
+      status,
+      actual: actual ?? valueStr.slice(0, 30),
+      guideline,
+      detail: match3[4]!.replace(/\*\*/g, "").trim(),
+    });
+  }
+
   return findings;
 }
 
