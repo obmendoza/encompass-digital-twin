@@ -53,121 +53,158 @@ interface RiskFlag {
 
 function parseFindings(text: string): Finding[] {
   const findings: Finding[] = [];
+  const lines = text.split("\n");
 
-  // Match markdown table rows with status indicators
-  // Pattern: | number | item | status | detail |
-  const tableRowRegex =
-    /\|\s*\d+\s*\|\s*\*?\*?(.+?)\*?\*?\s*\|\s*(✅|❌|⚠️|ℹ️)?\s*(Pass|Fail|HARD BLOCK|Warning|Info|N\/A)?\s*\|\s*(.+?)\s*\|/gi;
-  let match: RegExpExecArray | null;
-  while ((match = tableRowRegex.exec(text)) !== null) {
-    const item = match[1]!.replace(/\*\*/g, "").trim();
-    const statusText = (match[3] ?? "").toLowerCase();
-    let status: Finding["status"] = "info";
-    if (statusText.includes("pass")) status = "pass";
-    else if (statusText.includes("fail") || statusText.includes("block")) status = "fail";
-    else if (statusText.includes("warn")) status = "warning";
-    findings.push({ item, status, detail: match[4]!.replace(/\*\*/g, "").trim() });
-  }
+  for (const line of lines) {
+    const trimmed = line.trim();
+    // Skip non-table lines, separators, and headers
+    if (!trimmed.startsWith("|")) continue;
+    if (/^\|[\s-|]+\|$/.test(trimmed)) continue; // separator row
 
-  // Also match simpler 2-column check tables: | Check | Result |
-  const simpleCheckRegex =
-    /\|\s*\*?\*?(.+?)\*?\*?\s*\|\s*\*?\*?(\d+\.?\d*%?)\s*(?:vs\.?\s*)?(?:≤|≥|max|min)?\s*(\d+\.?\d*%?)\s*.*?\*?\*?\s*\|\s*(✅|❌|⚠️)?\s*(Pass|Fail)?\s*(?:—|–|-)?\s*(.*?)\s*\|/gi;
-  let match2: RegExpExecArray | null;
-  while ((match2 = simpleCheckRegex.exec(text)) !== null) {
-    const item = (match2[1] ?? "").replace(/\*\*/g, "").trim();
-    if (!findings.some((f) => f.item === item)) {
+    const cells = trimmed.split("|").map(c => c.trim()).filter(c => c.length > 0);
+    if (cells.length < 2) continue;
+
+    // Skip header rows
+    const firstLower = cells[0]!.replace(/\*\*/g, "").toLowerCase();
+    if (["#", "field", "test", "item", "check", "finding", "parameter"].includes(firstLower)) continue;
+
+    // --- Format B: | F# | finding text | severity |
+    const fCodeMatch = cells[0]!.match(/^\*?\*?F(\d+)\*?\*?$/);
+    if (fCodeMatch && cells.length >= 3) {
+      const findingText = cells[1]!.replace(/\*\*/g, "").trim();
+      const severityCell = cells[2]!;
+
+      let status: Finding["status"] = "info";
+      if (/🔴|BLOCKING|BLOCK/i.test(severityCell)) status = "fail";
+      else if (/🟡|MATERIAL|WARNING/i.test(severityCell)) status = "warning";
+      else if (/✅|Pass/i.test(severityCell)) status = "pass";
+      else if (/⚪|Info/i.test(severityCell)) status = "info";
+
+      // Extract the main item name (before the em-dash or long description)
+      const itemParts = findingText.split(/\s*[—–]\s*/);
+      const item = itemParts[0]!.slice(0, 60);
+      const detail = itemParts.slice(1).join(" — ").slice(0, 200) || findingText.slice(0, 200);
+
+      findings.push({ item, status, detail });
+      continue;
+    }
+
+    // --- Format A: | **Field** | value with possible ✅/❌ |
+    if (cells.length === 2) {
+      const field = cells[0]!.replace(/\*\*/g, "").trim();
+      const value = cells[1]!.replace(/\*\*/g, "").trim();
+
+      // Only include rows that have a status indicator or are about key metrics
+      const hasPass = /✅/.test(value);
+      const hasFail = /❌/.test(value);
+      const hasWarning = /⚠️/.test(value);
+
+      if (hasPass || hasFail || hasWarning) {
+        let status: Finding["status"] = "info";
+        if (hasPass) status = "pass";
+        if (hasFail) status = "fail";
+        if (hasWarning) status = "warning";
+
+        // Parse numbers from value: "76.36% ✅ Within limit" → actual=76.36%
+        const nums = value.match(/(\d+\.?\d*%?)/g);
+        const actual = nums?.[0];
+
+        // Try to find guideline from the field name or another number
+        // e.g., "Submitted LTV" pairs with "Program Max LTV" row
+        const guideline = nums && nums.length > 1 ? nums[1] : undefined;
+
+        // Clean detail text (remove emoji and status words)
+        const detail = value.replace(/[✅❌⚠️]/g, "").replace(/\*\*/g, "").trim();
+
+        findings.push({ item: field, status, actual, guideline, detail });
+      }
+      continue;
+    }
+
+    // --- Format C: | Item | ✅/❌ value | Detail |
+    if (cells.length >= 3) {
+      const item = cells[0]!.replace(/\*\*/g, "").trim();
+      const resultCell = cells[1]!;
+      const detailCell = cells.length > 3 ? cells.slice(2).join(" | ") : cells[2]!;
+
+      // Skip if it looks like a header
+      if (/^(result|status|severity|value)$/i.test(item)) continue;
+
+      let status: Finding["status"] = "info";
+      if (/✅|Pass/i.test(resultCell)) status = "pass";
+      else if (/❌|Fail|BLOCK/i.test(resultCell)) status = "fail";
+      else if (/⚠️|Warning/i.test(resultCell)) status = "warning";
+
+      // Parse actual + guideline from result cell: "80% ≤ 85% max" or "742"
+      const nums = resultCell.match(/(\d+\.?\d*%?)/g);
+      const actual = nums?.[0];
+      const guideline = nums && nums.length > 1 ? `≤ ${nums[1]}` : undefined;
+
       findings.push({
         item,
-        status: (match2[5] ?? "").toLowerCase().includes("fail") ? "fail" : "pass",
-        guideline: match2[3],
-        actual: match2[2],
-        detail: match2[6] ?? "",
+        status,
+        actual,
+        guideline,
+        detail: detailCell.replace(/\*\*/g, "").replace(/[✅❌⚠️🔴🟡⚪]/g, "").trim().slice(0, 200),
       });
     }
   }
 
-  // Second pass — 3-column format: | Item | ✅ value | Detail |
-  const threeColRegex = /\|\s*\*?\*?(.+?)\*?\*?\s*\|\s*(✅|❌|⚠️)\s+(.+?)\s*\|\s*(.+?)\s*\|/g;
-  let match3: RegExpExecArray | null;
-  while ((match3 = threeColRegex.exec(text)) !== null) {
-    const item = match3[1]!.replace(/\*\*/g, "").trim();
-    // Skip if already found, skip separator/header rows
-    if (
-      findings.some((f) => f.item === item) ||
-      /^[-=]+$/.test(item) ||
-      item.toLowerCase() === "test" ||
-      item.toLowerCase() === "item"
-    )
-      continue;
-
-    const emoji = match3[2]!;
-    const status: Finding["status"] =
-      emoji === "✅" ? "pass" : emoji === "❌" ? "fail" : "warning";
-
-    // Parse value string: "80% ≤ 85% max" → actual=80%, guideline=≤85%
-    const valueStr = match3[3]!.trim();
-    const numbers = valueStr.match(/(\d+\.?\d*%?)/g);
-    const actual = numbers?.[0];
-    const guideline = numbers && numbers.length > 1 ? `≤ ${numbers[1]}` : undefined;
-
-    findings.push({
-      item,
-      status,
-      actual: actual ?? valueStr.slice(0, 30),
-      guideline,
-      detail: match3[4]!.replace(/\*\*/g, "").trim(),
-    });
-  }
-
-  return findings;
+  // Deduplicate by item name (keep first occurrence)
+  const seen = new Set<string>();
+  return findings.filter(f => {
+    const key = f.item.toLowerCase().slice(0, 20);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function parseRiskFlags(text: string): RiskFlag[] {
   const flags: RiskFlag[] = [];
+  const lines = text.split("\n");
 
-  // Look for sections about blocking issues, risk flags, exceptions, warnings
-  const blockMatch = text.match(
-    /(?:blocking issues?|risk flags?|exceptions?|⚠️.*?warning)[^\n]*\n([\s\S]*?)(?=\n##|\n---|\n\n\n|$)/gi,
-  );
-  if (blockMatch) {
-    for (const block of blockMatch) {
-      const lines = block
-        .split("\n")
-        .filter(
-          (l) =>
-            l.trim().startsWith("|") ||
-            l.trim().startsWith("-") ||
-            l.trim().startsWith("*"),
-        );
-      for (const line of lines) {
-        const cleaned = line.replace(/[|*-]/g, " ").trim();
-        if (
-          cleaned.length > 10 &&
-          !cleaned.startsWith("---") &&
-          !cleaned.match(/^[\s-]+$/)
-        ) {
-          const isBlocker = /hard block|block|fail|critical|decline/i.test(cleaned);
-          flags.push({
-            severity: isBlocker ? "blocker" : "warning",
-            title: (cleaned.split(/[.—–:]/, 2)[0] ?? cleaned).trim().slice(0, 80),
-            detail: cleaned,
-          });
-        }
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    // Look for table rows with blocking/material severity
+    if (trimmed.startsWith("|") && /🔴.*BLOCKING|❌.*HARD|❌.*BLOCK/i.test(trimmed)) {
+      const cells = trimmed.split("|").map(c => c.trim()).filter(c => c.length > 0);
+      if (cells.length >= 2) {
+        const content = cells[1]!.replace(/\*\*/g, "").trim();
+        const parts = content.split(/\s*[—–]\s*/);
+        flags.push({
+          severity: "blocker",
+          title: parts[0]!.slice(0, 80),
+          detail: content.slice(0, 300),
+        });
       }
     }
-  }
 
-  // Also catch inline ❌ flags from findings
-  const inlineFlags = /❌\s*\*?\*?(?:HARD BLOCK|BLOCK|FAIL)\*?\*?\s*[|]?\s*(.+)/gi;
-  let m: RegExpExecArray | null;
-  while ((m = inlineFlags.exec(text)) !== null) {
-    const captured = m[1] ?? "";
-    if (!flags.some((f) => f.detail.includes(captured.slice(0, 30)))) {
-      flags.push({
-        severity: "blocker",
-        title: captured.slice(0, 80).replace(/\|/g, "").trim(),
-        detail: captured.replace(/\|/g, "").trim(),
-      });
+    if (trimmed.startsWith("|") && /🟡.*MATERIAL/i.test(trimmed)) {
+      const cells = trimmed.split("|").map(c => c.trim()).filter(c => c.length > 0);
+      if (cells.length >= 2) {
+        const content = cells[1]!.replace(/\*\*/g, "").trim();
+        const parts = content.split(/\s*[—–]\s*/);
+        flags.push({
+          severity: "warning",
+          title: parts[0]!.slice(0, 80),
+          detail: content.slice(0, 300),
+        });
+      }
+    }
+
+    // Also catch numbered blocking issues section: "1. **DTI exceeds..."
+    if (/^\d+\.\s*\*\*/.test(trimmed)) {
+      const content = trimmed.replace(/^\d+\.\s*/, "").replace(/\*\*/g, "").trim();
+      const isBlocker = /exceed|cannot|fail|block|decline/i.test(content);
+      if (isBlocker && !flags.some(f => f.title.slice(0, 20) === content.slice(0, 20))) {
+        flags.push({
+          severity: "blocker",
+          title: content.split(/[—–.]/)[0]!.trim().slice(0, 80),
+          detail: content.slice(0, 300),
+        });
+      }
     }
   }
 
@@ -175,37 +212,37 @@ function parseRiskFlags(text: string): RiskFlag[] {
 }
 
 function extractExecutiveSummary(text: string, decision: string): string {
+  // Try to find a sentence-level summary after the decision table
   const lines = text.split("\n");
   const summaryParts: string[] = [];
-  let pastDecisionTable = false;
+  let pastFirstTable = false;
 
   for (const line of lines) {
     const trimmed = line.trim();
-    if (
-      trimmed.includes("Decision") &&
-      (trimmed.includes("APPROVE") ||
-        trimmed.includes("DECLINE") ||
-        trimmed.includes("CONDITIONAL"))
-    ) {
-      pastDecisionTable = true;
+    // Skip until we're past the first table section
+    if (trimmed.startsWith("|") || trimmed.startsWith("---")) {
+      if (summaryParts.length === 0) pastFirstTable = true;
       continue;
     }
-    if (
-      pastDecisionTable &&
-      trimmed &&
-      !trimmed.startsWith("|") &&
-      !trimmed.startsWith("#") &&
-      !trimmed.startsWith("---") &&
-      !trimmed.startsWith("*")
-    ) {
+    if (trimmed.startsWith("#")) {
+      if (summaryParts.length > 0) break; // hit next section
+      continue;
+    }
+    if (pastFirstTable && trimmed.length > 20 && !trimmed.startsWith("*")) {
       summaryParts.push(trimmed);
-      if (summaryParts.length >= 3) break;
+      if (summaryParts.length >= 2) break;
     }
   }
 
-  if (summaryParts.length > 0) return summaryParts.join(" ");
+  if (summaryParts.length > 0) return summaryParts.join(" ").slice(0, 500);
 
-  // Fallback: construct from decision
+  // Fallback: look for the Decision field value in the summary table
+  const decisionLine = lines.find(l => /\|\s*\*?\*?Decision\*?\*?\s*\|/.test(l));
+  if (decisionLine) {
+    const cells = decisionLine.split("|").map(c => c.trim()).filter(c => c.length > 0);
+    if (cells.length >= 2) return cells[1]!.replace(/\*\*/g, "").trim();
+  }
+
   return `Agent recommends ${decision.toUpperCase()} based on program guideline analysis.`;
 }
 
