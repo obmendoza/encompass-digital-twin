@@ -69,10 +69,26 @@ function TicketCard({ ticket }: { ticket: HITLTicket }) {
             <div className="mb-2">
               <div className="font-bold text-[10px] text-[#1f4478] uppercase mb-1">Key Fields</div>
               <div className="bg-white border border-[#c8c4b5] p-2 text-[10px] grid grid-cols-[auto_1fr_auto_1fr] gap-x-4 gap-y-1">
-                {Object.entries(ticket.fields).map(([k, v]) => (
-                  <><span key={k + "-label"} className="font-bold text-[#404040] whitespace-nowrap">{k.replace(/_/g, " ")}:</span>
-                  <span key={k + "-value"} className="tabular-nums">{String(v)}</span></>
-                ))}
+                {Object.entries(ticket.fields).map(([k, v]) => {
+                  const label = k.replace(/_/g, " ");
+                  let display: string;
+                  if (typeof v === "number") {
+                    const isPercent = /ltv|dti|rate/i.test(k);
+                    const isDollar = /amount|income|pitia|piti|payment/i.test(k);
+                    if (isPercent) display = `${v.toLocaleString()}%`;
+                    else if (isDollar) display = `$${v.toLocaleString()}`;
+                    else if (v >= 1000) display = v.toLocaleString();
+                    else display = String(v);
+                  } else if (typeof v === "boolean") {
+                    display = v ? "Yes" : "No";
+                  } else {
+                    display = String(v);
+                  }
+                  return (
+                    <><span key={k + "-label"} className="font-bold text-[#404040] whitespace-nowrap">{label}:</span>
+                    <span key={k + "-value"} className="tabular-nums">{display}</span></>
+                  );
+                })}
               </div>
             </div>
           )}
