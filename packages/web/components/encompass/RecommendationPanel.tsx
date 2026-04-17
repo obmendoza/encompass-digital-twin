@@ -9,7 +9,197 @@ import {
   actionAddCondition,
 } from "@/app/loan/[loanId]/actions";
 
-// ─── Decision Badge + Confidence Meter ───────────────────────────────────────
+// ─── Text Utilities ───────────────────────────────────────────────────────────
+
+function cleanMarkdown(text: string): string {
+  return text
+    .replace(/\*\*/g, "")
+    .replace(/\*/g, "")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .trim();
+}
+
+// ─── Section Parser ───────────────────────────────────────────────────────────
+
+function parseSections(rationale: string): Record<string, string> {
+  const sections: Record<string, string> = {};
+  try {
+    const parts = rationale.split(/\n(?=#{2,3}\s)/);
+    for (const part of parts) {
+      const headingMatch = part.match(/^#{2,3}\s+(.+)/);
+      if (headingMatch) {
+        const raw = headingMatch[1] ?? "";
+        const key = raw.toLowerCase().replace(/[—–\-].*/u, "").trim();
+        sections[key] = part.replace(/^#{2,3}\s+.+\n/, "").trim();
+      }
+    }
+    const preamble = rationale.split(/\n#{2,3}\s/)[0]?.trim() ?? "";
+    sections["preamble"] = preamble;
+  } catch {
+    sections["preamble"] = rationale;
+  }
+  return sections;
+}
+
+// ─── Executive Summary ────────────────────────────────────────────────────────
+
+function extractExecutiveSummary(sections: Record<string, string>): string {
+  // Prefer ### Rationale section — cleanest prose
+  const rationaleKey = Object.keys(sections).find((k) => k.includes("rationale"));
+  if (rationaleKey && sections[rationaleKey]) {
+    const text = sections[rationaleKey]!;
+    // Take the first substantive paragraph
+    const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+    const para = lines.find((l) => l.length > 30 && !l.startsWith("|") && !l.startsWith("#"));
+    if (para) return cleanMarkdown(para);
+  }
+  // Fall back to preamble — first non-heading, non-empty paragraph
+  const preamble = sections["preamble"] ?? "";
+  const lines = preamble.split("\n").map((l) => l.trim()).filter(Boolean);
+  const para = lines.find((l) => l.length > 30 && !l.startsWith("|") && !l.startsWith("#"));
+  if (para) return cleanMarkdown(para);
+  return "";
+}
+
+// ─── Key Metrics Parser ───────────────────────────────────────────────────────
+
+interface Metric {
+  label: string;
+  value: string;
+  status: "pass" | "fail" | "neutral";
+}
+
+function parseKeyMetrics(sections: Record<string, string>): Metric[] {
+  const metrics: Metric[] = [];
+  // Find the ## Final Underwriting Decision section (or similar)
+  const decisionKey = Object.keys(sections).find(
+    (k) => k.includes("final") || k.includes("underwriting") || k.includes("decision"),
+  );
+  const text = decisionKey ? (sections[decisionKey] ?? "") : (sections["preamble"] ?? "");
+
+  // Parse the 2-col | Field | Detail | table
+  const lines = text.split("\n");
+  const WANT = new Set(["decision", "program", "ltv", "dti", "reserves", "dscr", "fico", "rate"]);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("|")) continue;
+    if (/^\|[\s\-|]+\|$/.test(trimmed)) continue;
+    const cells = trimmed.split("|").map((c) => c.trim()).filter(Boolean);
+    if (cells.length < 2) continue;
+    const label = cleanMarkdown(cells[0] ?? "");
+    const value = cleanMarkdown(cells[1] ?? "");
+    if (!label || !value) continue;
+    // Skip header rows
+    if (/^(field|detail|check|item)$/i.test(label)) continue;
+    const labelLower = label.toLowerCase();
+    const relevant = [...WANT].some((k) => labelLower.includes(k));
+    if (!relevant) continue;
+
+    let status: Metric["status"] = "neutral";
+    if (/✅/.test(cells[1] ?? "")) status = "pass";
+    if (/❌/.test(cells[1] ?? "")) status = "fail";
+
+    metrics.push({ label, value, status });
+  }
+
+  return metrics;
+}
+
+// ─── Findings Parser ──────────────────────────────────────────────────────────
+
+interface Finding {
+  num: number;
+  item: string;
+  statusText: string;
+  status: "pass" | "fail" | "warning" | "info";
+}
+
+function parseFindings(sections: Record<string, string>): Finding[] {
+  const findings: Finding[] = [];
+  const findingsKey = Object.keys(sections).find((k) => k.includes("finding"));
+  if (!findingsKey || !sections[findingsKey]) return findings;
+
+  const lines = sections[findingsKey]!.split("\n");
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("|")) continue;
+    if (/^\|[\s\-|]+\|$/.test(trimmed)) continue;
+    const cells = trimmed.split("|").map((c) => c.trim()).filter(Boolean);
+    if (cells.length < 2) continue;
+
+    // Expect: | # | Item | Status |
+    const numRaw = cells[0] ?? "";
+    const numMatch = numRaw.match(/^(\d+)$/);
+    if (!numMatch) continue; // skip header rows like "# | Item | Status"
+
+    const num = parseInt(numMatch[1]!, 10);
+    const item = cleanMarkdown(cells[1] ?? "");
+    const statusCell = cells[2] ?? cells[1] ?? "";
+    const statusText = cleanMarkdown(statusCell);
+
+    let status: Finding["status"] = "info";
+    if (/✅/.test(statusCell)) status = "pass";
+    else if (/❌/.test(statusCell)) status = "fail";
+    else if (/⚠️/.test(statusCell)) status = "warning";
+
+    if (item) findings.push({ num, item, statusText, status });
+  }
+
+  return findings;
+}
+
+// ─── Blockers Parser ──────────────────────────────────────────────────────────
+
+interface Blocker {
+  title: string;
+  detail: string;
+}
+
+function parseBlockers(sections: Record<string, string>): Blocker[] {
+  const blockers: Blocker[] = [];
+  const blockKey = Object.keys(sections).find(
+    (k) => k.includes("block") || k.includes("hard stop"),
+  );
+  if (!blockKey || !sections[blockKey]) return blockers;
+
+  const text = sections[blockKey]!;
+  // Numbered list items: "1. **Title:** detail..."
+  const itemRegex = /^\d+\.\s+(.+)/gm;
+  let match: RegExpExecArray | null;
+  while ((match = itemRegex.exec(text)) !== null) {
+    const raw = match[1] ?? "";
+    const cleaned = cleanMarkdown(raw);
+    // Split on first colon or em-dash for title vs detail
+    const colonIdx = cleaned.search(/[:—–]/);
+    const title = colonIdx > 0 ? cleaned.slice(0, colonIdx).trim() : cleaned.slice(0, 80).trim();
+    const detail = colonIdx > 0 ? cleaned.slice(colonIdx + 1).trim() : "";
+    blockers.push({ title, detail });
+  }
+
+  return blockers;
+}
+
+// ─── Conditions Parser ────────────────────────────────────────────────────────
+
+function parseConditionsFromSections(sections: Record<string, string>): string[] {
+  const condKey = Object.keys(sections).find((k) => k.includes("condition"));
+  if (!condKey || !sections[condKey]) return [];
+
+  const lines = sections[condKey]!.split("\n");
+  const conditions: string[] = [];
+  for (const line of lines) {
+    const trimmed = line.trim();
+    // Match "- C1: ..." or "- ..." list items
+    const m = trimmed.match(/^-\s+(?:C\d+:\s*)?(.+)/);
+    if (m && m[1] && m[1].length > 3) {
+      conditions.push(cleanMarkdown(m[1]));
+    }
+  }
+  return conditions;
+}
+
+// ─── DecisionBadge ────────────────────────────────────────────────────────────
 
 function DecisionBadge({ decision, confidence }: { decision: string; confidence: number }) {
   const pct = Math.round(confidence * 100);
@@ -19,10 +209,12 @@ function DecisionBadge({ decision, confidence }: { decision: string; confidence:
     suspended: { bg: "bg-[#8a4b00]", bar: "bg-[#ff9800]", text: "text-white" },
     counter: { bg: "bg-[#0d47a1]", bar: "bg-[#42a5f5]", text: "text-white" },
   };
-  const c = colors[decision] ?? colors.suspended!;
+  const c = colors[decision.toLowerCase()] ?? colors["suspended"]!;
   return (
     <div className="flex items-center gap-4">
-      <div className={`${c.bg} ${c.text} px-5 py-2 text-[14px] font-bold uppercase tracking-wider`}>
+      <div
+        className={`${c.bg} ${c.text} px-5 py-2 text-[14px] font-bold uppercase tracking-wider min-w-[110px] text-center`}
+      >
         {decision}
       </div>
       <div className="flex-1">
@@ -35,239 +227,89 @@ function DecisionBadge({ decision, confidence }: { decision: string; confidence:
   );
 }
 
-// ─── Markdown Parser Utilities ────────────────────────────────────────────────
+// ─── KeyMetricsGrid ───────────────────────────────────────────────────────────
 
-interface Finding {
-  item: string;
-  status: "pass" | "fail" | "warning" | "info";
-  detail: string;
-  guideline?: string;
-  actual?: string;
+function KeyMetricsGrid({ metrics }: { metrics: Metric[] }) {
+  if (metrics.length === 0) return null;
+
+  const STATUS_ICON: Record<Metric["status"], string> = {
+    pass: "✅",
+    fail: "❌",
+    neutral: "",
+  };
+
+  return (
+    <div className="enc-sec mb-3">
+      <h4>Key Metrics</h4>
+      <div className="p-2 grid grid-cols-2 gap-1 sm:grid-cols-3 lg:grid-cols-4">
+        {metrics.map((m, i) => (
+          <div
+            key={i}
+            className={`enc-field flex flex-col justify-between min-h-[40px] ${
+              m.status === "fail"
+                ? "bg-[#fde8e8] border-[#c00]"
+                : m.status === "pass"
+                  ? "bg-[#f0fdf4]"
+                  : "bg-white"
+            }`}
+          >
+            <div className="text-[8px] font-bold text-[#404040] uppercase tracking-wide leading-tight">
+              {m.label}
+            </div>
+            <div className="text-[11px] font-bold text-[#1f2d40] leading-snug mt-[2px]">
+              {STATUS_ICON[m.status] ? `${STATUS_ICON[m.status]} ` : ""}
+              {m.value}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
-interface RiskFlag {
-  severity: "warning" | "blocker";
-  title: string;
-  detail: string;
-}
+// ─── BlockersSection ──────────────────────────────────────────────────────────
 
-function parseFindings(text: string): Finding[] {
-  const findings: Finding[] = [];
-  const lines = text.split("\n");
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    // Skip non-table lines, separators, and headers
-    if (!trimmed.startsWith("|")) continue;
-    if (/^\|[\s-|]+\|$/.test(trimmed)) continue; // separator row
-
-    const cells = trimmed.split("|").map(c => c.trim()).filter(c => c.length > 0);
-    if (cells.length < 2) continue;
-
-    // Skip header rows
-    const firstLower = cells[0]!.replace(/\*\*/g, "").toLowerCase();
-    if (["#", "field", "test", "item", "check", "finding", "parameter"].includes(firstLower)) continue;
-
-    // --- Format B: | F# | finding text | severity |
-    const fCodeMatch = cells[0]!.match(/^\*?\*?F(\d+)\*?\*?$/);
-    if (fCodeMatch && cells.length >= 3) {
-      const findingText = cells[1]!.replace(/\*\*/g, "").trim();
-      const severityCell = cells[2]!;
-
-      let status: Finding["status"] = "info";
-      if (/🔴|BLOCKING|BLOCK/i.test(severityCell)) status = "fail";
-      else if (/🟡|MATERIAL|WARNING/i.test(severityCell)) status = "warning";
-      else if (/✅|Pass/i.test(severityCell)) status = "pass";
-      else if (/⚪|Info/i.test(severityCell)) status = "info";
-
-      // Extract the main item name (before the em-dash or long description)
-      const itemParts = findingText.split(/\s*[—–]\s*/);
-      const item = itemParts[0]!.slice(0, 60);
-      const detail = itemParts.slice(1).join(" — ").slice(0, 200) || findingText.slice(0, 200);
-
-      findings.push({ item, status, detail });
-      continue;
-    }
-
-    // --- Format A: | **Field** | value with possible ✅/❌ |
-    if (cells.length === 2) {
-      const field = cells[0]!.replace(/\*\*/g, "").trim();
-      const value = cells[1]!.replace(/\*\*/g, "").trim();
-
-      // Only include rows that have a status indicator or are about key metrics
-      const hasPass = /✅/.test(value);
-      const hasFail = /❌/.test(value);
-      const hasWarning = /⚠️/.test(value);
-
-      if (hasPass || hasFail || hasWarning) {
-        let status: Finding["status"] = "info";
-        if (hasPass) status = "pass";
-        if (hasFail) status = "fail";
-        if (hasWarning) status = "warning";
-
-        // Parse numbers from value: "76.36% ✅ Within limit" → actual=76.36%
-        const nums = value.match(/(\d+\.?\d*%?)/g);
-        const actual = nums?.[0];
-
-        // Try to find guideline from the field name or another number
-        // e.g., "Submitted LTV" pairs with "Program Max LTV" row
-        const guideline = nums && nums.length > 1 ? nums[1] : undefined;
-
-        // Clean detail text (remove emoji and status words)
-        const detail = value.replace(/[✅❌⚠️]/g, "").replace(/\*\*/g, "").trim();
-
-        findings.push({ item: field, status, actual, guideline, detail });
-      }
-      continue;
-    }
-
-    // --- Format C: | Item | ✅/❌ value | Detail |
-    if (cells.length >= 3) {
-      const item = cells[0]!.replace(/\*\*/g, "").trim();
-      const resultCell = cells[1]!;
-      const detailCell = cells.length > 3 ? cells.slice(2).join(" | ") : cells[2]!;
-
-      // Skip if it looks like a header
-      if (/^(result|status|severity|value)$/i.test(item)) continue;
-
-      let status: Finding["status"] = "info";
-      if (/✅|Pass/i.test(resultCell)) status = "pass";
-      else if (/❌|Fail|BLOCK/i.test(resultCell)) status = "fail";
-      else if (/⚠️|Warning/i.test(resultCell)) status = "warning";
-
-      // Parse actual + guideline from result cell: "80% ≤ 85% max" or "742"
-      const nums = resultCell.match(/(\d+\.?\d*%?)/g);
-      const actual = nums?.[0];
-      const guideline = nums && nums.length > 1 ? `≤ ${nums[1]}` : undefined;
-
-      findings.push({
-        item,
-        status,
-        actual,
-        guideline,
-        detail: detailCell.replace(/\*\*/g, "").replace(/[✅❌⚠️🔴🟡⚪]/g, "").trim().slice(0, 200),
-      });
-    }
-  }
-
-  // Deduplicate by item name (keep first occurrence)
-  const seen = new Set<string>();
-  return findings.filter(f => {
-    const key = f.item.toLowerCase().slice(0, 20);
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
-function parseRiskFlags(text: string): RiskFlag[] {
-  const flags: RiskFlag[] = [];
-  const lines = text.split("\n");
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-
-    // Look for table rows with blocking/material severity
-    if (trimmed.startsWith("|") && /🔴.*BLOCKING|❌.*HARD|❌.*BLOCK/i.test(trimmed)) {
-      const cells = trimmed.split("|").map(c => c.trim()).filter(c => c.length > 0);
-      if (cells.length >= 2) {
-        const content = cells[1]!.replace(/\*\*/g, "").trim();
-        const parts = content.split(/\s*[—–]\s*/);
-        flags.push({
-          severity: "blocker",
-          title: parts[0]!.slice(0, 80),
-          detail: content.slice(0, 300),
-        });
-      }
-    }
-
-    if (trimmed.startsWith("|") && /🟡.*MATERIAL/i.test(trimmed)) {
-      const cells = trimmed.split("|").map(c => c.trim()).filter(c => c.length > 0);
-      if (cells.length >= 2) {
-        const content = cells[1]!.replace(/\*\*/g, "").trim();
-        const parts = content.split(/\s*[—–]\s*/);
-        flags.push({
-          severity: "warning",
-          title: parts[0]!.slice(0, 80),
-          detail: content.slice(0, 300),
-        });
-      }
-    }
-
-    // Also catch numbered blocking issues section: "1. **DTI exceeds..."
-    if (/^\d+\.\s*\*\*/.test(trimmed)) {
-      const content = trimmed.replace(/^\d+\.\s*/, "").replace(/\*\*/g, "").trim();
-      const isBlocker = /exceed|cannot|fail|block|decline/i.test(content);
-      if (isBlocker && !flags.some(f => f.title.slice(0, 20) === content.slice(0, 20))) {
-        flags.push({
-          severity: "blocker",
-          title: content.split(/[—–.]/)[0]!.trim().slice(0, 80),
-          detail: content.slice(0, 300),
-        });
-      }
-    }
-  }
-
-  return flags;
-}
-
-function extractExecutiveSummary(text: string, decision: string): string {
-  // Try to find a sentence-level summary after the decision table
-  const lines = text.split("\n");
-  const summaryParts: string[] = [];
-  let pastFirstTable = false;
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    // Skip until we're past the first table section
-    if (trimmed.startsWith("|") || trimmed.startsWith("---")) {
-      if (summaryParts.length === 0) pastFirstTable = true;
-      continue;
-    }
-    if (trimmed.startsWith("#")) {
-      if (summaryParts.length > 0) break; // hit next section
-      continue;
-    }
-    if (pastFirstTable && trimmed.length > 20 && !trimmed.startsWith("*")) {
-      summaryParts.push(trimmed);
-      if (summaryParts.length >= 2) break;
-    }
-  }
-
-  if (summaryParts.length > 0) return summaryParts.join(" ").slice(0, 500);
-
-  // Fallback: look for the Decision field value in the summary table
-  const decisionLine = lines.find(l => /\|\s*\*?\*?Decision\*?\*?\s*\|/.test(l));
-  if (decisionLine) {
-    const cells = decisionLine.split("|").map(c => c.trim()).filter(c => c.length > 0);
-    if (cells.length >= 2) return cells[1]!.replace(/\*\*/g, "").trim();
-  }
-
-  return `Agent recommends ${decision.toUpperCase()} based on program guideline analysis.`;
+function BlockersSection({ blockers }: { blockers: Blocker[] }) {
+  if (blockers.length === 0) return null;
+  return (
+    <div className="mb-3">
+      <div className="text-[10px] font-bold text-[#8a0000] uppercase tracking-wide mb-1">
+        Blocking Issues
+      </div>
+      {blockers.map((b, i) => (
+        <div
+          key={i}
+          className="p-2 mb-1 border-l-4 border-[#c00] bg-[#fde8e8] text-[10px]"
+        >
+          <div className="font-bold text-[#8a0000]">🚫 {b.title}</div>
+          {b.detail && <div className="text-[#404040] mt-[3px]">{b.detail}</div>}
+        </div>
+      ))}
+    </div>
+  );
 }
 
 // ─── FindingsTable ────────────────────────────────────────────────────────────
 
 function FindingsTable({ findings }: { findings: Finding[] }) {
   if (findings.length === 0) return null;
+
   const STATUS = {
     pass: { icon: "✅", cls: "text-[#1b5e20]", label: "Pass" },
     fail: { icon: "❌", cls: "text-[#8a0000] font-bold", label: "Fail" },
     warning: { icon: "⚠️", cls: "text-[#8a4b00]", label: "Warning" },
     info: { icon: "ℹ️", cls: "text-[#0d47a1]", label: "Info" },
   };
+
   return (
     <div className="enc-sec mb-3">
       <h4>Findings</h4>
       <table className="w-full border-collapse text-[10px]">
         <thead>
           <tr className="bg-[#d4d0c8]">
-            <th className="text-left px-2 py-[3px] border-r border-[#b7c2d3] w-[30px]">#</th>
+            <th className="text-left px-2 py-[3px] border-r border-[#b7c2d3] w-[28px]">#</th>
             <th className="text-left px-2 py-[3px] border-r border-[#b7c2d3]">Check</th>
-            <th className="text-left px-2 py-[3px] border-r border-[#b7c2d3]">Guideline</th>
-            <th className="text-left px-2 py-[3px] border-r border-[#b7c2d3]">Submitted</th>
-            <th className="text-left px-2 py-[3px] border-r border-[#b7c2d3] w-[60px]">Result</th>
-            <th className="text-left px-2 py-[3px]">Detail</th>
+            <th className="text-left px-2 py-[3px] w-[70px]">Result</th>
           </tr>
         </thead>
         <tbody>
@@ -276,46 +318,24 @@ function FindingsTable({ findings }: { findings: Finding[] }) {
             return (
               <tr
                 key={i}
-                className={`${i % 2 ? "bg-[#f5f3e8]" : ""} ${f.status === "fail" ? "bg-[#fde8e8]" : ""}`}
+                className={`${
+                  f.status === "fail"
+                    ? "bg-[#fde8e8]"
+                    : i % 2
+                      ? "bg-[#f5f3e8]"
+                      : ""
+                }`}
               >
-                <td className="px-2 py-[2px] border-b border-[#c8c4b5]">{i + 1}</td>
-                <td className="px-2 py-[2px] border-b border-[#c8c4b5] font-bold">{f.item}</td>
-                <td className="px-2 py-[2px] border-b border-[#c8c4b5]">{f.guideline ?? "—"}</td>
-                <td className="px-2 py-[2px] border-b border-[#c8c4b5]">{f.actual ?? "—"}</td>
-                <td className={`px-2 py-[2px] border-b border-[#c8c4b5] ${s.cls}`}>
-                  {s.icon} {s.label}
+                <td className="px-2 py-[2px] border-b border-[#c8c4b5] text-center">{f.num}</td>
+                <td className="px-2 py-[2px] border-b border-[#c8c4b5]">{f.item}</td>
+                <td className={`px-2 py-[2px] border-b border-[#c8c4b5] ${s.cls} whitespace-nowrap`}>
+                  {s.icon} {f.statusText || s.label}
                 </td>
-                <td className="px-2 py-[2px] border-b border-[#c8c4b5]">{f.detail}</td>
               </tr>
             );
           })}
         </tbody>
       </table>
-    </div>
-  );
-}
-
-// ─── RiskFlags ────────────────────────────────────────────────────────────────
-
-function RiskFlags({ flags }: { flags: RiskFlag[] }) {
-  if (flags.length === 0) return null;
-  return (
-    <div className="mb-3">
-      {flags.map((f, i) => (
-        <div
-          key={i}
-          className={`p-2 mb-1 border-l-4 text-[10px] ${
-            f.severity === "blocker"
-              ? "border-[#c00] bg-[#fde8e8]"
-              : "border-[#ff9800] bg-[#fff8e1]"
-          }`}
-        >
-          <div className="font-bold">
-            {f.severity === "blocker" ? "🚫" : "⚠️"} {f.title}
-          </div>
-          <div className="text-[#404040] mt-1">{f.detail}</div>
-        </div>
-      ))}
     </div>
   );
 }
@@ -362,6 +382,7 @@ function ConditionsList({
   };
 
   if (conditions.length === 0) return null;
+
   return (
     <div className="enc-sec mb-3">
       <h4>Suggested Conditions</h4>
@@ -380,13 +401,13 @@ function ConditionsList({
             key={i}
             className={`flex items-center gap-2 py-1 border-b border-[#e0dfdb] text-[10px] ${added.has(i) ? "opacity-50" : ""}`}
           >
-            <span className="font-bold w-[20px]">{i + 1}.</span>
+            <span className="font-bold w-[20px] shrink-0">{i + 1}.</span>
             <span className="flex-1">{c}</span>
             {added.has(i) ? (
               <span className="text-[#1b5e20]">✓ Added</span>
             ) : (
               <button
-                className="enc-btn text-[9px]"
+                className="enc-btn text-[9px] shrink-0"
                 disabled={pending}
                 onClick={() => addOne(i, c)}
               >
@@ -514,66 +535,79 @@ export function RecommendationPanel({
       actionRunAgent(loanId);
     });
 
-  const findings = parseFindings(rec.rationale);
-  const riskFlags = parseRiskFlags(rec.rationale);
-  const summary = extractExecutiveSummary(rec.rationale, rec.recommendation);
+  // Parse rationale into structured sections
+  const sections = parseSections(rec.rationale);
+  const summary = extractExecutiveSummary(sections);
+  const metrics = parseKeyMetrics(sections);
+  const findings = parseFindings(sections);
+  const blockers = parseBlockers(sections);
+
+  // Merge conditions: rec.conditions first, then any from rationale not already present
+  const rationaleConditions = parseConditionsFromSections(sections);
+  const allConditions = [
+    ...rec.conditions,
+    ...rationaleConditions.filter(
+      (rc) => !rec.conditions.some((c) => c.toLowerCase().slice(0, 30) === rc.toLowerCase().slice(0, 30)),
+    ),
+  ];
 
   return (
     <div className="enc-sec mt-2 border-2 border-[#0a52a0]">
       <h4 className="!bg-gradient-to-b from-[#d79a1f] to-[#8a6110]">
-        🤖 AI Underwriting Report — mlb-uw-agent
+        AI Underwriting Report — mlb-uw-agent
       </h4>
       <div className="p-3 bg-[#fffdf5]">
-        {/* Decision Badge + Confidence */}
-        <div className="mb-4">
-          <DecisionBadge decision={rec.recommendation} confidence={rec.confidence} />
-        </div>
 
-        {/* Executive Summary */}
-        <div className="mb-3 p-3 bg-white border border-[#c8c4b5] text-[11px]">
-          <div className="font-bold text-[10px] text-[#1f4478] mb-1 uppercase">
-            Executive Summary
+        {/* 1. Header — Decision + Confidence + Summary */}
+        <div className="mb-3 p-3 bg-white border border-[#c8c4b5]">
+          <div className="mb-3">
+            <DecisionBadge decision={rec.recommendation} confidence={rec.confidence} />
           </div>
-          {summary}
-          <div className="text-[9px] text-[#404040] mt-2">
-            Analyzed at {new Date(rec.stagedAt).toLocaleString()} by {rec.stagedBy}
+          {summary && (
+            <div className="text-[11px] text-[#1f2d40] leading-relaxed mb-2">{summary}</div>
+          )}
+          <div className="text-[9px] text-[#707070]">
+            Analyzed {new Date(rec.stagedAt).toLocaleString()} &middot; {rec.stagedBy}
           </div>
         </div>
 
-        {/* Risk Flags */}
-        <RiskFlags flags={riskFlags} />
+        {/* 2. Blockers — first thing a UW reads on a denied loan */}
+        <BlockersSection blockers={blockers} />
 
-        {/* Findings Table */}
+        {/* 3. Key Metrics Grid */}
+        <KeyMetricsGrid metrics={metrics} />
+
+        {/* 4. Findings Table */}
         <FindingsTable findings={findings} />
 
-        {/* Suggested Conditions */}
-        <ConditionsList loanId={loanId} conditions={rec.conditions} pending={pending} />
+        {/* 5. Suggested Conditions */}
+        <ConditionsList loanId={loanId} conditions={allConditions} pending={pending} />
 
-        {/* Reasoning Trace */}
+        {/* 6. Reasoning Trace — collapsed by default */}
         <ReasoningTrace trace={rec.trace} />
 
-        {/* Sticky Action Bar */}
+        {/* 7. Sticky Action Bar */}
         <div className="sticky bottom-0 flex items-center gap-2 p-3 bg-[#ece9d8] border-t-2 border-[#6b7a8f] -mx-3 -mb-3">
           <button className="enc-btn enc-btn--primary" disabled={pending} onClick={accept}>
-            ✓ Accept as-is
+            ✓ Accept
           </button>
-          {rec.conditions.length > 0 && (
+          {allConditions.length > 0 && (
             <button
               className="enc-btn enc-btn--primary"
               disabled={pending}
               onClick={acceptWithConditions}
             >
-              ✓ Accept + Add Conditions
+              ✓ Accept + Conditions
             </button>
           )}
           <button className="enc-btn" disabled={pending} onClick={reject}>
             ✗ Reject
           </button>
           <button className="enc-btn" disabled={pending} onClick={rerun}>
-            ↻ Re-run Agent
+            ↻ Re-run
           </button>
           <span className="text-[9px] text-[#404040] ml-auto">
-            Accepting converts to {rec.recommendation.toUpperCase()} decision
+            Accept converts to {rec.recommendation.toUpperCase()} decision
           </span>
         </div>
       </div>
