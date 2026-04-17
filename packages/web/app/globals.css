@@ -18,9 +18,9 @@ html, body {
 }
 .enc-grid-8 { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); }
 .enc-field { border-right: 1px solid #c8c4b5; border-bottom: 1px solid #c8c4b5;
-  padding: 1px 4px; min-height: 28px; }
-.enc-field label { display: block; color: #404040; font-size: 9px; line-height: 1.1; }
-.enc-field .v { font-size: 11px; font-weight: 600; font-family: Tahoma, sans-serif; }
+  padding: 1px 4px; min-height: 28px; overflow: hidden; }
+.enc-field label { display: block; color: #404040; font-size: 9px; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.enc-field .v { font-size: 11px; font-weight: 600; font-family: Tahoma, sans-serif; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .enc-btn { font-size: 10px; padding: 1px 10px; border: 1px solid #6b7a8f;
   background: linear-gradient(#fff, #dcd7c0); cursor: pointer; }

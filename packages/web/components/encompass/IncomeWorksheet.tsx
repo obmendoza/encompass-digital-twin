@@ -108,9 +108,9 @@ export function IncomeWorksheet({ loan }: Props) {
       {/* Summary bar */}
       <div className="enc-sec mb-2">
         <h4>Income Summary</h4>
-        <div className="enc-grid-8">
-          <div className="enc-field"><label>Method</label><div className="v">{method}</div></div>
-          <div className="enc-field"><label>Program</label><div className="v">{loan.nqmProgram}</div></div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))" }}>
+          <div className="enc-field"><label>Method</label><div className="v" title={method}>{getMethodTitle(method)}</div></div>
+          <div className="enc-field"><label>Program</label><div className="v" title={loan.nqmProgram}>{loan.nqmProgram}</div></div>
           <div className="enc-field"><label>Current Income</label><div className="v">{money(loan.qualifyingWorksheet.derivedMonthlyIncome)}</div></div>
           <div className="enc-field"><label>Housing Ratio</label><div className="v">{pct(loan.qualifying.housingRatio)}</div></div>
           <div className="enc-field"><label>Total DTI</label><div className="v">{pct(loan.qualifying.totalDti)}</div></div>
@@ -124,7 +124,7 @@ export function IncomeWorksheet({ loan }: Props) {
       <div className="enc-sec">
         <h4>{getMethodTitle(method)} Worksheet</h4>
         <div className="p-3">
-          <div className="enc-grid-8">
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))" }}>
             {method === "BankStatementDeposits" && (
               <>
                 <InputField label="Months Covered" value={monthsCovered} onChange={(v) => setMonthsCovered(Number(v))} />
@@ -133,8 +133,6 @@ export function IncomeWorksheet({ loan }: Props) {
                 <InputField label="NSF Count" value={nsfCount} onChange={(v) => setNsfCount(Number(v))} />
                 <ComputedField label="Net Deposits" value={money(avgDeposits * (1 - expenseFactor / 100))} />
                 <ComputedField label="Derived Income" value={money(derived)} />
-                <div className="enc-field" />
-                <div className="enc-field" />
               </>
             )}
 
@@ -144,7 +142,7 @@ export function IncomeWorksheet({ loan }: Props) {
                 <InputField label="Monthly PITIA" value={pitia} readOnly />
                 <ComputedField label="DSCR Ratio" value={dscrRatio.toFixed(2)} />
                 <ComputedField label="Coverage" value={dscrRatio >= 1 ? "Pass" : "Below 1.0"} />
-                <div className="enc-field" /><div className="enc-field" /><div className="enc-field" /><div className="enc-field" />
+                
               </>
             )}
 
@@ -153,7 +151,7 @@ export function IncomeWorksheet({ loan }: Props) {
                 <InputField label="Total Eligible Assets" value={totalAssets} onChange={(v) => setTotalAssets(Number(v))} />
                 <InputField label="Depletion Period (mo)" value={depletionMonths} onChange={(v) => setDepletionMonths(Number(v))} />
                 <ComputedField label="Derived Income" value={money(derived)} />
-                <div className="enc-field" /><div className="enc-field" /><div className="enc-field" /><div className="enc-field" /><div className="enc-field" />
+                
               </>
             )}
 
@@ -163,7 +161,7 @@ export function IncomeWorksheet({ loan }: Props) {
                 <InputField label="Expense Factor (%)" value={expenseFactor} onChange={(v) => setExpenseFactor(Number(v))} />
                 <ComputedField label="Monthly Gross" value={money(gross1099 / 12)} />
                 <ComputedField label="Derived Income" value={money(derived)} />
-                <div className="enc-field" /><div className="enc-field" /><div className="enc-field" /><div className="enc-field" />
+                
               </>
             )}
 
@@ -171,7 +169,7 @@ export function IncomeWorksheet({ loan }: Props) {
               <>
                 <InputField label="CPA Net Income (mo)" value={cpaCertifiedNet} onChange={(v) => setCpaCertifiedNet(Number(v))} />
                 <ComputedField label="Derived Income" value={money(derived)} />
-                <div className="enc-field" /><div className="enc-field" /><div className="enc-field" /><div className="enc-field" /><div className="enc-field" /><div className="enc-field" />
+                
               </>
             )}
 
@@ -179,7 +177,7 @@ export function IncomeWorksheet({ loan }: Props) {
               <>
                 <InputField label="Total Monthly Income" value={directIncome} onChange={(v) => setDirectIncome(Number(v))} />
                 <ComputedField label="Derived Income" value={money(derived)} />
-                <div className="enc-field" /><div className="enc-field" /><div className="enc-field" /><div className="enc-field" /><div className="enc-field" /><div className="enc-field" />
+                
               </>
             )}
           </div>
