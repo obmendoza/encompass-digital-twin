@@ -79,7 +79,7 @@ export async function actionRunAgent(loanId: string): Promise<ActionResult> {
       headers: { "content-type": "application/json" },
       cache: "no-store",
       next: { revalidate: 0 },
-      signal: AbortSignal.timeout(90_000),
+      signal: AbortSignal.timeout(300_000),
     });
     if (!res.ok) {
       const body = await res.text();
