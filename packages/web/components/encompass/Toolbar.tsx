@@ -6,6 +6,7 @@ export function Toolbar() {
     <div className="bg-[#ece9d8] border-b border-[#9aa0a8] px-2 py-[2px] flex gap-1">
       <Link href="/" className="enc-btn font-bold">Pipeline</Link>
       <Link href="/workshop" className="enc-btn">Workshop</Link>
+      <Link href="/hitl" className="enc-btn">HITL Inbox</Link>
       {BTNS.map((b) => (
         <button key={b} className="enc-btn">{b}</button>
       ))}
