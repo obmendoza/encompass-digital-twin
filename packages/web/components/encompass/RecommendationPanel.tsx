@@ -455,10 +455,11 @@ function ConditionsList({
 function ReasoningTrace({ trace }: { trace: AgentStep[] }) {
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
 
-  type GroupKey = "tool" | "analysis" | "decision";
+  type GroupKey = "tool" | "analysis" | "validation" | "decision";
   const groups: Record<GroupKey, { icon: string; label: string; steps: AgentStep[] }> = {
     tool: { icon: "🔧", label: "Tool Calls", steps: [] },
     analysis: { icon: "💭", label: "Analysis", steps: [] },
+    validation: { icon: "🔍", label: "Data Quality Checks", steps: [] },
     decision: { icon: "📋", label: "Decision Synthesis", steps: [] },
   };
 
@@ -467,6 +468,8 @@ function ReasoningTrace({ trace }: { trace: AgentStep[] }) {
       groups.tool.steps.push(step);
     } else if (step.phase === "thinking" || step.phase === "message") {
       groups.analysis.steps.push(step);
+    } else if (step.phase === "validation") {
+      groups.validation.steps.push(step);
     } else {
       groups.decision.steps.push(step);
     }

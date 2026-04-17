@@ -36,7 +36,7 @@ export type QualifyingMethod =
 export type UwDecision =
   | "pending" | "approved" | "suspended" | "counter" | "denied";
 
-export type AgentStepPhase = "thinking" | "tool_call" | "tool_result" | "message" | "decision";
+export type AgentStepPhase = "thinking" | "tool_call" | "tool_result" | "message" | "decision" | "validation";
 
 export interface AgentStep {
   phase: AgentStepPhase;
