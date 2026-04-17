@@ -73,7 +73,7 @@ export const WaiveConditionSchema = z.object({
 export const ActorOnlySchema = z.object({ actor: ActorSchema });
 
 export const AgentStepSchema = z.object({
-  phase: z.enum(["thinking", "tool_call", "tool_result", "message", "decision"]),
+  phase: z.enum(["thinking", "tool_call", "tool_result", "message", "decision", "validation"]),
   content: z.string(),
   metadata: z.record(z.unknown()).optional(),
   at: z.string(),
