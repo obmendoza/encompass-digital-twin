@@ -68,12 +68,10 @@ function TicketCard({ ticket }: { ticket: HITLTicket }) {
           {ticket.fields && Object.keys(ticket.fields).length > 0 && (
             <div className="mb-2">
               <div className="font-bold text-[10px] text-[#1f4478] uppercase mb-1">Key Fields</div>
-              <div className="bg-white border border-[#c8c4b5] p-2 text-[10px]">
+              <div className="bg-white border border-[#c8c4b5] p-2 text-[10px] grid grid-cols-[auto_1fr_auto_1fr] gap-x-4 gap-y-1">
                 {Object.entries(ticket.fields).map(([k, v]) => (
-                  <div key={k} className="flex gap-2">
-                    <span className="font-bold w-[120px]">{k}:</span>
-                    <span>{String(v)}</span>
-                  </div>
+                  <><span key={k + "-label"} className="font-bold text-[#404040] whitespace-nowrap">{k.replace(/_/g, " ")}:</span>
+                  <span key={k + "-value"} className="tabular-nums">{String(v)}</span></>
                 ))}
               </div>
             </div>
