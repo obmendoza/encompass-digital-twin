@@ -83,6 +83,7 @@ function formatDetail(action: Action): string {
         tool_result: "📊",
         message: "💬",
         decision: "📋",
+        validation: "🔍",
       } as Record<string, string>)[step.phase] ?? "🤖";
       const label = ({
         thinking: "Analysis",
@@ -90,6 +91,7 @@ function formatDetail(action: Action): string {
         tool_result: "Tool Result",
         message: "Agent",
         decision: "Decision",
+        validation: "Validation",
       } as Record<string, string>)[step.phase] ?? step.phase;
       // Extract first meaningful line (skip markdown headers/rules)
       const lines = step.content.split("\n").filter((l: string) => l.trim() && !l.trim().startsWith("---") && !l.trim().startsWith("#"));
