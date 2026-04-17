@@ -61,7 +61,7 @@ function LoanPreview({ loan }: { loan: Record<string, unknown> }) {
         <div className="px-2 pb-2 text-[9px]">
           <b>Overlay Checks:</b>{" "}
           {(overlay.checks as Array<Record<string, unknown>>).map((ch, i) => (
-            <span key={i} className={`mr-2 ${ch.result === "Pass" ? "text-[#1b5e20]" : ch.result === "Fail" ? "text-[#c00]" : "text-[#8a4b00]"}`}>
+            <span key={i} className={`inline-block mr-1 mb-1 px-1 border text-[9px] ${ch.result === "Pass" ? "text-[#1b5e20] border-[#1b5e20] bg-[#f0f9f0]" : ch.result === "Fail" ? "text-[#c00] border-[#c00] bg-[#fef0f0]" : "text-[#8a4b00] border-[#8a4b00] bg-[#fffbf0]"}`}>
               {String(ch.category)}: {String(ch.result)}
             </span>
           ))}
