@@ -129,3 +129,58 @@ describe("reduce — conditions", () => {
       .toThrowError(ActionError);
   });
 });
+
+describe("reduce — condition dedup", () => {
+  it("silently skips a duplicate condition with same description", () => {
+    const now = () => "2026-04-17T12:00:00.000Z";
+    const actor = { kind: "human" as const, id: "uw1" };
+    const loan = {
+      id: "DEDUP-001",
+      nqmProgram: "BankStatement12" as const, qualifyingMethod: "BankStatementDeposits" as const,
+      borrower: { fullName: "B", ssnMasked: "x", dob: "1980-01-01", maritalStatus: "Unmarried" as const },
+      property: { street: "", city: "", state: "CA", zip: "90001", propertyType: "SFR Det." as const, units: 1, yearBuilt: 2000 },
+      transaction: { loanPurpose: "Purchase" as const, loanAmount: 400000, appraisedValue: 500000,
+        ltv: 80, cltv: 80, hcltv: 80, noteRate: 7, term: 360, amortType: "Fixed" as const, lienPosition: 1 as const,
+        occupancy: "Primary" as const, isInvestmentProperty: false, piti: 3000 },
+      qualifying: { housingRatio: 25, totalDti: 38, piPayment: 2660, qualifyingRate: 7 },
+      qualifyingWorksheet: { method: "BankStatementDeposits" as const, derivedMonthlyIncome: 12000 },
+      income: { totalMonthlyIncome: 12000 },
+      assets: { totalLiquid: 80000, totalRetirement: 0, reservesMonths: 6 },
+      credit: { repScore: 720, tradelinesOpen: 5, tradelinesTotal: 8,
+        tradelines: [], liabilities: { totalMonthlyPayments: 0, revolvingBalance: 0, installmentBalance: 0, mortgageBalance: 0, collectionsBalance: 0, totalBalance: 0 } },
+      conditions: [], documents: [], decision: "pending" as const, milestones: [],
+      appraisal: { appraisalDate: "2026-04-01", appraiserName: "T", appraisalType: "Full" as const,
+        appraisedValue: 500000, marketCondition: "Stable" as const, neighborhoodRating: "Good" as const,
+        siteArea: "0.25", grossLivingArea: 1800, roomCount: 7, bedroomCount: 3,
+        bathroomCount: 2, garageSpaces: 2, condition: "Good" as const, comparables: [] },
+      compliance: { qmStatus: "Non-QM" as const, atrCompliant: true, hpml: false, hoepa: false,
+        higherPricedCoveredTransaction: false, stateLicenseRequired: false,
+        stateHighCostTest: "Pass" as const, tridToleranceCure: "None" as const,
+        totalPointsAndFees: 2500, pointsAndFeesThreshold: 4000, pointsAndFeesPass: true, flags: [] },
+      overlay: { programName: "Test", investorName: "Test", maxLTV: 90, minFICO: 660,
+        maxDTI: 50, minDSCR: null, minReserves: 6, checks: [] },
+    };
+
+    const sc = { s: { id: "s", name: "s", description: "", loan } };
+    let state = reduce({ scenarioId: null, loans: {}, actionLog: [], now },
+      { type: "LoadScenario", scenarioId: "s" }, (k) => (sc as Record<string, typeof sc.s>)[k]);
+
+    // Add first condition
+    state = reduce(state, { type: "AddCondition", loanId: "DEDUP-001",
+      condition: { category: "PTD", source: "UW", description: "Obtain 2-month statements for all liquid asset accounts" },
+      actor }, () => undefined);
+    expect(state.loans["DEDUP-001"]!.conditions).toHaveLength(1);
+
+    // Try adding near-duplicate — should be silently skipped
+    state = reduce(state, { type: "AddCondition", loanId: "DEDUP-001",
+      condition: { category: "PTD", source: "UW", description: "Obtain 2-month statements for all liquid asset accounts" },
+      actor }, () => undefined);
+    expect(state.loans["DEDUP-001"]!.conditions).toHaveLength(1);
+
+    // Different condition should still be added
+    state = reduce(state, { type: "AddCondition", loanId: "DEDUP-001",
+      condition: { category: "PTD", source: "UW", description: "Verify income using 360-month divisor" },
+      actor }, () => undefined);
+    expect(state.loans["DEDUP-001"]!.conditions).toHaveLength(2);
+  });
+});
