@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { actionRunAgent } from "@/app/loan/[loanId]/actions";
+import { AgentActivityFeed } from "./AgentActivityFeed";
 
 export function RunAgentButton({ loanId, hasRecommendation }: {
   loanId: string;
@@ -9,12 +10,18 @@ export function RunAgentButton({ loanId, hasRecommendation }: {
 }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [running, setRunning] = useState(false);
 
   const run = () => {
     setError(null);
+    setRunning(true);
     startTransition(async () => {
       const result = await actionRunAgent(loanId);
-      if (!result.ok) setError(result.error?.message ?? "Agent failed");
+      if (!result.ok) {
+        setError(result.error?.message ?? "Agent failed");
+        setRunning(false);
+      }
+      // Don't setRunning(false) on success — feed will detect StageRecommendation
     });
   };
 
@@ -27,15 +34,18 @@ export function RunAgentButton({ loanId, hasRecommendation }: {
   }
 
   return (
-    <div className="flex items-center gap-2">
-      <button
-        className="enc-btn enc-btn--primary"
-        disabled={pending}
-        onClick={run}
-      >
-        {pending ? "🤖 Analyzing… (~60s)" : "🤖 Run AI Agent"}
-      </button>
-      {error && <span className="text-[10px] text-[#c00]">{error}</span>}
+    <div>
+      <div className="flex items-center gap-2">
+        <button
+          className="enc-btn enc-btn--primary"
+          disabled={pending}
+          onClick={run}
+        >
+          {pending ? "🤖 Analyzing…" : "🤖 Run AI Agent"}
+        </button>
+        {error && <span className="text-[10px] text-[#c00]">{error}</span>}
+      </div>
+      <AgentActivityFeed loanId={loanId} active={running} />
     </div>
   );
 }
