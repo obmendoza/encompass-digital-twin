@@ -31,7 +31,7 @@ export function SandboxControls({ loans }: { loans: LoanSummary[] }) {
         <button
           className="enc-btn enc-btn--primary ml-auto"
           disabled={pending}
-          onClick={() => startTransition(() => { actionResetAndReloadAll(); })}
+          onClick={() => startTransition(async () => { await actionResetAndReloadAll(); })}
         >
           {pending ? "Resetting…" : "Reset All Loans to Original State"}
         </button>
