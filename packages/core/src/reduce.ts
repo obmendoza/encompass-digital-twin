@@ -81,6 +81,15 @@ export function reduce(
         throw new ActionError("ACTION_FORBIDDEN_IN_DECISION_STATE",
           `cannot add conditions on a denied loan`, { loanId: action.loanId, decision: l0.decision });
       }
+      // Dedup: skip if a similar condition already exists (normalize + first 30 chars)
+      const normDesc = action.condition.description.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 30);
+      const isDupe = l0.conditions.some((existing) => {
+        const normExisting = existing.description.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 30);
+        return normDesc === normExisting || (normDesc.length > 10 && normExisting.includes(normDesc.slice(0, 20)));
+      });
+      if (isDupe) {
+        return log(state);
+      }
       const nextId = `c${l0.conditions.length + 1}`;
       const c = {
         id: nextId,
