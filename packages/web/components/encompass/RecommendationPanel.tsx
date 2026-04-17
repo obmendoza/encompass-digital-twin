@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import type { PendingRecommendation, AgentStep } from "@twin/core";
+import type { PendingRecommendation, AgentStep, Condition } from "@twin/core";
 import {
   actionAcceptRecommendation,
   actionClearRecommendation,
@@ -342,17 +342,38 @@ function FindingsTable({ findings }: { findings: Finding[] }) {
 
 // ─── ConditionsList ───────────────────────────────────────────────────────────
 
+function isSimilarCondition(suggested: string, existing: string): boolean {
+  const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 40);
+  const a = normalize(suggested);
+  const b = normalize(existing);
+  if (a === b) return true;
+  // Check if one contains a significant substring of the other
+  const shorter = a.length < b.length ? a : b;
+  const longer = a.length < b.length ? b : a;
+  return shorter.length > 10 && longer.includes(shorter.slice(0, 20));
+}
+
 function ConditionsList({
   loanId,
   conditions,
+  existingConditions,
   pending,
 }: {
   loanId: string;
   conditions: string[];
+  existingConditions: Condition[];
   pending: boolean;
 }) {
   const [added, setAdded] = useState<Set<number>>(new Set());
   const [, startTransition] = useTransition();
+
+  const existingDescs = existingConditions.map((c) => c.description);
+  const duplicateSet = new Set<number>();
+  conditions.forEach((c, i) => {
+    if (existingDescs.some((e) => isSimilarCondition(c, e))) duplicateSet.add(i);
+  });
+
+  const addableCount = conditions.filter((_, i) => !duplicateSet.has(i) && !added.has(i)).length;
 
   const addOne = (idx: number, desc: string) => {
     startTransition(async () => {
@@ -369,7 +390,7 @@ function ConditionsList({
     startTransition(async () => {
       for (let i = 0; i < conditions.length; i++) {
         const desc = conditions[i];
-        if (!added.has(i) && desc !== undefined) {
+        if (!added.has(i) && !duplicateSet.has(i) && desc !== undefined) {
           await actionAddCondition(loanId, {
             category: "PTD" as const,
             source: "UW" as const,
@@ -387,35 +408,43 @@ function ConditionsList({
     <div className="enc-sec mb-3">
       <h4>Suggested Conditions</h4>
       <div className="p-2">
-        <div className="flex items-center gap-2 mb-2">
-          <button
-            className="enc-btn enc-btn--primary text-[10px]"
-            disabled={pending || added.size === conditions.length}
-            onClick={addAll}
-          >
-            Add All to Loan ({conditions.length - added.size} remaining)
-          </button>
-        </div>
-        {conditions.map((c, i) => (
-          <div
-            key={i}
-            className={`flex items-center gap-2 py-1 border-b border-[#e0dfdb] text-[10px] ${added.has(i) ? "opacity-50" : ""}`}
-          >
-            <span className="font-bold w-[20px] shrink-0">{i + 1}.</span>
-            <span className="flex-1">{c}</span>
-            {added.has(i) ? (
-              <span className="text-[#1b5e20]">✓ Added</span>
-            ) : (
-              <button
-                className="enc-btn text-[9px] shrink-0"
-                disabled={pending}
-                onClick={() => addOne(i, c)}
-              >
-                + Add
-              </button>
-            )}
+        {addableCount > 0 && (
+          <div className="flex items-center gap-2 mb-2">
+            <button
+              className="enc-btn enc-btn--primary text-[10px]"
+              disabled={pending || addableCount === 0}
+              onClick={addAll}
+            >
+              Add All New to Loan ({addableCount} remaining)
+            </button>
           </div>
-        ))}
+        )}
+        {conditions.map((c, i) => {
+          const isDuplicate = duplicateSet.has(i);
+          const isAdded = added.has(i);
+          return (
+            <div
+              key={i}
+              className={`flex items-center gap-2 py-1 border-b border-[#e0dfdb] text-[10px] ${isDuplicate || isAdded ? "opacity-50" : ""}`}
+            >
+              <span className="font-bold w-[20px] shrink-0">{i + 1}.</span>
+              <span className="flex-1">{c}</span>
+              {isDuplicate ? (
+                <span className="text-[#0a52a0] text-[9px] whitespace-nowrap">Already on loan</span>
+              ) : isAdded ? (
+                <span className="text-[#1b5e20] text-[9px]">✓ Added</span>
+              ) : (
+                <button
+                  className="enc-btn text-[9px] shrink-0"
+                  disabled={pending}
+                  onClick={() => addOne(i, c)}
+                >
+                  + Add
+                </button>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -501,9 +530,11 @@ function ReasoningTrace({ trace }: { trace: AgentStep[] }) {
 export function RecommendationPanel({
   loanId,
   rec,
+  existingConditions = [],
 }: {
   loanId: string;
   rec: PendingRecommendation;
+  existingConditions?: Condition[];
 }) {
   const [pending, startTransition] = useTransition();
 
@@ -581,7 +612,7 @@ export function RecommendationPanel({
         <FindingsTable findings={findings} />
 
         {/* 5. Suggested Conditions */}
-        <ConditionsList loanId={loanId} conditions={allConditions} pending={pending} />
+        <ConditionsList loanId={loanId} conditions={allConditions} existingConditions={existingConditions} pending={pending} />
 
         {/* 6. Reasoning Trace — collapsed by default */}
         <ReasoningTrace trace={rec.trace} />

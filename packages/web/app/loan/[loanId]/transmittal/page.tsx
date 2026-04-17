@@ -101,7 +101,7 @@ export default async function TransmittalPage({
       </div>
 
       {loan.pendingRecommendation && (
-        <RecommendationPanel loanId={loan.id} rec={loan.pendingRecommendation} />
+        <RecommendationPanel loanId={loan.id} rec={loan.pendingRecommendation} existingConditions={loan.conditions} />
       )}
 
       <div className="enc-sec mt-2">
