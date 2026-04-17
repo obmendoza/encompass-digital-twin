@@ -84,7 +84,18 @@ function formatDetail(action: Action): string {
         message: "💬",
         decision: "📋",
       } as Record<string, string>)[step.phase] ?? "🤖";
-      return `${icon} [${step.phase}] ${step.content.slice(0, 120)}${step.content.length > 120 ? "…" : ""}`;
+      const label = ({
+        thinking: "Analysis",
+        tool_call: "Tool Call",
+        tool_result: "Tool Result",
+        message: "Agent",
+        decision: "Decision",
+      } as Record<string, string>)[step.phase] ?? step.phase;
+      // Extract first meaningful line (skip markdown headers/rules)
+      const lines = step.content.split("\n").filter((l: string) => l.trim() && !l.trim().startsWith("---") && !l.trim().startsWith("#"));
+      const firstLine = (lines[0] ?? step.content).replace(/\*\*/g, "").trim();
+      const preview = firstLine.slice(0, 150) + (firstLine.length > 150 ? "…" : "");
+      return `${icon} ${label}: ${preview}`;
     }
     case "StageRecommendation":
       return `Staged recommendation: ${action.recommendation.recommendation} (${Math.round(action.recommendation.confidence * 100)}% confidence)`;
