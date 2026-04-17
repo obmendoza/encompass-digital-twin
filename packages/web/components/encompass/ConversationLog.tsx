@@ -116,9 +116,22 @@ function formatTimestamp(at: string): string {
   }
 }
 
+function extractLoanId(action: Action): string | null {
+  if ("loanId" in action && typeof action.loanId === "string") return action.loanId;
+  if (action.type === "LoadScenario") return null;
+  if (action.type === "ResetWorld") return null;
+  if (action.type === "InjectLoan" && "loan" in action) return (action.loan as { id?: string })?.id ?? null;
+  return null;
+}
+
 export function ConversationLog({ entries }: { entries: LoggedAction[] }) {
   const [actorFilter, setActorFilter] = useState<ActorFilter>("All");
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("All");
+  const [loanFilter, setLoanFilter] = useState<string>("All");
+
+  const loanIds = Array.from(new Set(
+    entries.map((e) => extractLoanId(e.action)).filter((id): id is string => id !== null)
+  )).sort();
 
   const filtered = entries.filter((entry) => {
     const actor = "actor" in entry.action ? entry.action.actor : null;
@@ -129,6 +142,11 @@ export function ConversationLog({ entries }: { entries: LoggedAction[] }) {
     if (categoryFilter !== "All") {
       const cat = getCategory(entry.action.type);
       if (cat !== categoryFilter) return false;
+    }
+
+    if (loanFilter !== "All") {
+      const actionLoanId = extractLoanId(entry.action);
+      if (actionLoanId !== loanFilter) return false;
     }
 
     return true;
@@ -171,6 +189,19 @@ export function ConversationLog({ entries }: { entries: LoggedAction[] }) {
               {v}
             </button>
           ))}
+        </div>
+        <div className="flex items-center gap-1">
+          <label className="font-semibold text-[#1a2b4a]">Loan:</label>
+          <select
+            className="border border-[#6b7a8f] bg-white px-1 py-[1px] text-[11px]"
+            value={loanFilter}
+            onChange={(e) => setLoanFilter(e.target.value)}
+          >
+            <option value="All">All Loans</option>
+            {loanIds.map((id) => (
+              <option key={id} value={id}>{id}</option>
+            ))}
+          </select>
         </div>
         <span className="ml-auto text-[#6b7a8f]">{filtered.length} of {entries.length} events</span>
       </div>
