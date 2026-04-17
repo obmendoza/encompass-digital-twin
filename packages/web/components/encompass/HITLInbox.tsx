@@ -75,8 +75,11 @@ function TicketCard({ ticket }: { ticket: HITLTicket }) {
                   if (typeof v === "number") {
                     const isPercent = /ltv|dti|rate/i.test(k);
                     const isDollar = /amount|income|pitia|piti|payment/i.test(k);
+                    const isYear = /year|established|built|founded/i.test(k) || (v >= 1900 && v <= 2100 && Number.isInteger(v));
+                    const isCount = /count|months|fico|score|units/i.test(k);
                     if (isPercent) display = `${v.toLocaleString()}%`;
                     else if (isDollar) display = `$${v.toLocaleString()}`;
+                    else if (isYear || isCount) display = String(v);
                     else if (v >= 1000) display = v.toLocaleString();
                     else display = String(v);
                   } else if (typeof v === "boolean") {
