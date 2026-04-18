@@ -16,6 +16,11 @@ export interface Document {
   uploadedBy: string;
   uploadedAt: string;
   notes?: string;
+  fileKey?: string;
+  fileUrl?: string;
+  fileSize?: number;
+  mimeType?: string;
+  extractedData?: Record<string, unknown>;
 }
 
 export type NqmProgram =
@@ -330,4 +335,6 @@ export type Action =
   | { type: "StageRecommendation"; loanId: LoanId; recommendation: { recommendation: UwDecision; rationale: string; confidence: number; conditions: string[]; trace: AgentStep[] }; actor: Actor }
   | { type: "AcceptRecommendation"; loanId: LoanId; actor: Actor }
   | { type: "ClearRecommendation"; loanId: LoanId; actor: Actor }
-  | { type: "InjectLoan"; loan: Loan };
+  | { type: "InjectLoan"; loan: Loan }
+  | { type: "AttachFile"; loanId: LoanId; documentId: DocumentId; fileKey: string; fileUrl: string; fileSize: number; mimeType: string; actor: Actor }
+  | { type: "SetExtractedData"; loanId: LoanId; documentId: DocumentId; extractedData: Record<string, unknown>; actor: Actor };
