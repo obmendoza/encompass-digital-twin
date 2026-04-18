@@ -100,3 +100,23 @@ export async function actionAcceptRecommendation(loanId: string) {
 export async function actionClearRecommendation(loanId: string) {
   return run(loanId, () => api.clearRecommendation(loanId, humanActor));
 }
+
+export async function actionUploadFile(loanId: string, docId: string, formData: FormData): Promise<ActionResult & { fileUrl?: string }> {
+  const twinApi = process.env.TWIN_API_URL ?? "http://127.0.0.1:4000";
+  try {
+    const res = await fetch(`${twinApi}/loans/${loanId}/documents/${docId}/upload`, {
+      method: "POST",
+      body: formData,
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      return { ok: false, error: { code: "UPLOAD_FAILED", message: `Upload failed: ${text.slice(0, 200)}` } };
+    }
+    const data = await res.json();
+    revalidatePath(`/loan/${loanId}`, "layout");
+    return { ok: true, fileUrl: data.fileUrl };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, error: { code: "UPLOAD_ERROR", message: msg } };
+  }
+}
