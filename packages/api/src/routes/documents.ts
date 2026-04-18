@@ -41,4 +41,18 @@ export function registerDocumentRoutes(app: FastifyInstance, store: Store) {
         documentId: req.params.docId, conditionId: body.conditionId, actor: body.actor });
       reply.send(requireLoan(store, req.params.loanId));
     });
+
+  app.post<{ Params: { loanId: string; docId: string } }>(
+    "/loans/:loanId/documents/:docId/extract",
+    async (req, reply) => {
+      const body = req.body as { extractedData: Record<string, unknown>; actor: { kind: string; id: string } };
+      store.dispatch({
+        type: "SetExtractedData",
+        loanId: req.params.loanId,
+        documentId: req.params.docId,
+        extractedData: body.extractedData,
+        actor: body.actor as { kind: "human" | "agent"; id: string },
+      });
+      reply.send(requireLoan(store, req.params.loanId));
+    });
 }
