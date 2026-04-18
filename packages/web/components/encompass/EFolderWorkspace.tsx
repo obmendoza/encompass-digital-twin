@@ -231,17 +231,16 @@ export function EFolderWorkspace({ loan, twinApiUrl }: Props) {
                       </div>
                     </div>
                     <div className="shrink-0 flex items-center gap-1">
-                      <span className={`px-1 py-[1px] text-[9px] font-bold ${STATUS_STYLE[doc.status]?.bg ?? ""} ${STATUS_STYLE[doc.status]?.text ?? ""}`}>
-                        {doc.status}
-                      </span>
-                      {!doc.fileKey && (
-                        <button
-                          className="enc-btn text-[9px] px-1"
-                          disabled={pending}
+                      {doc.fileKey ? (
+                        <span className="px-1 py-[1px] text-[9px] font-bold bg-[#d7ecd0] text-[#1b5e20]">
+                          ✓ Filed
+                        </span>
+                      ) : (
+                        <span className="px-1 py-[1px] text-[9px] font-bold bg-[#fff3cd] text-[#856404] border border-[#856404] cursor-pointer hover:bg-[#ffe69c]"
                           onClick={(e) => { e.stopPropagation(); handleUpload(doc.id); }}
                         >
-                          ↑
-                        </button>
+                          📎 Upload
+                        </span>
                       )}
                     </div>
                   </div>
