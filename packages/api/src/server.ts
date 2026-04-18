@@ -1,4 +1,5 @@
 import Fastify, { type FastifyInstance } from "fastify";
+import multipart from "@fastify/multipart";
 import { createStore, type Store } from "@twin/core";
 import { scenarios } from "@twin/fixtures";
 import { registerErrorHandler } from "./errors.js";
@@ -7,6 +8,7 @@ import { registerLoanRoutes } from "./routes/loans.js";
 import { registerConditionRoutes } from "./routes/conditions.js";
 import { registerDocumentRoutes } from "./routes/documents.js";
 import { registerRecommendationRoutes } from "./routes/recommendation.js";
+import { registerUploadRoutes } from "./routes/uploads.js";
 import { buildOpenApiSpec } from "./openapi.js";
 
 export interface BuildOpts {
@@ -16,6 +18,7 @@ export interface BuildOpts {
 
 export function buildServer(opts: BuildOpts = {}): { app: FastifyInstance; store: Store } {
   const app = Fastify({ logger: false });
+  app.register(multipart, { limits: { fileSize: 20 * 1024 * 1024 } }); // 20MB max
   const store = createStore({ scenarios, now: opts.now });
 
   if (opts.preloadScenarioId === "*") {
@@ -32,6 +35,7 @@ export function buildServer(opts: BuildOpts = {}): { app: FastifyInstance; store
   registerConditionRoutes(app, store);
   registerDocumentRoutes(app, store);
   registerRecommendationRoutes(app, store);
+  registerUploadRoutes(app, store);
 
   app.get("/health", async () => ({ ok: true }));
 
