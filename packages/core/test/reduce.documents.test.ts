@@ -131,4 +131,27 @@ describe("reduce — documents", () => {
       documentId: "dXXX", status: "Received", actor,
     }, () => undefined)).toThrow(expect.objectContaining({ code: "DOCUMENT_NOT_FOUND" }));
   });
+
+  it("AttachFile sets file fields and transitions Pending → Received", () => {
+    // preload + add a document, then attach file
+    const s1 = reduce(preload(), { type: "AddDocument", loanId: "2501000001",
+      doc: { name: "Test.pdf", docType: "Other" }, actor }, () => undefined);
+    const docId = s1.loans["2501000001"]!.documents.at(-1)!.id;
+    const s2 = reduce(s1, { type: "AttachFile", loanId: "2501000001",
+      documentId: docId, fileKey: "abc123", fileUrl: "/uploads/abc123",
+      fileSize: 1024, mimeType: "application/pdf", actor }, () => undefined);
+    const doc = s2.loans["2501000001"]!.documents.find(d => d.id === docId)!;
+    expect(doc.fileKey).toBe("abc123");
+    expect(doc.fileSize).toBe(1024);
+    expect(doc.status).toBe("Received");
+  });
+
+  it("SetExtractedData stores extraction results", () => {
+    const s1 = reduce(preload(), { type: "AddDocument", loanId: "2501000001",
+      doc: { name: "1003.pdf", docType: "Other" }, actor }, () => undefined);
+    const docId = s1.loans["2501000001"]!.documents.at(-1)!.id;
+    const s2 = reduce(s1, { type: "SetExtractedData", loanId: "2501000001",
+      documentId: docId, extractedData: { borrowerName: "Test" }, actor }, () => undefined);
+    expect(s2.loans["2501000001"]!.documents.find(d => d.id === docId)!.extractedData).toEqual({ borrowerName: "Test" });
+  });
 });

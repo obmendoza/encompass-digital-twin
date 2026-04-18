@@ -300,6 +300,41 @@ export function reduce(
       });
     }
 
+    case "AttachFile": {
+      const l0 = requireLoan(state, action.loanId);
+      const dIdx = l0.documents.findIndex((d) => d.id === action.documentId);
+      if (dIdx === -1) {
+        throw new ActionError("DOCUMENT_NOT_FOUND",
+          `document '${action.documentId}' not found`, { documentId: action.documentId });
+      }
+      return log(withLoan(state, action.loanId, (l) => {
+        const ds = [...l.documents];
+        ds[dIdx] = {
+          ...ds[dIdx]!,
+          fileKey: action.fileKey,
+          fileUrl: action.fileUrl,
+          fileSize: action.fileSize,
+          mimeType: action.mimeType,
+          status: ds[dIdx]!.status === "Pending" ? "Received" : ds[dIdx]!.status,
+        };
+        return { ...l, documents: ds };
+      }));
+    }
+
+    case "SetExtractedData": {
+      const l0 = requireLoan(state, action.loanId);
+      const dIdx = l0.documents.findIndex((d) => d.id === action.documentId);
+      if (dIdx === -1) {
+        throw new ActionError("DOCUMENT_NOT_FOUND",
+          `document '${action.documentId}' not found`, { documentId: action.documentId });
+      }
+      return log(withLoan(state, action.loanId, (l) => {
+        const ds = [...l.documents];
+        ds[dIdx] = { ...ds[dIdx]!, extractedData: action.extractedData };
+        return { ...l, documents: ds };
+      }));
+    }
+
     default:
       return state;
   }
