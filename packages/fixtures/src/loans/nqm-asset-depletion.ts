@@ -13,8 +13,8 @@ const starter: Condition[] = assetDepletionStarterConditions.map((c, i) => ({
 
 // loanAmount 650000, appraised 1000000, LTV 65, FICO 730, PITI 5120.00
 // totalAssets 3_100_000, depletionMonths 60, derivedMonthlyIncome 51666
-// piPayment ~ PITI - 620 = 4500.00
-// housingRatio = 4500 / 51666 * 100 = 8.7; totalDti = 5120 / 51666 * 100 = 9.9
+// piPayment = amortization(650000, 7.5, 360) = 4544.89
+// housingRatio = 4544.89 / 51666 * 100 = 8.8; totalDti = 5120 / 51666 * 100 = 9.91
 export const nqmAssetDepletion: Scenario = {
   id: "nqm-asset-depletion",
   name: "NQM Asset Depletion — Retiree Purchase",
@@ -28,10 +28,10 @@ export const nqmAssetDepletion: Scenario = {
       propertyType: "SFR Det.", units: 1, yearBuilt: 2008 },
     transaction: {
       loanPurpose: "Purchase", loanAmount: 650000, salesPrice: 1000000, appraisedValue: 1000000,
-      ltv: 65, cltv: 65, hcltv: 65, noteRate: 7.0, term: 360, amortType: "Fixed", lienPosition: 1,
+      ltv: 65, cltv: 65, hcltv: 65, noteRate: 7.5, term: 360, amortType: "Fixed", lienPosition: 1,
       occupancy: "Primary", isInvestmentProperty: false, piti: 5120.00,
     },
-    qualifying: { housingRatio: 8.7, totalDti: 9.9, piPayment: 4500.00, qualifyingRate: 7.0 },
+    qualifying: { housingRatio: 8.8, totalDti: 9.91, piPayment: 4544.89, qualifyingRate: 7.5 },
     qualifyingWorksheet: {
       method: "AssetDepletionMonths",
       totalAssets: 3_100_000, depletionMonths: 60,

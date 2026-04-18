@@ -13,7 +13,7 @@ const starter: Condition[] = bkSeasoningStarterConditions.map((c, i) => ({
 
 // loanAmount 385000, appraised 550000, LTV 70, FICO 680, PITI 3010.00
 // derivedMonthlyIncome 8800, TraditionalDocs
-// piPayment ~ PITI - 510 = 2500.00; housingRatio = 2500 / 8800 * 100 = 28.4; totalDti = 3010 / 8800 * 100 = 34.2
+// piPayment = amortization(385000, 7.875, 360) = 2791.52; housingRatio = 2791.52 / 8800 * 100 = 31.72; totalDti = 3010 / 8800 * 100 = 34.2
 export const nqmFullDocRecentBk: Scenario = {
   id: "nqm-full-doc-recent-bk",
   name: "NQM Full Doc — Recent Bankruptcy",
@@ -30,7 +30,7 @@ export const nqmFullDocRecentBk: Scenario = {
       ltv: 70, cltv: 70, hcltv: 70, noteRate: 7.875, term: 360, amortType: "Fixed", lienPosition: 1,
       occupancy: "Primary", isInvestmentProperty: false, piti: 3010.00,
     },
-    qualifying: { housingRatio: 28.4, totalDti: 34.2, piPayment: 2500.00, qualifyingRate: 7.875 },
+    qualifying: { housingRatio: 31.72, totalDti: 34.2, piPayment: 2791.52, qualifyingRate: 7.875 },
     qualifyingWorksheet: {
       method: "TraditionalDocs",
       derivedMonthlyIncome: 8800,
@@ -88,7 +88,7 @@ export const nqmFullDocRecentBk: Scenario = {
         { code: "NQM-006", severity: "Info", description: "Non-QM: credit event (bankruptcy) within standard seasoning period", regulation: "12 CFR 1026.43(c)" },
       ],
     },
-    // LTV 70 <= 75 Pass, FICO 680 >= 660 Pass, DTI 34.2 <= 50 Pass, Reserves 6.0 >= 6 Pass, Seasoning BK >= 2 years Pass
+    // LTV 70 <= 75 Pass, FICO 680 >= 660 Pass, DTI 34.2 <= 50 Pass, Reserves 6.0 >= 6 Pass, Seasoning BK >= 2 years Pass (housingRatio 31.72)
     overlay: {
       programName: "NQM Full Doc (BK Seasoning)",
       investorName: "NQM Capital",

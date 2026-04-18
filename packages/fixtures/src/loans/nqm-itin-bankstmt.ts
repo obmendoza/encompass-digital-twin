@@ -15,7 +15,7 @@ const starter: Condition[] = allTemplates.map((c, i) => ({
 
 // loanAmount 275000, appraised 345000, LTV 80, FICO 690, PITI 2295.50
 // monthsCovered 12, avgDeposits 9500, expenseFactor 0.5, derivedMonthlyIncome 4750
-// piPayment ~ PITI - 470 = 1825.50; housingRatio = 1825.50 / 4750 * 100 = 38.4; totalDti = 2295.50 / 4750 * 100 = 48.3
+// piPayment = amortization(275000, 7.75, 360) = 1970.13; housingRatio = 1970.13 / 4750 * 100 = 41.48; totalDti = 2295.50 / 4750 * 100 = 48.33
 export const nqmItinBankstmt: Scenario = {
   id: "nqm-itin-bankstmt",
   name: "NQM ITIN — Bank Statement Income",
@@ -29,10 +29,10 @@ export const nqmItinBankstmt: Scenario = {
       propertyType: "SFR Det.", units: 1, yearBuilt: 1995 },
     transaction: {
       loanPurpose: "Purchase", loanAmount: 275000, salesPrice: 345000, appraisedValue: 345000,
-      ltv: 80, cltv: 80, hcltv: 80, noteRate: 7.5, term: 360, amortType: "Fixed", lienPosition: 1,
+      ltv: 80, cltv: 80, hcltv: 80, noteRate: 7.75, term: 360, amortType: "Fixed", lienPosition: 1,
       occupancy: "Primary", isInvestmentProperty: false, piti: 2295.50,
     },
-    qualifying: { housingRatio: 38.4, totalDti: 48.3, piPayment: 1825.50, qualifyingRate: 7.5 },
+    qualifying: { housingRatio: 41.48, totalDti: 48.33, piPayment: 1970.13, qualifyingRate: 7.75 },
     qualifyingWorksheet: {
       method: "BankStatementDeposits",
       monthsCovered: 12, avgDeposits: 9500, expenseFactor: 0.5, nsfCount: 0,
@@ -90,7 +90,7 @@ export const nqmItinBankstmt: Scenario = {
         { code: "NQM-002", severity: "Info", description: "Income verified via bank statement deposits (non-standard documentation)", regulation: "12 CFR 1026.43(c)" },
       ],
     },
-    // LTV 80 <= 80 Pass, FICO 690 >= 660 Pass, DTI 48.3 <= 50 Pass, Reserves 6.0 >= 6 Pass
+    // LTV 80 <= 80 Pass, FICO 690 >= 660 Pass, DTI 48.33 <= 50 Pass, Reserves 6.0 >= 6 Pass
     overlay: {
       programName: "NQM ITIN",
       investorName: "NQM Capital",
@@ -102,7 +102,7 @@ export const nqmItinBankstmt: Scenario = {
       checks: [
         { category: "LTV", rule: "Max LTV", threshold: "≤ 80%", actual: "80%", result: "Pass" },
         { category: "FICO", rule: "Min FICO", threshold: "≥ 660", actual: "690", result: "Pass" },
-        { category: "DTI", rule: "Max DTI", threshold: "≤ 50%", actual: "48.3%", result: "Pass" },
+        { category: "DTI", rule: "Max DTI", threshold: "≤ 50%", actual: "48.33%", result: "Pass" },
         { category: "Reserves", rule: "Min Reserves", threshold: "≥ 6 mo", actual: "6.0 mo", result: "Pass" },
         { category: "Income", rule: "Income Documentation", threshold: "Bank statement documentation required", actual: "12mo personal bank statements provided", result: "Pass" },
       ],
