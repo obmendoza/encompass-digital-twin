@@ -19,7 +19,7 @@ const starter: Condition[] = allTemplates.map((c, i) => ({
 
 // loanAmount 385000, appraised 455000, LTV 85, FICO 680, PITI 3200.00
 // monthsCovered 12, avgDeposits 11000, expenseFactor 0.5, nsfCount 3, derivedMonthlyIncome 5500
-// piPayment ~ PITI - 500 = 2700.00; housingRatio = 2700 / 5500 * 100 = 49.1; totalDti = 3200 / 5500 * 100 = 58.2
+// piPayment = amortization(385000, 8.125, 360) = 2858.61; housingRatio = 2858.61 / 5500 * 100 = 51.97; totalDti = 3200 / 5500 * 100 = 58.18
 export const nqmSuspendCandidate: Scenario = {
   id: "nqm-suspend-candidate",
   name: "NQM Bank Statement — Suspend Candidate",
@@ -36,7 +36,7 @@ export const nqmSuspendCandidate: Scenario = {
       ltv: 85, cltv: 85, hcltv: 85, noteRate: 8.125, term: 360, amortType: "Fixed", lienPosition: 1,
       occupancy: "Primary", isInvestmentProperty: false, piti: 3200.00,
     },
-    qualifying: { housingRatio: 49.1, totalDti: 58.2, piPayment: 2700.00, qualifyingRate: 8.125 },
+    qualifying: { housingRatio: 51.97, totalDti: 58.18, piPayment: 2858.61, qualifyingRate: 8.125 },
     qualifyingWorksheet: {
       method: "BankStatementDeposits",
       monthsCovered: 12, avgDeposits: 11000, expenseFactor: 0.5, nsfCount: 3,
@@ -92,11 +92,11 @@ export const nqmSuspendCandidate: Scenario = {
       pointsAndFeesPass: true,
       flags: [
         { code: "NQM-001", severity: "Info", description: "Loan originated as Non-QM product", regulation: "12 CFR 1026.43(e)" },
-        { code: "DTI-001", severity: "Warning", description: "Total DTI 58.2% exceeds standard Non-QM guideline threshold of 55%", regulation: "12 CFR 1026.43(c)(2)" },
+        { code: "DTI-001", severity: "Warning", description: "Total DTI 58.18% exceeds standard Non-QM guideline threshold of 55%", regulation: "12 CFR 1026.43(c)(2)" },
         { code: "HPCT-001", severity: "Warning", description: "Higher-priced covered transaction — additional disclosures and escrow required", regulation: "12 CFR 1026.35" },
       ],
     },
-    // LTV 85 <= 90 Exception (high LTV requires conditions), FICO 680 >= 660 Pass, DTI 58.2 > 50 Fail, Reserves 4.0 < 6 Fail
+    // LTV 85 <= 90 Exception (high LTV requires conditions), FICO 680 >= 660 Pass, DTI 58.18 > 50 Fail, Reserves 4.0 < 6 Fail
     overlay: {
       programName: "NQM Bank Statement",
       investorName: "NQM Capital",
@@ -108,7 +108,7 @@ export const nqmSuspendCandidate: Scenario = {
       checks: [
         { category: "LTV", rule: "Max LTV", threshold: "≤ 90%", actual: "85%", result: "Exception", notes: "LTV > 85% requires additional conditions and compensating factors" },
         { category: "FICO", rule: "Min FICO", threshold: "≥ 660", actual: "680", result: "Pass" },
-        { category: "DTI", rule: "Max DTI", threshold: "≤ 50%", actual: "58.2%", result: "Fail" },
+        { category: "DTI", rule: "Max DTI", threshold: "≤ 50%", actual: "58.18%", result: "Fail" },
         { category: "Reserves", rule: "Min Reserves", threshold: "≥ 6 mo", actual: "4.0 mo", result: "Fail" },
         { category: "Income", rule: "Income Documentation", threshold: "Bank statement documentation required", actual: "12mo personal bank statements provided", result: "Pass" },
       ],

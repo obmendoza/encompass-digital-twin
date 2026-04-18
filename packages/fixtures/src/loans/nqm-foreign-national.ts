@@ -15,7 +15,7 @@ const starter: Condition[] = allTemplates.map((c, i) => ({
 
 // loanAmount 420000, appraised 650000, LTV 65, FICO null, PITI 3410.00
 // Investment DSCR: rentalIncome 3900, pitia 3410, dscrRatio 1.14
-// piPayment ~ PITI - 500 = 2910.00
+// piPayment = amortization(420000, 8.125, 360) = 3118.49; DSCR loan: housingRatio=0, totalDti=0
 export const nqmForeignNational: Scenario = {
   id: "nqm-foreign-national",
   name: "NQM Foreign National — DSCR Investment",
@@ -29,11 +29,11 @@ export const nqmForeignNational: Scenario = {
       propertyType: "SFR Det.", units: 1, yearBuilt: 2004 },
     transaction: {
       loanPurpose: "Purchase", loanAmount: 420000, salesPrice: 650000, appraisedValue: 650000,
-      ltv: 65, cltv: 65, hcltv: 65, noteRate: 8.0, term: 360, amortType: "Fixed", lienPosition: 1,
+      ltv: 65, cltv: 65, hcltv: 65, noteRate: 8.125, term: 360, amortType: "Fixed", lienPosition: 1,
       occupancy: "Investment", isInvestmentProperty: true, rentalIncome: 3900,
       piti: 3410.00, pitia: 3410.00, dscrRatio: 1.14,
     },
-    qualifying: { housingRatio: 0, totalDti: 0, piPayment: 2910.00, qualifyingRate: 8.0 },
+    qualifying: { housingRatio: 0, totalDti: 0, piPayment: 3118.49, qualifyingRate: 8.125 },
     qualifyingWorksheet: {
       method: "DSCRCoverage",
       dscrNumerator: 3900, dscrDenominator: 3410.00,

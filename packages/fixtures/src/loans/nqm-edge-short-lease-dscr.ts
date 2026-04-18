@@ -34,11 +34,11 @@ export const nqmEdgeShortLeaseDscr: Scenario = {
       propertyType: "SFR Det.", units: 1, yearBuilt: 2002 },
     transaction: {
       loanPurpose: "Purchase", loanAmount: 365000, salesPrice: 490000, appraisedValue: 490000,
-      ltv: 74.49, cltv: 74.49, hcltv: 74.49, noteRate: 7.500, term: 360, amortType: "Fixed", lienPosition: 1,
+      ltv: 74.49, cltv: 74.49, hcltv: 74.49, noteRate: 7.75, term: 360, amortType: "Fixed", lienPosition: 1,
       occupancy: "Investment", isInvestmentProperty: true, rentalIncome: 3200,
       piti: 2910.00, pitia: 2910.00, dscrRatio: 1.10,
     },
-    qualifying: { housingRatio: 0, totalDti: 0, piPayment: 2452.35, qualifyingRate: 7.500 },
+    qualifying: { housingRatio: 0, totalDti: 0, piPayment: 2614.90, qualifyingRate: 7.75 },
     qualifyingWorksheet: {
       method: "DSCRCoverage",
       dscrNumerator: 3200, dscrDenominator: 2910,
