@@ -5,7 +5,7 @@ import * as fs from "../file-store.js";
 export function registerUploadRoutes(app: FastifyInstance, store: Store) {
   // Serve stored files
   app.get<{ Params: { fileKey: string } }>("/uploads/:fileKey", async (req, reply) => {
-    const file = fs.getFile(req.params.fileKey);
+    const file = await fs.getFile(req.params.fileKey);
     if (!file) {
       reply.status(404).send({ error: "File not found" });
       return;
@@ -31,9 +31,7 @@ export function registerUploadRoutes(app: FastifyInstance, store: Store) {
       const mimeType = data.mimetype || "application/octet-stream";
       const originalName = data.filename || "document";
 
-      fs.saveFile(fileKey, buffer, mimeType, originalName);
-
-      const fileUrl = `/uploads/${fileKey}`;
+      const fileUrl = await fs.saveFile(fileKey, buffer, mimeType, originalName);
 
       store.dispatch({
         type: "AttachFile",
