@@ -19,7 +19,7 @@ export function LoanHeader({ loan }: { loan: Loan }) {
       <Cell label="Loan Amt" value={money(loan.transaction.loanAmount)} />
       <Cell label="Rate" value={pct(loan.transaction.noteRate, 4)} />
       <Cell label="LTV/CLTV" value={`${pct(loan.transaction.ltv)} / ${pct(loan.transaction.cltv)}`} />
-      <Cell label="DTI" value={`${pct(loan.qualifying.housingRatio, 1)} / ${pct(loan.qualifying.totalDti, 1)}`} />
+      <Cell label="Front / Back DTI" value={`${pct(loan.qualifying.housingRatio, 1)} / ${pct(loan.qualifying.totalDti, 1)}`} />
       <Cell label="Decision" value={loan.decision} />
     </div>
   );
