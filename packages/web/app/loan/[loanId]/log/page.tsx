@@ -1,6 +1,8 @@
 import { api } from "@/lib/api-client";
 import { ConversationLog } from "@/components/encompass/ConversationLog";
 
+export const dynamic = "force-dynamic";
+
 export default async function LogPage({
   params,
 }: { params: Promise<{ loanId: string }> }) {

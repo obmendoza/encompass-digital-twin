@@ -5,6 +5,8 @@ import { Toolbar } from "@/components/encompass/Toolbar";
 import { PipelineTable } from "@/components/encompass/PipelineTable";
 import { SandboxControls } from "@/components/encompass/ScenarioSelector";
 
+export const dynamic = "force-dynamic";
+
 export default async function PipelinePage() {
   const loans = await api.listLoans();
   return (
