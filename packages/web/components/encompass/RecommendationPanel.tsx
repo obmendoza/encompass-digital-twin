@@ -450,6 +450,256 @@ function ConditionsList({
   );
 }
 
+// ─── ReasoningTrace helpers ───────────────────────────────────────────────────
+
+const TOOL_LABELS: Record<string, { label: string; icon: string; desc: string }> = {
+  matrix_lookup: { label: "Program Eligibility Matrix", icon: "📊", desc: "Checked max LTV from the investor's rate sheet matrix" },
+  check_geo_overlay: { label: "Geographic Overlay Check", icon: "🌍", desc: "Verified state/county eligibility and restrictions" },
+  compute_reserves: { label: "Reserves Calculation", icon: "💰", desc: "Computed required reserve months for this program" },
+  compute_dscr: { label: "DSCR Calculation", icon: "📈", desc: "Calculated debt service coverage ratio" },
+  retrieve_guideline: { label: "Guideline Lookup", icon: "📖", desc: "Retrieved relevant program guideline section" },
+  request_human_approval: { label: "Escalation to Senior UW", icon: "🚨", desc: "Requested human review for exception" },
+  condo_overlay: { label: "Condo/PUD Overlay", icon: "🏢", desc: "Checked condominium project eligibility" },
+};
+
+function parseToolCall(content: string): { name: string; args: Record<string, unknown> } {
+  const match = content.match(/^(\w+)\((.+)\)$/s);
+  if (!match) return { name: content.slice(0, 30), args: {} };
+  try {
+    return { name: match[1]!, args: JSON.parse(match[2]!) };
+  } catch {
+    return { name: match[1]!, args: {} };
+  }
+}
+
+function parseToolResult(content: string): Record<string, unknown> {
+  try { return JSON.parse(content); }
+  catch { return {}; }
+}
+
+function formatToolArgs(name: string, args: Record<string, unknown>): string {
+  switch (name) {
+    case "matrix_lookup":
+      return `Program: ${args.program}, FICO: ${args.fico}, Amount: $${Number(args.loan_amount || 0).toLocaleString()}, ${args.occupancy}, ${args.purpose}`;
+    case "check_geo_overlay":
+      return `State: ${args.state}${args.county ? `, County: ${args.county}` : ""}${args.zip_code ? `, ZIP: ${args.zip_code}` : ""}`;
+    case "compute_reserves":
+      return `Program: ${args.program}, Loan: $${Number(args.loan_amount || 0).toLocaleString()}`;
+    case "compute_dscr":
+      return `Rent: $${Number(args.monthly_rent || 0).toLocaleString()}, PITIA: $${Number(args.monthly_pitia || 0).toLocaleString()}`;
+    case "retrieve_guideline":
+      return `"${String(args.query || "").slice(0, 80)}"`;
+    case "request_human_approval":
+      return String(args.reason || "").slice(0, 100);
+    default:
+      return Object.entries(args).map(([k, v]) => `${k}: ${String(v).slice(0, 30)}`).join(", ").slice(0, 120);
+  }
+}
+
+function formatToolResult(name: string, result: Record<string, unknown>): string {
+  switch (name) {
+    case "matrix_lookup":
+      return result.max_ltv ? `Max LTV: ${result.max_ltv}%` : "No eligible tier found";
+    case "check_geo_overlay": {
+      const blocks = result.blocks as unknown[];
+      return blocks && blocks.length > 0 ? `⚠️ Blocks: ${blocks.join(", ")}` : `✅ ${result.checked} — No restrictions`;
+    }
+    case "compute_reserves":
+      return `${result.required_months} months required`;
+    case "compute_dscr":
+      return `DSCR: ${result.dscr}, Tier: ${result.tier}`;
+    case "retrieve_guideline": {
+      const hits = result.hits as Array<Record<string, unknown>> | undefined;
+      if (!hits || hits.length === 0) return "No relevant sections found";
+      return `Found: "${String(hits[0]?.section || "").slice(0, 80)}"`;
+    }
+    case "request_human_approval":
+      return `Ticket: ${result.ticket_id} (${result.status})`;
+    default:
+      return JSON.stringify(result).slice(0, 120);
+  }
+}
+
+function ToolActivityPanel({ steps }: { steps: AgentStep[] }) {
+  const [showRaw, setShowRaw] = useState(false);
+
+  // Pair tool_calls with their results
+  const pairs: Array<{ call: AgentStep; result?: AgentStep }> = [];
+  const resultQueue: AgentStep[] = [];
+
+  for (const step of steps) {
+    if (step.phase === "tool_call") pairs.push({ call: step });
+    else if (step.phase === "tool_result") resultQueue.push(step);
+  }
+  // Match results to calls in order
+  pairs.forEach((pair, i) => { if (resultQueue[i]) pair.result = resultQueue[i]; });
+
+  // Group consecutive retrieve_guideline calls
+  const grouped: Array<{ type: "single"; pair: typeof pairs[0] } | { type: "guideline_group"; pairs: typeof pairs }> = [];
+  let guidelineBatch: typeof pairs = [];
+
+  for (const pair of pairs) {
+    const parsed = parseToolCall(pair.call.content);
+    if (parsed.name === "retrieve_guideline") {
+      guidelineBatch.push(pair);
+    } else {
+      if (guidelineBatch.length > 0) {
+        grouped.push({ type: "guideline_group", pairs: [...guidelineBatch] });
+        guidelineBatch = [];
+      }
+      grouped.push({ type: "single", pair });
+    }
+  }
+  if (guidelineBatch.length > 0) {
+    grouped.push({ type: "guideline_group", pairs: guidelineBatch });
+  }
+
+  return (
+    <div className="border border-t-0 border-[#c8c4b5]">
+      <div className="p-2 space-y-2">
+        {grouped.map((item, i) => {
+          if (item.type === "guideline_group") {
+            return (
+              <div key={i} className="bg-[#fafbfc] border border-[#e0dfdb] rounded p-2">
+                <div className="flex items-center gap-2 text-[10px] font-bold text-[#1f4478]">
+                  📖 Guideline Lookups ({item.pairs.length} queries)
+                </div>
+                <div className="mt-1 space-y-1">
+                  {item.pairs.map((p, j) => {
+                    const parsed = parseToolCall(p.call.content);
+                    const result = p.result ? parseToolResult(p.result.content) : {};
+                    return (
+                      <div key={j} className="text-[10px] pl-4 border-l-2 border-[#c8c4b5]">
+                        <div className="text-[#6b7a8f]">Query: {formatToolArgs("retrieve_guideline", parsed.args)}</div>
+                        <div className="text-[#1a2b4a]">{formatToolResult("retrieve_guideline", result)}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          }
+
+          const { pair } = item;
+          const parsed = parseToolCall(pair.call.content);
+          const toolInfo = TOOL_LABELS[parsed.name] ?? { label: parsed.name, icon: "🔧", desc: "" };
+          const result = pair.result ? parseToolResult(pair.result.content) : null;
+
+          return (
+            <div key={i} className="bg-[#fafbfc] border border-[#e0dfdb] rounded p-2">
+              <div className="flex items-center gap-2 text-[10px]">
+                <span>{toolInfo.icon}</span>
+                <span className="font-bold text-[#1f4478]">{toolInfo.label}</span>
+                <span className="text-[#6b7a8f] ml-auto">{toolInfo.desc}</span>
+              </div>
+              <div className="mt-1 text-[10px] pl-5">
+                <div className="text-[#404040]">Input: {formatToolArgs(parsed.name, parsed.args)}</div>
+                {result && (
+                  <div className="text-[#1a2b4a] font-semibold mt-[2px]">Result: {formatToolResult(parsed.name, result)}</div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="px-2 pb-2">
+        <button className="text-[9px] text-[#6b7a8f] hover:text-[#1f4478]" onClick={() => setShowRaw(!showRaw)}>
+          {showRaw ? "▼ Hide" : "▶ Show"} raw technical data
+        </button>
+        {showRaw && (
+          <div className="mt-1 bg-[#0f1419] text-[#9ca3af] p-2 font-mono text-[9px] max-h-[200px] overflow-auto rounded">
+            {steps.map((s, i) => (
+              <div key={i} className="py-[1px]">[{s.phase}] {s.content.slice(0, 200)}</div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AnalysisPanel({ steps }: { steps: AgentStep[] }) {
+  // Deduplicate: "thinking" and "message" often have the same content
+  const unique: AgentStep[] = [];
+  const seen = new Set<string>();
+  for (const step of steps) {
+    const key = step.content.slice(0, 50);
+    if (!seen.has(key)) { seen.add(key); unique.push(step); }
+  }
+
+  return (
+    <div className="border border-t-0 border-[#c8c4b5] p-2 space-y-2">
+      {unique.map((step, i) => {
+        const cleanContent = step.content
+          .replace(/\*\*/g, "")
+          .replace(/#{1,3}\s*/g, "")
+          .replace(/\|[^|]+\|/g, "") // strip table rows
+          .split("\n")
+          .filter(l => l.trim().length > 5 && !l.trim().startsWith("---") && !l.trim().startsWith("|"))
+          .slice(0, 5)
+          .join(" ")
+          .trim()
+          .slice(0, 300);
+
+        if (!cleanContent) return null;
+
+        return (
+          <div key={i} className="flex gap-2 text-[10px]">
+            <div className="shrink-0 w-[22px] h-[22px] rounded-full bg-[#e8f0fe] text-[#1f4478] flex items-center justify-center font-bold text-[9px]">
+              {i + 1}
+            </div>
+            <div className="text-[#1a2b4a] leading-relaxed">
+              {cleanContent}{cleanContent.length >= 300 ? "…" : ""}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ComplianceChecksPanel({ steps }: { steps: AgentStep[] }) {
+  const checks = steps.map((step) => {
+    const content = step.content;
+    const isPass = content.startsWith("✅");
+    const isFail = content.startsWith("❌");
+    // Parse: "✅ Check Name: detail message"
+    const cleaned = content.replace(/^[✅❌⚠️]\s*/, "");
+    const parts = cleaned.split(/:\s*/, 2);
+    const check = parts[0] ?? cleaned;
+    const detail = parts[1] ?? "";
+
+    return { check, detail, status: isFail ? "fail" as const : isPass ? "pass" as const : "info" as const };
+  });
+
+  return (
+    <div className="border border-t-0 border-[#c8c4b5]">
+      <table className="w-full text-[10px]">
+        <thead>
+          <tr className="bg-[#f0f2f5]">
+            <th className="text-left px-3 py-[4px] font-bold text-[#1f4478] border-b border-[#c8c4b5]">Check</th>
+            <th className="text-left px-3 py-[4px] font-bold text-[#1f4478] border-b border-[#c8c4b5] w-[70px]">Result</th>
+            <th className="text-left px-3 py-[4px] font-bold text-[#1f4478] border-b border-[#c8c4b5]">Detail</th>
+          </tr>
+        </thead>
+        <tbody>
+          {checks.map((c, i) => (
+            <tr key={i} className={c.status === "fail" ? "bg-[#fef0f0]" : i % 2 ? "bg-[#fafbfc]" : ""}>
+              <td className="px-3 py-[3px] border-b border-[#e0dfdb] font-semibold">{c.check}</td>
+              <td className="px-3 py-[3px] border-b border-[#e0dfdb]">
+                <span className={`font-bold ${c.status === "pass" ? "text-[#1b5e20]" : c.status === "fail" ? "text-[#c00]" : "text-[#6b7a8f]"}`}>
+                  {c.status === "pass" ? "✅ PASS" : c.status === "fail" ? "❌ FAIL" : "ℹ️ INFO"}
+                </span>
+              </td>
+              <td className="px-3 py-[3px] border-b border-[#e0dfdb] text-[#404040]">{c.detail}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 // ─── ReasoningTrace ───────────────────────────────────────────────────────────
 
 function ReasoningTrace({ trace }: { trace: AgentStep[] }) {
@@ -457,22 +707,17 @@ function ReasoningTrace({ trace }: { trace: AgentStep[] }) {
 
   type GroupKey = "tool" | "analysis" | "validation" | "decision";
   const groups: Record<GroupKey, { icon: string; label: string; steps: AgentStep[] }> = {
-    tool: { icon: "🔧", label: "Tool Calls", steps: [] },
-    analysis: { icon: "💭", label: "Analysis", steps: [] },
-    validation: { icon: "🔍", label: "Data Quality Checks", steps: [] },
+    tool: { icon: "🔧", label: "AI Tool Activity", steps: [] },
+    analysis: { icon: "💭", label: "Agent Analysis", steps: [] },
+    validation: { icon: "✅", label: "Automated Compliance Checks", steps: [] },
     decision: { icon: "📋", label: "Decision Synthesis", steps: [] },
   };
 
   for (const step of trace) {
-    if (step.phase === "tool_call" || step.phase === "tool_result") {
-      groups.tool.steps.push(step);
-    } else if (step.phase === "thinking" || step.phase === "message") {
-      groups.analysis.steps.push(step);
-    } else if (step.phase === "validation") {
-      groups.validation.steps.push(step);
-    } else {
-      groups.decision.steps.push(step);
-    }
+    if (step.phase === "tool_call" || step.phase === "tool_result") groups.tool.steps.push(step);
+    else if (step.phase === "thinking" || step.phase === "message") groups.analysis.steps.push(step);
+    else if (step.phase === "validation") groups.validation.steps.push(step);
+    else groups.decision.steps.push(step);
   }
 
   const toggle = (key: string) => {
@@ -485,38 +730,32 @@ function ReasoningTrace({ trace }: { trace: AgentStep[] }) {
 
   return (
     <div className="enc-sec mb-3">
-      <h4>Reasoning Trace — {trace.length} steps</h4>
+      <h4>How the AI Reached This Decision — {trace.length} steps</h4>
       <div className="p-2">
-        {Object.entries(groups)
+        {(Object.entries(groups) as [GroupKey, typeof groups[GroupKey]][])
           .filter(([, g]) => g.steps.length > 0)
           .map(([key, group]) => (
             <div key={key} className="mb-1">
               <button
-                className="w-full text-left px-2 py-1 bg-[#f6f8fb] border border-[#c8c4b5] text-[10px] font-bold hover:bg-[#e8f0fe]"
+                className="w-full text-left px-3 py-[6px] bg-[#f6f8fb] border border-[#c8c4b5] text-[10px] font-bold hover:bg-[#e8f0fe] flex items-center gap-2"
                 onClick={() => toggle(key)}
               >
-                {openGroups.has(key) ? "▼" : "▶"} {group.icon} {group.label} ({group.steps.length})
+                <span>{openGroups.has(key) ? "▼" : "▶"}</span>
+                <span>{group.icon} {group.label}</span>
+                <span className="text-[#6b7a8f] font-normal ml-auto">
+                  {key === "tool" ? `${Math.floor(group.steps.length / 2)} tools used` :
+                   key === "validation" ? `${group.steps.filter(s => s.content.startsWith("✅")).length} passed, ${group.steps.filter(s => s.content.startsWith("❌")).length} failed` :
+                   `${group.steps.length} steps`}
+                </span>
               </button>
               {openGroups.has(key) && (
-                <div className="border border-t-0 border-[#c8c4b5] max-h-[250px] overflow-auto">
+                key === "tool" ? <ToolActivityPanel steps={group.steps} /> :
+                key === "analysis" ? <AnalysisPanel steps={group.steps} /> :
+                key === "validation" ? <ComplianceChecksPanel steps={group.steps} /> :
+                <div className="border border-t-0 border-[#c8c4b5] p-2">
                   {group.steps.map((step, i) => (
-                    <div
-                      key={i}
-                      className={`p-2 border-b border-[#e0dfdb] text-[10px] ${
-                        step.phase === "tool_call"
-                          ? "bg-[#f0f5ff]"
-                          : step.phase === "tool_result"
-                            ? "bg-[#f5f0ff]"
-                            : ""
-                      }`}
-                    >
-                      <div className="font-bold text-[9px] text-[#404040] uppercase">
-                        {step.phase}
-                      </div>
-                      <div className="whitespace-pre-wrap break-words mt-1">
-                        {step.content.slice(0, 500)}
-                        {step.content.length > 500 && "…"}
-                      </div>
+                    <div key={i} className="text-[10px] text-[#1a2b4a] py-1">
+                      {step.content.replace(/\*\*/g, "").slice(0, 200)}
                     </div>
                   ))}
                 </div>
