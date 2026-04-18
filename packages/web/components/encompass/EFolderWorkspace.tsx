@@ -2,7 +2,7 @@
 
 import { useState, useTransition, useRef } from "react";
 import type { Loan, Document, Condition } from "@twin/core";
-import { actionUploadFile, actionClearCondition, actionUpdateDocumentStatus } from "@/app/loan/[loanId]/actions";
+import { actionUploadFile, actionClearCondition, actionUpdateDocumentStatus, actionAddDocument } from "@/app/loan/[loanId]/actions";
 
 // Document categories for grouping
 const DOC_CATEGORIES: Record<string, string[]> = {
@@ -48,11 +48,29 @@ interface Props {
   twinApiUrl: string;
 }
 
+const DOC_TYPES = [
+  "BankStatement", "TaxReturn", "PayStub", "1099", "PnL",
+  "CPA_Letter", "ID", "Insurance", "Appraisal", "Title",
+  "LeaseAgreement", "LOX", "BKDocs", "CreditReport", "Other",
+];
+
 export function EFolderWorkspace({ loan, twinApiUrl }: Props) {
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [uploadingDocId, setUploadingDocId] = useState<string | null>(null);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newDocName, setNewDocName] = useState("");
+  const [newDocType, setNewDocType] = useState("Other");
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleAddDoc = () => {
+    if (!newDocName.trim()) return;
+    startTransition(async () => {
+      await actionAddDocument(loan.id, { name: newDocName, docType: newDocType });
+      setNewDocName("");
+      setShowAddForm(false);
+    });
+  };
 
   const selectedDoc = loan.documents.find((d) => d.id === selectedDocId);
   const linkedCondition = selectedDoc?.linkedConditionId
@@ -120,6 +138,27 @@ export function EFolderWorkspace({ loan, twinApiUrl }: Props) {
       <div className="grid grid-cols-[380px_1fr] gap-[1px] bg-[#6b7a8f] mt-1" style={{ minHeight: "500px" }}>
         {/* Left panel: Document list */}
         <div className="bg-white overflow-auto">
+          {/* Add Document toolbar */}
+          <div className="bg-[#ece9d8] border-b border-[#6b7a8f] px-2 py-[4px] flex items-center gap-2 sticky top-0 z-10">
+            {showAddForm ? (
+              <>
+                <input className="border border-[#7f9db9] text-[10px] px-1 flex-1" placeholder="Document name..."
+                  value={newDocName} onChange={(e) => setNewDocName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") handleAddDoc(); }} />
+                <select className="border border-[#7f9db9] text-[10px]" value={newDocType}
+                  onChange={(e) => setNewDocType(e.target.value)}>
+                  {DOC_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+                <button className="enc-btn enc-btn--primary text-[9px]" disabled={pending || !newDocName.trim()} onClick={handleAddDoc}>Add</button>
+                <button className="enc-btn text-[9px]" onClick={() => setShowAddForm(false)}>Cancel</button>
+              </>
+            ) : (
+              <button className="enc-btn enc-btn--primary text-[10px]" onClick={() => setShowAddForm(true)}>
+                + Add Document
+              </button>
+            )}
+          </div>
+
           {Object.entries(grouped).map(([category, docs]) => (
             <div key={category}>
               <div className="bg-gradient-to-b from-[#e2ddc7] to-[#cfc9ae] px-2 py-[3px] text-[10px] font-bold border-b border-[#6b7a8f] sticky top-0">
@@ -171,7 +210,7 @@ export function EFolderWorkspace({ loan, twinApiUrl }: Props) {
 
           {loan.documents.length === 0 && (
             <div className="p-4 text-center text-[#6b7a8f] text-[11px]">
-              No documents in eFolder
+              No documents in eFolder. Click &quot;+ Add Document&quot; above to start.
             </div>
           )}
         </div>
