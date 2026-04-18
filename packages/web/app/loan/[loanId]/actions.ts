@@ -101,6 +101,48 @@ export async function actionClearRecommendation(loanId: string) {
   return run(loanId, () => api.clearRecommendation(loanId, humanActor));
 }
 
+export async function actionGenerateDocs(loanId: string): Promise<ActionResult & { count?: number }> {
+  const agentUrl = process.env.AGENT_SERVICE_URL ?? "http://localhost:8000";
+  try {
+    const res = await fetch(`${agentUrl}/api/workshop/generate-docs/${loanId}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      cache: "no-store",
+      signal: AbortSignal.timeout(120_000),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      return { ok: false, error: { code: "DOC_GEN_FAILED", message: text.slice(0, 200) } };
+    }
+    const data = await res.json();
+    revalidatePath(`/loan/${loanId}`, "layout");
+    return { ok: true, count: data.documentsGenerated };
+  } catch (e) {
+    return { ok: false, error: { code: "DOC_GEN_ERROR", message: e instanceof Error ? e.message : String(e) } };
+  }
+}
+
+export async function actionRunIDP(loanId: string, docId: string): Promise<ActionResult & { extracted?: Record<string, unknown> }> {
+  const agentUrl = process.env.AGENT_SERVICE_URL ?? "http://localhost:8000";
+  try {
+    const res = await fetch(`${agentUrl}/api/idp/extract-from-twin/${loanId}/${docId}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      cache: "no-store",
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      return { ok: false, error: { code: "IDP_FAILED", message: text.slice(0, 200) } };
+    }
+    const data = await res.json();
+    revalidatePath(`/loan/${loanId}`, "layout");
+    return { ok: true, extracted: data.extracted };
+  } catch (e) {
+    return { ok: false, error: { code: "IDP_ERROR", message: e instanceof Error ? e.message : String(e) } };
+  }
+}
+
 export async function actionUploadFile(loanId: string, docId: string, formData: FormData): Promise<ActionResult & { fileUrl?: string }> {
   const twinApi = process.env.TWIN_API_URL ?? "http://127.0.0.1:4000";
   try {

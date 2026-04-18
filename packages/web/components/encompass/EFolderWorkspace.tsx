@@ -2,7 +2,7 @@
 
 import { useState, useTransition, useRef } from "react";
 import type { Loan, Document, Condition } from "@twin/core";
-import { actionUploadFile, actionClearCondition, actionUpdateDocumentStatus, actionAddDocument } from "@/app/loan/[loanId]/actions";
+import { actionUploadFile, actionClearCondition, actionUpdateDocumentStatus, actionAddDocument, actionGenerateDocs, actionRunIDP } from "@/app/loan/[loanId]/actions";
 
 // Document categories for grouping
 const DOC_CATEGORIES: Record<string, string[]> = {
@@ -62,6 +62,9 @@ export function EFolderWorkspace({ loan, twinApiUrl }: Props) {
   const [newDocName, setNewDocName] = useState("");
   const [newDocType, setNewDocType] = useState("Other");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [generating, setGenerating] = useState(false);
+  const [genResult, setGenResult] = useState<string | null>(null);
+  const [idpRunning, setIdpRunning] = useState<string | null>(null);
 
   const handleAddDoc = () => {
     if (!newDocName.trim()) return;
@@ -105,6 +108,28 @@ export function EFolderWorkspace({ loan, twinApiUrl }: Props) {
     e.target.value = "";
   };
 
+  const handleGenerateDocs = () => {
+    setGenerating(true);
+    setGenResult(null);
+    startTransition(async () => {
+      const result = await actionGenerateDocs(loan.id);
+      setGenerating(false);
+      if (result.ok) {
+        setGenResult(`${result.count} documents generated and uploaded`);
+      } else {
+        setGenResult(`Error: ${result.error?.message ?? "Failed"}`);
+      }
+    });
+  };
+
+  const handleRunIDP = (docId: string) => {
+    setIdpRunning(docId);
+    startTransition(async () => {
+      await actionRunIDP(loan.id, docId);
+      setIdpRunning(null);
+    });
+  };
+
   const clearCondition = (condId: string) => {
     startTransition(async () => {
       await actionClearCondition(loan.id, condId, "Document reviewed and verified");
@@ -123,6 +148,23 @@ export function EFolderWorkspace({ loan, twinApiUrl }: Props) {
         <h4>
           eFolder — {loan.documents.length} Documents · {withFiles} Uploaded · {pendingCount} Pending · {receivedCount} Received · {reviewedCount} Reviewed
         </h4>
+        <div className="px-2 py-1 bg-[#ece9d8] border-b border-[#c8c4b5] flex items-center gap-2 text-[10px]">
+          <button
+            className="enc-btn enc-btn--primary text-[10px]"
+            disabled={pending || generating}
+            onClick={handleGenerateDocs}
+          >
+            {generating ? "📄 Generating..." : "📄 Generate Sample Docs"}
+          </button>
+          {genResult && (
+            <span className={genResult.startsWith("Error") ? "text-[#c00]" : "text-[#1b5e20]"}>
+              {genResult}
+            </span>
+          )}
+          <span className="ml-auto text-[#6b7a8f]">
+            Generates program-specific PDFs from loan data
+          </span>
+        </div>
       </div>
 
       {/* Hidden file input */}
@@ -240,6 +282,15 @@ export function EFolderWorkspace({ loan, twinApiUrl }: Props) {
                     className="enc-btn text-[10px] no-underline text-black">
                     ⬇ Download
                   </a>
+                )}
+                {selectedDoc.fileKey && (
+                  <button
+                    className="enc-btn text-[10px]"
+                    disabled={pending || idpRunning === selectedDoc.id}
+                    onClick={() => handleRunIDP(selectedDoc.id)}
+                  >
+                    {idpRunning === selectedDoc.id ? "🔍 Extracting..." : "🔍 Run IDP Extract"}
+                  </button>
                 )}
                 {linkedCondition && linkedCondition.status !== "Cleared" && (
                   <button className="enc-btn enc-btn--primary text-[10px]" disabled={pending}
