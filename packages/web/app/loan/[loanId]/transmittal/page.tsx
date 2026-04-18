@@ -9,6 +9,8 @@ import { RunAgentButton } from "@/components/encompass/RunAgentButton";
 import { RecommendationPanel } from "@/components/encompass/RecommendationPanel";
 import { money, pct } from "@/lib/format";
 
+export const dynamic = "force-dynamic";
+
 export default async function TransmittalPage({
   params,
 }: { params: Promise<{ loanId: string }> }) {

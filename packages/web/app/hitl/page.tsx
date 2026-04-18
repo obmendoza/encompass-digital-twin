@@ -4,6 +4,8 @@ import { Toolbar } from "@/components/encompass/Toolbar";
 import { HITLInbox } from "@/components/encompass/HITLInbox";
 import { fetchTickets } from "./actions";
 
+export const dynamic = "force-dynamic";
+
 export default async function HITLPage() {
   const tickets = await fetchTickets();
   const pending = tickets.filter((t) => t.status === "pending").length;
