@@ -34,8 +34,8 @@ function SortHeader({
 
 export function AppraisalReport({ loan }: Props) {
   const { property, transaction, appraisal } = loan;
-  const [sortKey, setSortKey] = useState<SortKey>("saleDate");
-  const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [sortKey, setSortKey] = useState<SortKey>("distance");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
 
   function handleSort(k: SortKey) {
     if (k === sortKey) {
