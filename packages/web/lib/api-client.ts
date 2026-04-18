@@ -27,7 +27,7 @@ export const api = {
     req<{ scenarioId: string; loanId: string }>("/world/load-by-loan", {
       method: "POST", body: JSON.stringify({ loanId }),
     }),
-  reset: () => req<{ scenarioId: null }>("/world/reset", { method: "POST" }),
+  reset: () => req<{ scenarioId: null }>("/world/reset", { method: "POST", body: JSON.stringify({}) }),
   getLoan: (loanId: string) => req<Loan>(`/loans/${loanId}`),
   listLoans: () => req<Array<{ id: string; borrower: string; program: string;
     loanAmount: number; ltv: number; decision: string; openConditions: number }>>("/loans"),
