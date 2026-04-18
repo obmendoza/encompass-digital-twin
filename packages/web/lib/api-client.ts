@@ -86,4 +86,16 @@ export const api = {
     req<{ ok: boolean; loanId: string }>("/world/inject-loan", {
       method: "POST", body: JSON.stringify({ loan }),
     }),
+  uploadFile: async (loanId: string, docId: string, file: File): Promise<{ ok: boolean; fileKey: string; fileUrl: string; document: Document }> => {
+    const formData = new FormData();
+    formData.append("file", file);
+    const res = await fetch(`${base}/loans/${loanId}/documents/${docId}/upload`, {
+      method: "POST",
+      body: formData,
+      // Don't set content-type — FormData sets it with boundary automatically
+    });
+    if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
+    return res.json();
+  },
+  getFileUrl: (fileKey: string) => `${base}/uploads/${fileKey}`,
 };
