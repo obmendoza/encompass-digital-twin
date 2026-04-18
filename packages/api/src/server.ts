@@ -10,6 +10,7 @@ import { registerDocumentRoutes } from "./routes/documents.js";
 import { registerRecommendationRoutes } from "./routes/recommendation.js";
 import { registerUploadRoutes } from "./routes/uploads.js";
 import { buildOpenApiSpec } from "./openapi.js";
+import * as persistence from "./persistence.js";
 
 export interface BuildOpts {
   now?: () => string;
@@ -46,10 +47,39 @@ export function buildServer(opts: BuildOpts = {}): { app: FastifyInstance; store
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const { app } = buildServer({ preloadScenarioId: "*" });
-  const port = Number(process.env.PORT ?? 4000);
-  const host = process.env.RAILWAY_ENVIRONMENT ? "0.0.0.0" : "127.0.0.1";
-  app.listen({ port, host })
-    .then(() => console.log(`api listening on :${port}`))
-    .catch((e) => { console.error(e); process.exit(1); });
+  (async () => {
+    await persistence.initTables();
+    const { app, store } = buildServer({ preloadScenarioId: "*" });
+
+    // Load persisted state on boot (if Supabase is configured)
+    if (persistence.isEnabled()) {
+      const saved = await persistence.loadState();
+      if (saved && Object.keys(saved.loans).length > 0) {
+        console.log(`[persistence] Restoring ${Object.keys(saved.loans).length} loans from Supabase`);
+        for (const loan of Object.values(saved.loans)) {
+          store.dispatch({ type: "InjectLoan", loan });
+        }
+        console.log("[persistence] State restored from Supabase");
+      }
+
+      // Wrap dispatch with save hook
+      const _dispatch = store.dispatch.bind(store);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (store as any).dispatch = (action: Parameters<typeof _dispatch>[0]) => {
+        const result = _dispatch(action);
+        if (action.type === "ResetWorld") {
+          persistence.clearState().catch(() => {});
+        } else {
+          persistence.saveState(result).catch(() => {});
+        }
+        return result;
+      };
+    }
+
+    const host = process.env.RAILWAY_ENVIRONMENT ? "0.0.0.0" : "127.0.0.1";
+    const port = Number(process.env.PORT ?? 4000);
+    app.listen({ port, host })
+      .then(() => console.log(`api listening on :${port}`))
+      .catch((e) => { console.error(e); process.exit(1); });
+  })();
 }
