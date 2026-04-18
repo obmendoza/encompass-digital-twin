@@ -12,7 +12,6 @@ export async function actionResetAndReloadAll() {
   try {
     await api.reset();
     const scenarios = await api.listScenarios();
-    // Load in batches of 5 for speed, but ensure all complete
     for (let i = 0; i < scenarios.length; i += 5) {
       const batch = scenarios.slice(i, i + 5);
       await Promise.all(batch.map((s) => api.loadScenario(s.id).catch(() => null)));
@@ -20,5 +19,7 @@ export async function actionResetAndReloadAll() {
   } catch {
     // Even if some fail, revalidate to show current state
   }
-  revalidatePath("/", "layout");
+  // Revalidate everything — pipeline, all loan pages, conversation logs
+  revalidatePath("/");
+  revalidatePath("/loan", "layout");
 }
