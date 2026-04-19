@@ -2,7 +2,8 @@
 
 import { useState, useTransition, useRef } from "react";
 import type { Loan, Document, Condition } from "@twin/core";
-import { actionUploadFile, actionClearCondition, actionUpdateDocumentStatus, actionAddDocument, actionGenerateDocs, actionRunIDP } from "@/app/loan/[loanId]/actions";
+import { actionUploadFile, actionClearCondition, actionUpdateDocumentStatus, actionAddDocument, actionGenerateDocs, actionRunIDP, actionRecalcIncome } from "@/app/loan/[loanId]/actions";
+import type { QualifyingIncomeWorksheet } from "@twin/core";
 
 // ---------------------------------------------------------------------------
 // Stare & Compare helpers
@@ -12,9 +13,11 @@ interface ComparisonEntry {
   field: string;
   label: string;
   extractedDisplay: string;
+  extractedRaw: unknown;
   loanDisplay: string;
   status: "match" | "mismatch" | "extra";
   note?: string;
+  pushField?: string;
 }
 
 function formatVal(v: unknown): string {
@@ -43,18 +46,18 @@ function buildComparisons(doc: Document, loan: Loan, extracted: Record<string, u
   const results: ComparisonEntry[] = [];
   const docType = doc.docType;
 
-  type FieldMap = Record<string, { label: string; getLoanVal: (loan: Loan) => unknown; note?: string }>;
+  type FieldMap = Record<string, { label: string; getLoanVal: (loan: Loan) => unknown; note?: string; pushField?: string }>;
 
   const bankStmtFields: FieldMap = {
     account_holder: { label: "Account Holder", getLoanVal: (l) => l.borrower.fullName },
-    total_deposits: { label: "Total Deposits", getLoanVal: (l) => l.qualifyingWorksheet.avgDeposits, note: "Loan shows monthly avg; statement shows single month total" },
-    beginning_balance: { label: "Beginning Balance", getLoanVal: () => null },
-    ending_balance: { label: "Ending Balance", getLoanVal: () => null },
+    total_deposits: { label: "Total Deposits (this month)", getLoanVal: (l) => l.qualifyingWorksheet.avgDeposits, note: "Loan uses monthly avg across all statements; this is a single month", pushField: "avgDeposits" },
+    beginning_balance: { label: "Beginning Balance", getLoanVal: (l) => { const liq = l.assets.totalLiquid; return liq > 0 ? liq : null; }, note: "Loan record shows total liquid assets, not per-account balance" },
+    ending_balance: { label: "Ending Balance", getLoanVal: (l) => { const liq = l.assets.totalLiquid; return liq > 0 ? liq : null; }, note: "Loan record shows total liquid assets" },
     total_withdrawals: { label: "Total Withdrawals", getLoanVal: () => null },
-    statement_start: { label: "Statement Start", getLoanVal: () => null },
-    statement_end: { label: "Statement End", getLoanVal: () => null },
-    account_number_last4: { label: "Account (last 4)", getLoanVal: () => null },
-    large_deposits: { label: "Large Deposits", getLoanVal: () => null },
+    statement_start: { label: "Statement Period Start", getLoanVal: (l) => l.qualifyingWorksheet.monthsCovered ? `${l.qualifyingWorksheet.monthsCovered} months covered` : null },
+    statement_end: { label: "Statement Period End", getLoanVal: (l) => l.qualifyingWorksheet.monthsCovered ? `${l.qualifyingWorksheet.monthsCovered} months covered` : null, note: "Loan tracks total months covered, not individual dates" },
+    account_number_last4: { label: "Account (last 4)", getLoanVal: (l) => l.borrower.ssnMasked.slice(-4), note: "Compared against SSN last 4 for identity verification" },
+    large_deposits: { label: "Large Deposits", getLoanVal: (l) => l.qualifyingWorksheet.nsfCount != null ? `NSF count: ${l.qualifyingWorksheet.nsfCount}` : null, note: "Large deposits require sourcing; NSF count tracked separately" },
   };
 
   const app1003Fields: FieldMap = {
@@ -115,9 +118,11 @@ function buildComparisons(doc: Document, loan: Loan, extracted: Record<string, u
       field: key,
       label: config.label,
       extractedDisplay: formatVal(extractedVal),
+      extractedRaw: extractedVal,
       loanDisplay: hasLoanVal ? formatVal(loanVal) : "—",
       status: !hasLoanVal ? "extra" : isMatch ? "match" : "mismatch",
-      note: !isMatch && hasLoanVal ? config.note : undefined,
+      note: config.note,
+      pushField: config.pushField,
     });
   }
 
@@ -128,6 +133,7 @@ function buildComparisons(doc: Document, loan: Loan, extracted: Record<string, u
       field: key,
       label: key.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()),
       extractedDisplay: formatVal(val),
+      extractedRaw: val,
       loanDisplay: "—",
       status: "extra",
     });
@@ -143,8 +149,29 @@ function StareAndCompare({ doc, loan, twinApiUrl }: {
 }) {
   const extracted = doc.extractedData ?? {};
   const [hoveredField, setHoveredField] = useState<string | null>(null);
+  const [pushed, setPushed] = useState<Set<string>>(new Set());
+  const [, startPush] = useTransition();
 
   const comparisons = buildComparisons(doc, loan, extracted as Record<string, unknown>);
+
+  const handlePushToLoan = (comp: ComparisonEntry) => {
+    if (!comp.pushField) return;
+    const val = typeof comp.extractedRaw === "number" ? comp.extractedRaw : parseFloat(String(comp.extractedRaw));
+    if (isNaN(val)) return;
+
+    const ws: QualifyingIncomeWorksheet = {
+      ...loan.qualifyingWorksheet,
+      [comp.pushField]: val,
+      derivedMonthlyIncome: comp.pushField === "avgDeposits"
+        ? val * (1 - (loan.qualifyingWorksheet.expenseFactor ?? 0.5))
+        : loan.qualifyingWorksheet.derivedMonthlyIncome,
+    };
+
+    startPush(async () => {
+      await actionRecalcIncome(loan.id, ws);
+      setPushed((prev) => new Set(prev).add(comp.field));
+    });
+  };
 
   const matchCount = comparisons.filter(c => c.status === "match").length;
   const mismatchCount = comparisons.filter(c => c.status === "mismatch").length;
@@ -192,6 +219,7 @@ function StareAndCompare({ doc, loan, twinApiUrl }: {
               <th className="text-left px-2 py-[4px] border-b border-[#c8c4b5] font-bold text-[#1f4478]">Extracted</th>
               <th className="text-left px-2 py-[4px] border-b border-[#c8c4b5] font-bold text-[#1f4478]">Loan Record</th>
               <th className="text-center px-2 py-[4px] border-b border-[#c8c4b5] font-bold text-[#1f4478] w-[40px]">Match</th>
+              <th className="text-center px-2 py-[4px] border-b border-[#c8c4b5] font-bold text-[#1f4478] w-[60px]">Action</th>
             </tr>
           </thead>
           <tbody>
@@ -225,6 +253,19 @@ function StareAndCompare({ doc, loan, twinApiUrl }: {
                   ) : (
                     <span className="text-[#6b7a8f]">ℹ️</span>
                   )}
+                </td>
+                <td className="px-2 py-[3px] border-b border-[#e0dfdb] text-center">
+                  {comp.pushField && !pushed.has(comp.field) ? (
+                    <button
+                      className="text-[9px] px-1 py-[1px] bg-[#0a52a0] text-white border-none cursor-pointer hover:bg-[#08407d]"
+                      onClick={() => handlePushToLoan(comp)}
+                      title={`Push ${comp.extractedDisplay} to Income Worksheet`}
+                    >
+                      Push →
+                    </button>
+                  ) : pushed.has(comp.field) ? (
+                    <span className="text-[9px] text-[#1b5e20] font-bold">✓ Pushed</span>
+                  ) : null}
                 </td>
               </tr>
             ))}
