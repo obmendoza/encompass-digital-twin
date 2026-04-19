@@ -4,6 +4,262 @@ import { useState, useTransition, useRef } from "react";
 import type { Loan, Document, Condition } from "@twin/core";
 import { actionUploadFile, actionClearCondition, actionUpdateDocumentStatus, actionAddDocument, actionGenerateDocs, actionRunIDP } from "@/app/loan/[loanId]/actions";
 
+// ---------------------------------------------------------------------------
+// Stare & Compare helpers
+// ---------------------------------------------------------------------------
+
+interface ComparisonEntry {
+  field: string;
+  label: string;
+  extractedDisplay: string;
+  loanDisplay: string;
+  status: "match" | "mismatch" | "extra";
+  note?: string;
+}
+
+function formatVal(v: unknown): string {
+  if (v == null) return "—";
+  if (typeof v === "number") return v >= 1000 ? `$${v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : String(v);
+  if (typeof v === "boolean") return v ? "Yes" : "No";
+  if (Array.isArray(v)) return `[${v.length} items]`;
+  if (typeof v === "object") return JSON.stringify(v).slice(0, 60);
+  return String(v);
+}
+
+function fuzzyMatch(extracted: unknown, loan: unknown): boolean {
+  if (extracted == null || loan == null) return false;
+  const e = String(extracted).toLowerCase().replace(/[^a-z0-9.]/g, "");
+  const l = String(loan).toLowerCase().replace(/[^a-z0-9.]/g, "");
+  if (e === l) return true;
+  // Numeric comparison with tolerance
+  const en = parseFloat(String(extracted));
+  const ln = parseFloat(String(loan));
+  if (!isNaN(en) && !isNaN(ln)) return Math.abs(en - ln) / Math.max(Math.abs(ln), 1) < 0.05;
+  // Substring match for names
+  return e.length > 3 && l.length > 3 && (e.includes(l.slice(0, 5)) || l.includes(e.slice(0, 5)));
+}
+
+function buildComparisons(doc: Document, loan: Loan, extracted: Record<string, unknown>): ComparisonEntry[] {
+  const results: ComparisonEntry[] = [];
+  const docType = doc.docType;
+
+  type FieldMap = Record<string, { label: string; getLoanVal: (loan: Loan) => unknown; note?: string }>;
+
+  const bankStmtFields: FieldMap = {
+    account_holder: { label: "Account Holder", getLoanVal: (l) => l.borrower.fullName },
+    total_deposits: { label: "Total Deposits", getLoanVal: (l) => l.qualifyingWorksheet.avgDeposits, note: "Loan shows monthly avg; statement shows single month total" },
+    beginning_balance: { label: "Beginning Balance", getLoanVal: () => null },
+    ending_balance: { label: "Ending Balance", getLoanVal: () => null },
+    total_withdrawals: { label: "Total Withdrawals", getLoanVal: () => null },
+    statement_start: { label: "Statement Start", getLoanVal: () => null },
+    statement_end: { label: "Statement End", getLoanVal: () => null },
+    account_number_last4: { label: "Account (last 4)", getLoanVal: () => null },
+    large_deposits: { label: "Large Deposits", getLoanVal: () => null },
+  };
+
+  const app1003Fields: FieldMap = {
+    borrower_name: { label: "Borrower Name", getLoanVal: (l) => l.borrower.fullName },
+    ssn_last4: { label: "SSN (last 4)", getLoanVal: (l) => l.borrower.ssnMasked.slice(-4) },
+    subject_property_address: { label: "Property Address", getLoanVal: (l) => `${l.property.street}, ${l.property.city} ${l.property.state}` },
+    subject_property_state: { label: "State", getLoanVal: (l) => l.property.state },
+    occupancy: { label: "Occupancy", getLoanVal: (l) => l.transaction.occupancy },
+    property_type: { label: "Property Type", getLoanVal: (l) => l.property.propertyType },
+    loan_purpose: { label: "Loan Purpose", getLoanVal: (l) => l.transaction.loanPurpose },
+    loan_amount: { label: "Loan Amount", getLoanVal: (l) => l.transaction.loanAmount },
+    purchase_price: { label: "Purchase Price", getLoanVal: (l) => l.transaction.salesPrice },
+    appraised_value: { label: "Appraised Value", getLoanVal: (l) => l.transaction.appraisedValue },
+    estimated_ltv: { label: "LTV", getLoanVal: (l) => l.transaction.ltv },
+    stated_income_monthly: { label: "Monthly Income", getLoanVal: (l) => l.income.totalMonthlyIncome },
+    stated_assets_total: { label: "Total Assets", getLoanVal: (l) => l.assets.totalLiquid + l.assets.totalRetirement },
+  };
+
+  const leaseFields: FieldMap = {
+    tenant: { label: "Tenant", getLoanVal: () => null },
+    monthly_rent: { label: "Monthly Rent", getLoanVal: (l) => l.transaction.rentalIncome },
+    lease_start: { label: "Lease Start", getLoanVal: () => null },
+    lease_end: { label: "Lease End", getLoanVal: () => null },
+    security_deposit: { label: "Security Deposit", getLoanVal: () => null },
+    is_executed: { label: "Executed", getLoanVal: () => null },
+    landlord: { label: "Landlord", getLoanVal: (l) => l.borrower.fullName },
+  };
+
+  const form1099Fields: FieldMap = {
+    recipient_name: { label: "Recipient", getLoanVal: (l) => l.borrower.fullName },
+    gross_receipts: { label: "Gross Receipts", getLoanVal: (l) => l.qualifyingWorksheet.gross1099 },
+    tax_year: { label: "Tax Year", getLoanVal: () => null },
+    variant: { label: "Form Variant", getLoanVal: () => null },
+  };
+
+  let fieldMap: FieldMap = {};
+  if (docType === "BankStatement" || doc.name.toLowerCase().includes("bank")) {
+    fieldMap = bankStmtFields;
+  } else if (doc.name.toLowerCase().includes("1003") || docType === "Other") {
+    fieldMap = app1003Fields;
+  } else if (docType === "LeaseAgreement") {
+    fieldMap = leaseFields;
+  } else if (docType === "1099") {
+    fieldMap = form1099Fields;
+  } else {
+    fieldMap = app1003Fields;
+  }
+
+  for (const [key, config] of Object.entries(fieldMap)) {
+    const extractedVal = extracted[key];
+    if (extractedVal === undefined) continue;
+
+    const loanVal = config.getLoanVal(loan);
+    const isMatch = fuzzyMatch(extractedVal, loanVal);
+    const hasLoanVal = loanVal != null;
+
+    results.push({
+      field: key,
+      label: config.label,
+      extractedDisplay: formatVal(extractedVal),
+      loanDisplay: hasLoanVal ? formatVal(loanVal) : "—",
+      status: !hasLoanVal ? "extra" : isMatch ? "match" : "mismatch",
+      note: !isMatch && hasLoanVal ? config.note : undefined,
+    });
+  }
+
+  for (const [key, val] of Object.entries(extracted)) {
+    if (key.startsWith("_")) continue;
+    if (results.some(r => r.field === key)) continue;
+    results.push({
+      field: key,
+      label: key.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()),
+      extractedDisplay: formatVal(val),
+      loanDisplay: "—",
+      status: "extra",
+    });
+  }
+
+  return results;
+}
+
+function StareAndCompare({ doc, loan, twinApiUrl }: {
+  doc: Document;
+  loan: Loan;
+  twinApiUrl: string;
+}) {
+  const extracted = doc.extractedData ?? {};
+  const [hoveredField, setHoveredField] = useState<string | null>(null);
+
+  const comparisons = buildComparisons(doc, loan, extracted as Record<string, unknown>);
+
+  const matchCount = comparisons.filter(c => c.status === "match").length;
+  const mismatchCount = comparisons.filter(c => c.status === "mismatch").length;
+  const extraCount = comparisons.filter(c => c.status === "extra").length;
+
+  return (
+    <div className="grid grid-cols-2 gap-[1px] bg-[#6b7a8f] flex-1" style={{ minHeight: "400px" }}>
+      {/* Left: PDF */}
+      <div className="bg-white p-1">
+        <div className="text-[9px] text-[#6b7a8f] px-1 pb-1 font-bold uppercase">Source Document</div>
+        {doc.mimeType?.includes("pdf") ? (
+          <iframe
+            src={`${twinApiUrl}${doc.fileUrl}`}
+            className="w-full border border-[#c8c4b5]"
+            style={{ height: "420px" }}
+            title={doc.name}
+          />
+        ) : doc.mimeType?.startsWith("image/") ? (
+          <img
+            src={`${twinApiUrl}${doc.fileUrl}`}
+            alt={doc.name}
+            className="max-w-full max-h-[420px] mx-auto border border-[#c8c4b5]"
+          />
+        ) : (
+          <div className="flex items-center justify-center h-[420px] text-[#6b7a8f] text-[11px]">
+            Preview not available
+          </div>
+        )}
+      </div>
+
+      {/* Right: Extracted vs Loan comparison */}
+      <div className="bg-white overflow-auto">
+        <div className="px-2 py-1 bg-gradient-to-r from-[#1f4478] to-[#0a3060] text-white text-[10px] font-bold flex items-center gap-2">
+          <span>👁 STARE &amp; COMPARE</span>
+          <span className="ml-auto opacity-80">
+            ✅ {matchCount}  ⚠️ {mismatchCount}  ℹ️ {extraCount}
+          </span>
+        </div>
+
+        {/* Comparison table */}
+        <table className="w-full text-[10px] border-collapse">
+          <thead>
+            <tr className="bg-[#f0f2f5]">
+              <th className="text-left px-2 py-[4px] border-b border-[#c8c4b5] font-bold text-[#1f4478]">Field</th>
+              <th className="text-left px-2 py-[4px] border-b border-[#c8c4b5] font-bold text-[#1f4478]">Extracted</th>
+              <th className="text-left px-2 py-[4px] border-b border-[#c8c4b5] font-bold text-[#1f4478]">Loan Record</th>
+              <th className="text-center px-2 py-[4px] border-b border-[#c8c4b5] font-bold text-[#1f4478] w-[40px]">Match</th>
+            </tr>
+          </thead>
+          <tbody>
+            {comparisons.map((comp, i) => (
+              <tr
+                key={i}
+                className={`${
+                  comp.status === "mismatch" ? "bg-[#fff8e1]" :
+                  comp.status === "match" ? "" :
+                  "bg-[#f8f9ff]"
+                } ${hoveredField === comp.field ? "ring-2 ring-[#0a52a0] ring-inset" : ""} ${
+                  i % 2 && comp.status !== "mismatch" ? "bg-[#fafbfc]" : ""
+                }`}
+                onMouseEnter={() => setHoveredField(comp.field)}
+                onMouseLeave={() => setHoveredField(null)}
+              >
+                <td className="px-2 py-[3px] border-b border-[#e0dfdb] font-semibold text-[#404040]">
+                  {comp.label}
+                </td>
+                <td className="px-2 py-[3px] border-b border-[#e0dfdb] font-mono">
+                  {comp.extractedDisplay}
+                </td>
+                <td className="px-2 py-[3px] border-b border-[#e0dfdb]">
+                  {comp.loanDisplay}
+                </td>
+                <td className="px-2 py-[3px] border-b border-[#e0dfdb] text-center">
+                  {comp.status === "match" ? (
+                    <span className="text-[#1b5e20]">✅</span>
+                  ) : comp.status === "mismatch" ? (
+                    <span className="text-[#8a4b00]" title={comp.note ?? ""}>⚠️</span>
+                  ) : (
+                    <span className="text-[#6b7a8f]">ℹ️</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        {/* Mismatch notes */}
+        {comparisons.filter(c => c.note).length > 0 && (
+          <div className="px-2 py-2 bg-[#fffdf5] border-t border-[#c8c4b5] text-[9px]">
+            <div className="font-bold text-[#8a4b00] mb-1">Notes:</div>
+            {comparisons.filter(c => c.note).map((c, idx) => (
+              <div key={idx} className="text-[#6b7a8f] mb-[2px]">
+                • <b>{c.label}:</b> {c.note}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Verification summary */}
+        <div className="px-2 py-2 bg-[#f6f8fb] border-t border-[#6b7a8f]">
+          <div className="font-bold text-[10px] text-[#1f4478] mb-1">Verification Summary</div>
+          <div className="flex gap-3 text-[10px]">
+            <span className="text-[#1b5e20] font-bold">✅ {matchCount} match{matchCount !== 1 ? "es" : ""}</span>
+            {mismatchCount > 0 && <span className="text-[#8a4b00] font-bold">⚠️ {mismatchCount} review needed</span>}
+            {extraCount > 0 && <span className="text-[#6b7a8f]">ℹ️ {extraCount} supplemental</span>}
+          </div>
+          <div className={`mt-1 text-[9px] font-bold ${mismatchCount === 0 ? "text-[#1b5e20]" : "text-[#8a4b00]"}`}>
+            {mismatchCount === 0 ? "All extracted data verified against loan record" : "Review highlighted fields before clearing condition"}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Document categories for grouping
 const DOC_CATEGORIES: Record<string, string[]> = {
   "Income": ["BankStatement", "PayStub", "1099", "PnL", "CPA_Letter"],
@@ -65,6 +321,7 @@ export function EFolderWorkspace({ loan, twinApiUrl }: Props) {
   const [generating, setGenerating] = useState(false);
   const [genResult, setGenResult] = useState<string | null>(null);
   const [idpRunning, setIdpRunning] = useState<string | null>(null);
+  const [compareMode, setCompareMode] = useState(true);
 
   const handleAddDoc = () => {
     if (!newDocName.trim()) return;
@@ -291,6 +548,11 @@ export function EFolderWorkspace({ loan, twinApiUrl }: Props) {
                     {idpRunning === selectedDoc.id ? "🔍 Extracting..." : "🔍 Run IDP Extract"}
                   </button>
                 )}
+                {selectedDoc.fileKey && selectedDoc.extractedData && Object.keys(selectedDoc.extractedData).length > 0 && (
+                  <button className="enc-btn text-[10px]" onClick={() => setCompareMode(!compareMode)}>
+                    {compareMode ? "📄 Document Only" : "👁 Stare & Compare"}
+                  </button>
+                )}
                 {linkedCondition && linkedCondition.status !== "Cleared" && (
                   <button className="enc-btn enc-btn--primary text-[10px]" disabled={pending}
                     onClick={() => clearCondition(linkedCondition.id)}>
@@ -310,59 +572,48 @@ export function EFolderWorkspace({ loan, twinApiUrl }: Props) {
                 </div>
               )}
 
-              {/* Extracted data */}
-              {selectedDoc.extractedData && Object.keys(selectedDoc.extractedData).length > 0 && (
-                <div className="px-3 py-2 bg-[#f0f5ff] border-b border-[#c8c4b5] text-[10px]">
-                  <div className="font-bold text-[#1f4478] mb-1">📋 Extracted Data (IDP)</div>
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-                    {Object.entries(selectedDoc.extractedData).map(([k, v]) => (
-                      <div key={k}>
-                        <span className="text-[#6b7a8f]">{k.replace(/_/g, " ")}:</span>{" "}
-                        <span className="font-semibold">{String(v)}</span>
+              {/* Content area: Stare & Compare or document-only preview */}
+              {selectedDoc.fileKey && selectedDoc.extractedData && Object.keys(selectedDoc.extractedData).length > 0 && compareMode ? (
+                <StareAndCompare doc={selectedDoc} loan={loan} twinApiUrl={twinApiUrl} />
+              ) : (
+                <div className="flex-1 p-2">
+                  {selectedDoc.fileKey ? (
+                    selectedDoc.mimeType?.startsWith("image/") ? (
+                      <img
+                        src={`${twinApiUrl}${selectedDoc.fileUrl}`}
+                        alt={selectedDoc.name}
+                        className="max-w-full max-h-[400px] mx-auto border border-[#c8c4b5]"
+                      />
+                    ) : selectedDoc.mimeType?.includes("pdf") ? (
+                      <iframe
+                        src={`${twinApiUrl}${selectedDoc.fileUrl}`}
+                        className="w-full border border-[#c8c4b5]"
+                        style={{ height: "450px" }}
+                        title={selectedDoc.name}
+                      />
+                    ) : (
+                      <div className="text-center py-8 text-[#6b7a8f] text-[11px]">
+                        <FileIcon mimeType={selectedDoc.mimeType} />
+                        <div className="mt-2">Preview not available for {selectedDoc.mimeType}</div>
+                        <a href={`${twinApiUrl}${selectedDoc.fileUrl}`} target="_blank" rel="noopener"
+                          className="text-[#0a52a0] underline">Download to view</a>
                       </div>
-                    ))}
-                  </div>
+                    )
+                  ) : (
+                    <div className="h-full flex items-center justify-center">
+                      <div className="text-center text-[#6b7a8f]">
+                        <div className="text-[30px] mb-2">📎</div>
+                        <div className="text-[11px] font-bold mb-1">No file uploaded</div>
+                        <div className="text-[10px] mb-3">Upload a PDF, image, or document</div>
+                        <button className="enc-btn enc-btn--primary" disabled={pending}
+                          onClick={() => handleUpload(selectedDoc.id)}>
+                          Upload File
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
-
-              {/* File preview area */}
-              <div className="flex-1 p-2">
-                {selectedDoc.fileKey ? (
-                  selectedDoc.mimeType?.startsWith("image/") ? (
-                    <img
-                      src={`${twinApiUrl}${selectedDoc.fileUrl}`}
-                      alt={selectedDoc.name}
-                      className="max-w-full max-h-[400px] mx-auto border border-[#c8c4b5]"
-                    />
-                  ) : selectedDoc.mimeType?.includes("pdf") ? (
-                    <iframe
-                      src={`${twinApiUrl}${selectedDoc.fileUrl}`}
-                      className="w-full border border-[#c8c4b5]"
-                      style={{ height: "450px" }}
-                      title={selectedDoc.name}
-                    />
-                  ) : (
-                    <div className="text-center py-8 text-[#6b7a8f] text-[11px]">
-                      <FileIcon mimeType={selectedDoc.mimeType} />
-                      <div className="mt-2">Preview not available for {selectedDoc.mimeType}</div>
-                      <a href={`${twinApiUrl}${selectedDoc.fileUrl}`} target="_blank" rel="noopener"
-                        className="text-[#0a52a0] underline">Download to view</a>
-                    </div>
-                  )
-                ) : (
-                  <div className="h-full flex items-center justify-center">
-                    <div className="text-center text-[#6b7a8f]">
-                      <div className="text-[30px] mb-2">📎</div>
-                      <div className="text-[11px] font-bold mb-1">No file uploaded</div>
-                      <div className="text-[10px] mb-3">Upload a PDF, image, or document</div>
-                      <button className="enc-btn enc-btn--primary" disabled={pending}
-                        onClick={() => handleUpload(selectedDoc.id)}>
-                        Upload File
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
             </div>
           ) : (
             <div className="h-full flex items-center justify-center text-[#6b7a8f]">
