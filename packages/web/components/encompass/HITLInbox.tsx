@@ -142,8 +142,8 @@ function TicketCard({ ticket }: { ticket: HITLTicket }) {
   );
 }
 
-export function HITLInbox({ tickets }: { tickets: HITLTicket[] }) {
-  const [filter, setFilter] = useState<"all" | "pending" | "approved" | "rejected">("all");
+export function HITLInbox({ tickets, defaultFilter = "all" }: { tickets: HITLTicket[]; defaultFilter?: "all" | "pending" | "approved" | "rejected" }) {
+  const [filter, setFilter] = useState<"all" | "pending" | "approved" | "rejected">(defaultFilter);
 
   const filtered = filter === "all" ? tickets : tickets.filter((t) => t.status === filter);
   const pendingCount = tickets.filter((t) => t.status === "pending").length;
