@@ -4,14 +4,15 @@ import { MenuBar } from "@/components/encompass/MenuBar";
 import { Toolbar } from "@/components/encompass/Toolbar";
 import { PipelineTable } from "@/components/encompass/PipelineTable";
 import { SandboxControls } from "@/components/encompass/ScenarioSelector";
+import { getUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 export default async function PipelinePage() {
-  const loans = await api.listLoans();
+  const [loans, user] = await Promise.all([api.listLoans(), getUser()]);
   return (
     <div className="border border-[#6b7a8f] m-2">
-      <TitleBar scenarioId="Pipeline" />
+      <TitleBar scenarioId="Pipeline" user={user} />
       <MenuBar />
       <Toolbar />
       <div className="bg-white p-3">

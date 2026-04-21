@@ -3,17 +3,18 @@ import { MenuBar } from "@/components/encompass/MenuBar";
 import { Toolbar } from "@/components/encompass/Toolbar";
 import { HITLInbox } from "@/components/encompass/HITLInbox";
 import { fetchTickets } from "./actions";
+import { getUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 export default async function HITLPage() {
-  const tickets = await fetchTickets();
+  const [tickets, user] = await Promise.all([fetchTickets(), getUser()]);
   const pending = tickets.filter((t) => t.status === "pending").length;
   const resolved = tickets.filter((t) => t.status !== "pending").length;
 
   return (
     <div className="border border-[#6b7a8f] m-2">
-      <TitleBar scenarioId="HITL Inbox" />
+      <TitleBar scenarioId="HITL Inbox" user={user} />
       <MenuBar />
       <Toolbar />
       <div className="bg-white p-3">
