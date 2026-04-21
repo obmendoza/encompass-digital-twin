@@ -7,6 +7,7 @@ import { NavTree } from "@/components/encompass/NavTree";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import type { Loan } from "@twin/core";
+import { getUser } from "@/lib/auth";
 
 export default async function LoanLayout({
   children, params,
@@ -25,9 +26,11 @@ export default async function LoanLayout({
     }
   }
 
+  const user = await getUser();
+
   return (
     <div className="border border-[#6b7a8f] m-2">
-      <TitleBar scenarioId={loan.id} />
+      <TitleBar scenarioId={loan.id} user={user} />
       <MenuBar />
       <Toolbar />
       <LoanHeader loan={loan} />
