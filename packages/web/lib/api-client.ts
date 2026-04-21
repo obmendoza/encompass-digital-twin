@@ -82,6 +82,20 @@ export const api = {
     req<Loan>(`/loans/${loanId}/recommendation`, {
       method: "DELETE", body: JSON.stringify({ actor }),
     }),
+  assignLoan: (loanId: string, assignedTo: string, priority: string, actor: Actor) =>
+    req<Loan>(`/loans/${loanId}/assign`, {
+      method: "POST", body: JSON.stringify({ assignedTo, priority, actor }),
+    }),
+  updateAssignmentStatus: (loanId: string, status: string, actor: Actor) =>
+    req<Loan>(`/loans/${loanId}/assignment-status`, {
+      method: "POST", body: JSON.stringify({ status, actor }),
+    }),
+  unassignLoan: (loanId: string, actor: Actor) =>
+    req<Loan>(`/loans/${loanId}/assign`, {
+      method: "DELETE", body: JSON.stringify({ actor }),
+    }),
+  getAssignments: (userId: string) =>
+    req<Array<{ id: string; borrower: string; program: string; loanAmount: number; status: string; priority: string; assignedAt: string; decision: string }>>(`/assignments/${userId}`),
   injectLoan: (loan: unknown) =>
     req<{ ok: boolean; loanId: string }>("/world/inject-loan", {
       method: "POST", body: JSON.stringify({ loan }),

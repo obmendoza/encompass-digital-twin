@@ -12,6 +12,9 @@ export function Toolbar({ userRole }: { userRole?: string }) {
       {(!userRole || ["va", "uw", "admin"].includes(userRole)) && (
         <Link href="/hitl" className="enc-btn">HITL Inbox</Link>
       )}
+      {userRole && ["va", "uw", "admin"].includes(userRole) && (
+        <Link href="/va" className="enc-btn">VA Dashboard</Link>
+      )}
       {userRole === "admin" && (
         <Link href="/admin" className="enc-btn font-bold text-[#8a0000]">Admin</Link>
       )}
