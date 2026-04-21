@@ -2,18 +2,26 @@
 
 import { revalidatePath } from "next/cache";
 import { api } from "@/lib/api-client";
+import { getUser } from "@/lib/auth";
 import type { Actor, UwDecision, NewCondition, QualifyingIncomeWorksheet } from "@twin/core";
 
-const humanActor: Actor = { kind: "human", id: "uw-local" };
+async function getActor(): Promise<Actor> {
+  const user = await getUser();
+  if (user) {
+    return { kind: "human", id: user.displayName ?? user.email };
+  }
+  return { kind: "human", id: "anonymous" };
+}
 
 export interface ActionResult {
   ok: boolean;
   error?: { code: string; message: string };
 }
 
-async function run(loanId: string, fn: () => Promise<unknown>): Promise<ActionResult> {
+async function run(loanId: string, fn: (actor: Actor) => Promise<unknown>): Promise<ActionResult> {
+  const actor = await getActor();
   try {
-    await fn();
+    await fn(actor);
     revalidatePath(`/loan/${loanId}`, "layout");
     return { ok: true };
   } catch (e) {
@@ -36,39 +44,39 @@ export async function actionLoadScenario(scenarioId: string): Promise<ActionResu
 }
 
 export async function actionSetDecision(loanId: string, decision: UwDecision, rationale: string) {
-  return run(loanId, () => api.setDecision(loanId, decision, rationale, humanActor));
+  return run(loanId, (actor) => api.setDecision(loanId, decision, rationale, actor));
 }
 
 export async function actionAddCondition(loanId: string, condition: NewCondition) {
-  return run(loanId, () => api.addCondition(loanId, condition, humanActor));
+  return run(loanId, (actor) => api.addCondition(loanId, condition, actor));
 }
 
 export async function actionClearCondition(loanId: string, conditionId: string, notes: string) {
-  return run(loanId, () => api.clearCondition(loanId, conditionId, notes, humanActor));
+  return run(loanId, (actor) => api.clearCondition(loanId, conditionId, notes, actor));
 }
 
 export async function actionWaiveCondition(loanId: string, conditionId: string, rationale: string) {
-  return run(loanId, () => api.waiveCondition(loanId, conditionId, rationale, humanActor));
+  return run(loanId, (actor) => api.waiveCondition(loanId, conditionId, rationale, actor));
 }
 
 export async function actionRemoveCondition(loanId: string, conditionId: string) {
-  return run(loanId, () => api.removeCondition(loanId, conditionId, humanActor));
+  return run(loanId, (actor) => api.removeCondition(loanId, conditionId, actor));
 }
 
 export async function actionRecalcIncome(loanId: string, worksheet: QualifyingIncomeWorksheet) {
-  return run(loanId, () => api.recalcIncome(loanId, worksheet, humanActor));
+  return run(loanId, (actor) => api.recalcIncome(loanId, worksheet, actor));
 }
 
 export async function actionAddDocument(loanId: string, doc: { name: string; docType: string }) {
-  return run(loanId, () => api.addDocument(loanId, doc, humanActor));
+  return run(loanId, (actor) => api.addDocument(loanId, doc, actor));
 }
 
 export async function actionUpdateDocumentStatus(loanId: string, docId: string, status: string) {
-  return run(loanId, () => api.updateDocument(loanId, docId, { status }, humanActor));
+  return run(loanId, (actor) => api.updateDocument(loanId, docId, { status }, actor));
 }
 
 export async function actionLinkDocument(loanId: string, docId: string, conditionId: string) {
-  return run(loanId, () => api.linkDocument(loanId, docId, conditionId, humanActor));
+  return run(loanId, (actor) => api.linkDocument(loanId, docId, conditionId, actor));
 }
 
 export async function actionRunAgent(loanId: string): Promise<ActionResult> {
@@ -94,11 +102,11 @@ export async function actionRunAgent(loanId: string): Promise<ActionResult> {
 }
 
 export async function actionAcceptRecommendation(loanId: string) {
-  return run(loanId, () => api.acceptRecommendation(loanId, humanActor));
+  return run(loanId, (actor) => api.acceptRecommendation(loanId, actor));
 }
 
 export async function actionClearRecommendation(loanId: string) {
-  return run(loanId, () => api.clearRecommendation(loanId, humanActor));
+  return run(loanId, (actor) => api.clearRecommendation(loanId, actor));
 }
 
 export async function actionGenerateDocs(loanId: string): Promise<ActionResult & { count?: number }> {
