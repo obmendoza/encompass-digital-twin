@@ -123,7 +123,7 @@ export function VADashboard({ loans, currentUser }: Props) {
               <th className="text-left px-2 py-[4px] border-b border-[#6b7a8f]">Amount</th>
               <th className="text-left px-2 py-[4px] border-b border-[#6b7a8f]">Status</th>
               <th className="text-left px-2 py-[4px] border-b border-[#6b7a8f]">Priority</th>
-              <th className="text-left px-2 py-[4px] border-b border-[#6b7a8f]">Decision</th>
+              <th className="text-left px-2 py-[4px] border-b border-[#6b7a8f]">Decision / Recommendation</th>
               <th className="text-left px-2 py-[4px] border-b border-[#6b7a8f]">Actions</th>
             </tr>
           </thead>
@@ -151,7 +151,26 @@ export function VADashboard({ loans, currentUser }: Props) {
                   <td className="px-2 py-[3px] border-b border-[#c8c4b5]">
                     {a ? <span className={PRIORITY_COLORS[a.priority] ?? ""}>{a.priority}</span> : "—"}
                   </td>
-                  <td className="px-2 py-[3px] border-b border-[#c8c4b5]">{loan.decision}</td>
+                  <td className="px-2 py-[3px] border-b border-[#c8c4b5]">
+                    {loan.decision !== "pending" ? (
+                      <span className={`px-1 py-[1px] text-[9px] font-bold ${
+                        loan.decision === "approved" ? "bg-[#d7ecd0] text-[#1b5e20]" :
+                        loan.decision === "denied" ? "bg-[#f8d7d7] text-[#8a0000]" :
+                        "bg-[#ffe8c2] text-[#8a4b00]"
+                      }`}>{loan.decision.toUpperCase()}</span>
+                    ) : loan.pendingRecommendation ? (
+                      <div className="flex items-center gap-1">
+                        <span className="text-[#6b7a8f]">pending</span>
+                        <span className={`px-1 py-[1px] text-[8px] font-bold border ${
+                          loan.pendingRecommendation.recommendation === "approved" ? "border-[#1b5e20] text-[#1b5e20]" :
+                          loan.pendingRecommendation.recommendation === "denied" ? "border-[#8a0000] text-[#8a0000]" :
+                          "border-[#8a4b00] text-[#8a4b00]"
+                        }`}>🤖 {loan.pendingRecommendation.recommendation.toUpperCase()}</span>
+                      </div>
+                    ) : (
+                      <span className="text-[#6b7a8f]">pending</span>
+                    )}
+                  </td>
                   <td className="px-2 py-[3px] border-b border-[#c8c4b5]">
                     <div className="flex gap-1">
                       {!a && (
