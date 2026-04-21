@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { Loan } from "@twin/core";
 import type { AuthUser } from "@/lib/auth";
 import { actionAssignLoan, actionUpdateAssignmentStatus, actionUnassignLoan } from "@/app/va/actions";
@@ -37,31 +38,37 @@ export function VADashboard({ loans, currentUser }: Props) {
   const displayed = filter === "my" ? myLoans : filter === "unassigned" ? unassigned : validLoans;
 
   const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
 
   const assignToMe = (loanId: string, priority: string = "normal") => {
     setError(null);
     startTransition(async () => {
       const result = await actionAssignLoan(loanId, currentUser.email, priority);
       if (!result.ok) setError(`Assign failed: ${result.error}`);
+      else router.refresh();
     });
   };
 
   const updateStatus = (loanId: string, status: string) => {
     startTransition(async () => {
       await actionUpdateAssignmentStatus(loanId, status);
+      router.refresh();
     });
   };
 
   const unassign = (loanId: string) => {
     startTransition(async () => {
       await actionUnassignLoan(loanId);
+      router.refresh();
     });
   };
 
   const runAgent = (loanId: string) => {
     startTransition(async () => {
       await actionUpdateAssignmentStatus(loanId, "in_progress");
+      router.refresh();
       await actionRunAgent(loanId);
+      router.refresh();
     });
   };
 
