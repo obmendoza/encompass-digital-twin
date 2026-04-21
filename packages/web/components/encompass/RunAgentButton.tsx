@@ -4,9 +4,10 @@ import { useState, useTransition } from "react";
 import { actionRunAgent } from "@/app/loan/[loanId]/actions";
 import { AgentActivityFeed } from "./AgentActivityFeed";
 
-export function RunAgentButton({ loanId, hasRecommendation }: {
+export function RunAgentButton({ loanId, hasRecommendation, userRole }: {
   loanId: string;
   hasRecommendation: boolean;
+  userRole?: string;
 }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -24,6 +25,10 @@ export function RunAgentButton({ loanId, hasRecommendation }: {
       // Don't setRunning(false) on success — feed will detect StageRecommendation
     });
   };
+
+  if (userRole && !["va", "uw", "admin"].includes(userRole)) {
+    return <div className="text-[10px] text-[#6b7a8f]">Agent requires VA or UW role</div>;
+  }
 
   if (hasRecommendation) {
     return (

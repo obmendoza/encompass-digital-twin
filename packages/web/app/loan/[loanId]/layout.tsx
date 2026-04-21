@@ -32,7 +32,7 @@ export default async function LoanLayout({
     <div className="border border-[#6b7a8f] m-2">
       <TitleBar scenarioId={loan.id} user={user} />
       <MenuBar />
-      <Toolbar />
+      <Toolbar userRole={user?.role} />
       <LoanHeader loan={loan} />
       <div className="grid grid-cols-[172px_1fr] min-h-[540px]">
         <NavTree loanId={loanId} />

@@ -10,7 +10,7 @@ export default async function WorkshopPage() {
     <div className="border border-[#6b7a8f] m-2">
       <TitleBar scenarioId="Scenario Workshop" user={user} />
       <MenuBar />
-      <Toolbar />
+      <Toolbar userRole={user?.role} />
       <div className="bg-white p-3">
         <div className="enc-sec">
           <h4>Scenario Workshop — Chat-Driven Loan Generation</h4>

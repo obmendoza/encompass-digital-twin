@@ -10,7 +10,7 @@ interface LoanSummary {
   decision: string;
 }
 
-export function SandboxControls({ loans }: { loans: LoanSummary[] }) {
+export function SandboxControls({ loans, userRole }: { loans: LoanSummary[]; userRole?: string }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -32,6 +32,8 @@ export function SandboxControls({ loans }: { loans: LoanSummary[] }) {
     });
   };
 
+  const canReset = !userRole || ["uw", "admin"].includes(userRole);
+
   return (
     <div className="border border-[#6b7a8f] bg-[#f6f8fb] p-2">
       <div className="flex items-center gap-3 text-[11px]">
@@ -44,13 +46,17 @@ export function SandboxControls({ loans }: { loans: LoanSummary[] }) {
             </span>
           )}
         </span>
-        <button
-          className="enc-btn enc-btn--primary ml-auto"
-          disabled={pending}
-          onClick={handleReset}
-        >
-          {pending ? "Resetting…" : "Reset All Loans to Original State"}
-        </button>
+        {canReset ? (
+          <button
+            className="enc-btn enc-btn--primary ml-auto"
+            disabled={pending}
+            onClick={handleReset}
+          >
+            {pending ? "Resetting…" : "Reset All Loans to Original State"}
+          </button>
+        ) : (
+          <span className="ml-auto text-[10px] text-[#6b7a8f]">Reset requires Underwriter role</span>
+        )}
       </div>
       {error && (
         <div className="text-[10px] text-[#c00] mt-1">Error: {error}</div>

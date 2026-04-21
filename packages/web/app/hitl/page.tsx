@@ -16,7 +16,7 @@ export default async function HITLPage() {
     <div className="border border-[#6b7a8f] m-2">
       <TitleBar scenarioId="HITL Inbox" user={user} />
       <MenuBar />
-      <Toolbar />
+      <Toolbar userRole={user?.role} />
       <div className="bg-white p-3">
         <div className="enc-sec">
           <h4>Human-in-the-Loop Inbox — {pending} Pending · {resolved} Resolved</h4>

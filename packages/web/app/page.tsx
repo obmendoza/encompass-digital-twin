@@ -14,9 +14,9 @@ export default async function PipelinePage() {
     <div className="border border-[#6b7a8f] m-2">
       <TitleBar scenarioId="Pipeline" user={user} />
       <MenuBar />
-      <Toolbar />
+      <Toolbar userRole={user?.role} />
       <div className="bg-white p-3">
-        <SandboxControls loans={loans} />
+        <SandboxControls loans={loans} userRole={user?.role} />
         <div className="enc-sec mt-2">
           <h4>Pipeline — {loans.length} Loans</h4>
           <div className="p-2">

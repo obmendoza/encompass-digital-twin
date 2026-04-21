@@ -773,10 +773,12 @@ export function RecommendationPanel({
   loanId,
   rec,
   existingConditions = [],
+  userRole,
 }: {
   loanId: string;
   rec: PendingRecommendation;
   existingConditions?: Condition[];
+  userRole?: string;
 }) {
   const [pending, startTransition] = useTransition();
 
@@ -861,24 +863,30 @@ export function RecommendationPanel({
 
         {/* 7. Sticky Action Bar */}
         <div className="sticky bottom-0 flex items-center gap-2 p-3 bg-[#ece9d8] border-t-2 border-[#6b7a8f] -mx-3 -mb-3">
-          <button className="enc-btn enc-btn--primary" disabled={pending} onClick={accept}>
-            ✓ Accept
-          </button>
-          {allConditions.length > 0 && (
-            <button
-              className="enc-btn enc-btn--primary"
-              disabled={pending}
-              onClick={acceptWithConditions}
-            >
-              ✓ Accept + Conditions
-            </button>
+          {(!userRole || ["uw", "admin"].includes(userRole)) ? (
+            <>
+              <button className="enc-btn enc-btn--primary" disabled={pending} onClick={accept}>
+                ✓ Accept
+              </button>
+              {allConditions.length > 0 && (
+                <button
+                  className="enc-btn enc-btn--primary"
+                  disabled={pending}
+                  onClick={acceptWithConditions}
+                >
+                  ✓ Accept + Conditions
+                </button>
+              )}
+              <button className="enc-btn" disabled={pending} onClick={reject}>
+                ✗ Reject
+              </button>
+              <button className="enc-btn" disabled={pending} onClick={rerun}>
+                ↻ Re-run
+              </button>
+            </>
+          ) : (
+            <span className="text-[10px] text-[#6b7a8f]">Review only — decision requires Underwriter role</span>
           )}
-          <button className="enc-btn" disabled={pending} onClick={reject}>
-            ✗ Reject
-          </button>
-          <button className="enc-btn" disabled={pending} onClick={rerun}>
-            ↻ Re-run
-          </button>
           <span className="text-[9px] text-[#404040] ml-auto">
             Accept converts to {rec.recommendation.toUpperCase()} decision
           </span>

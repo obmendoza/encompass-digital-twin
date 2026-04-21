@@ -8,6 +8,7 @@ import { TabBar } from "@/components/encompass/TabBar";
 import { RunAgentButton } from "@/components/encompass/RunAgentButton";
 import { RecommendationPanel } from "@/components/encompass/RecommendationPanel";
 import { money, pct } from "@/lib/format";
+import { getUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,7 @@ export default async function TransmittalPage({
     await api.loadByLoan(loanId);
     loan = await api.getLoan(loanId);
   }
+  const user = await getUser();
   const openCount = loan.conditions.filter((c) => c.status === "Open").length;
   const rcvdCount = loan.conditions.filter((c) => c.status === "Received").length;
   const clrCount = loan.conditions.filter((c) => c.status === "Cleared").length;
@@ -95,15 +97,15 @@ export default async function TransmittalPage({
         <Field label="Decision" value={loan.decision} />
       </Section>
 
-      <DecisionBar loanId={loan.id} current={loan.decision} />
+      <DecisionBar loanId={loan.id} current={loan.decision} userRole={user?.role} />
 
       <div className="mt-2 flex items-center gap-3 p-2 bg-[#f6f8fb] border border-[#6b7a8f]">
         <span className="text-[11px] font-bold text-[#1f4478]">AI Assist:</span>
-        <RunAgentButton loanId={loan.id} hasRecommendation={!!loan.pendingRecommendation} />
+        <RunAgentButton loanId={loan.id} hasRecommendation={!!loan.pendingRecommendation} userRole={user?.role} />
       </div>
 
       {loan.pendingRecommendation && (
-        <RecommendationPanel loanId={loan.id} rec={loan.pendingRecommendation} existingConditions={loan.conditions} />
+        <RecommendationPanel loanId={loan.id} rec={loan.pendingRecommendation} existingConditions={loan.conditions} userRole={user?.role} />
       )}
 
       <div className="enc-sec mt-2">

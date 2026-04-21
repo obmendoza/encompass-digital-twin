@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import type { UwDecision } from "@twin/core";
 import { actionSetDecision } from "@/app/loan/[loanId]/actions";
 
-export function DecisionBar({ loanId, current }: { loanId: string; current: UwDecision }) {
+export function DecisionBar({ loanId, current, userRole }: { loanId: string; current: UwDecision; userRole?: string }) {
   const [rationale, setRationale] = useState("");
   const [pending, startTransition] = useTransition();
 
@@ -12,6 +12,15 @@ export function DecisionBar({ loanId, current }: { loanId: string; current: UwDe
     if (!rationale.trim()) { alert("Rationale required"); return; }
     startTransition(() => { actionSetDecision(loanId, decision, rationale); });
   };
+
+  if (userRole && !["uw", "admin"].includes(userRole)) {
+    return (
+      <div className="flex items-center gap-1 px-2 py-1 bg-[#ece9d8] border border-[#6b7a8f] text-[10px] text-[#6b7a8f]">
+        Current decision: <b className="ml-1">{current}</b>
+        <span className="ml-auto">Final decision requires Underwriter role</span>
+      </div>
+    );
+  }
 
   return (
     <div className="flex items-center gap-1 px-2 py-1 bg-[#ece9d8] border border-[#6b7a8f]">
