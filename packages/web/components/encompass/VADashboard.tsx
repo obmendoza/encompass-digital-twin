@@ -36,9 +36,13 @@ export function VADashboard({ loans, currentUser }: Props) {
   const unassigned = validLoans.filter((l) => !l.assignment);
   const displayed = filter === "my" ? myLoans : filter === "unassigned" ? unassigned : validLoans;
 
+  const [error, setError] = useState<string | null>(null);
+
   const assignToMe = (loanId: string, priority: string = "normal") => {
+    setError(null);
     startTransition(async () => {
-      await actionAssignLoan(loanId, currentUser.email, priority);
+      const result = await actionAssignLoan(loanId, currentUser.email, priority);
+      if (!result.ok) setError(`Assign failed: ${result.error}`);
     });
   };
 
@@ -85,6 +89,10 @@ export function VADashboard({ loans, currentUser }: Props) {
           </div>
         </div>
       </div>
+
+      {error && (
+        <div className="mb-2 p-2 text-[10px] text-[#c00] bg-[#fef0f0] border border-[#c00]">{error}</div>
+      )}
 
       {/* Filter tabs */}
       <div className="flex gap-2 mb-3">
