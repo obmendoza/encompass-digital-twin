@@ -40,7 +40,7 @@ export const nqmForeignNational: Scenario = {
       derivedMonthlyIncome: 0,
     },
     income: { totalMonthlyIncome: 0, notes: "Foreign national — DSCR only, no personal income qualifying" },
-    assets: { totalLiquid: 120_000, totalRetirement: 0, reservesMonths: 12.0 },
+    assets: { totalLiquid: 120_000, totalRetirement: 0, reservesMonths: 35.2 },
     credit: {
       repScore: null, tradelinesOpen: 0, tradelinesTotal: 0,
       tradelines: [],
@@ -88,7 +88,7 @@ export const nqmForeignNational: Scenario = {
         { code: "FN-001", severity: "Info", description: "Foreign national borrower — state-specific licensing verification required", regulation: "CA Fin. Code §22100" },
       ],
     },
-    // LTV 65 <= 70 Pass, DSCR 1.14 >= 1.0 Pass, Reserves 12.0 >= 12 Pass, Property Investment Pass, Occupancy Investment Pass
+    // LTV 65 <= 70 Pass, DSCR 1.14 >= 1.0 Pass, Reserves 35.2 >= 12 Pass, Property Investment Pass, Occupancy Investment Pass
     overlay: {
       programName: "NQM Foreign National",
       investorName: "NQM Capital",
@@ -100,7 +100,7 @@ export const nqmForeignNational: Scenario = {
       checks: [
         { category: "LTV", rule: "Max LTV", threshold: "≤ 70%", actual: "65%", result: "Pass" },
         { category: "DSCR", rule: "Min DSCR", threshold: "≥ 1.0", actual: "1.14", result: "Pass" },
-        { category: "Reserves", rule: "Min Reserves", threshold: "≥ 12 mo", actual: "12.0 mo", result: "Pass" },
+        { category: "Reserves", rule: "Min Reserves", threshold: "≥ 12 mo", actual: "35.2 mo", result: "Pass" },
         { category: "Property", rule: "Property Type", threshold: "Investment property required", actual: "Investment", result: "Pass" },
         { category: "Occupancy", rule: "Occupancy", threshold: "Investment occupancy required", actual: "Investment", result: "Pass" },
       ],

@@ -19,7 +19,7 @@ const starter: Condition[] = allTemplates.map((c, i) => ({
 
 // loanAmount 525000, appraised 700000, LTV 75, FICO 700, PITI 4120.00
 // piPayment ~ PITI - 520 = 3600; derivedMonthlyIncome ~ 9500 (24mo avg deposits * 0.5)
-// housingRatio = 3600 / 9500 * 100 = 37.9; totalDti = 4120 / 9500 * 100 = 43.4
+// housingRatio = 3600 / 9500 * 100 = 37.89; totalDti = 4120 / 9500 * 100 = 43.37
 export const nqmBankstmt24moBusiness: Scenario = {
   id: "nqm-bankstmt-24mo-business",
   name: "NQM Bank Statement 24mo — Business Account",
@@ -36,14 +36,14 @@ export const nqmBankstmt24moBusiness: Scenario = {
       ltv: 75, cltv: 75, hcltv: 75, noteRate: 7.125, term: 360, amortType: "Fixed", lienPosition: 1,
       occupancy: "Primary", isInvestmentProperty: false, piti: 4120.00,
     },
-    qualifying: { housingRatio: 37.9, totalDti: 43.4, piPayment: 3600.00, qualifyingRate: 7.125 },
+    qualifying: { housingRatio: 37.89, totalDti: 43.37, piPayment: 3600.00, qualifyingRate: 7.125 },
     qualifyingWorksheet: {
       method: "BankStatementDeposits",
       monthsCovered: 24, avgDeposits: 19000, expenseFactor: 0.5, nsfCount: 2,
       derivedMonthlyIncome: 9500,
     },
     income: { totalMonthlyIncome: 9500, notes: "24mo business bank statement avg × 50% expense factor" },
-    assets: { totalLiquid: 95000, totalRetirement: 60000, reservesMonths: 7.2 },
+    assets: { totalLiquid: 95000, totalRetirement: 60000, reservesMonths: 23.1 },
     credit: {
       repScore: 700, tradelinesOpen: 5, tradelinesTotal: 8,
       tradelines: [
@@ -96,7 +96,7 @@ export const nqmBankstmt24moBusiness: Scenario = {
         { code: "NQM-002", severity: "Info", description: "Income verified via bank statement deposits (non-standard documentation)", regulation: "12 CFR 1026.43(c)" },
       ],
     },
-    // LTV 75 <= 90 Pass, FICO 700 >= 660 Pass, DTI 43.4 <= 50 Pass, Reserves 7.2 >= 6 Pass
+    // LTV 75 <= 90 Pass, FICO 700 >= 660 Pass, DTI 43.37 <= 50 Pass, Reserves 23.1 >= 6 Pass
     overlay: {
       programName: "NQM Bank Statement",
       investorName: "NQM Capital",
@@ -108,8 +108,8 @@ export const nqmBankstmt24moBusiness: Scenario = {
       checks: [
         { category: "LTV", rule: "Max LTV", threshold: "≤ 90%", actual: "75%", result: "Pass" },
         { category: "FICO", rule: "Min FICO", threshold: "≥ 660", actual: "700", result: "Pass" },
-        { category: "DTI", rule: "Max DTI", threshold: "≤ 50%", actual: "43.4%", result: "Pass" },
-        { category: "Reserves", rule: "Min Reserves", threshold: "≥ 6 mo", actual: "7.2 mo", result: "Pass" },
+        { category: "DTI", rule: "Max DTI", threshold: "≤ 50%", actual: "43.37%", result: "Pass" },
+        { category: "Reserves", rule: "Min Reserves", threshold: "≥ 6 mo", actual: "23.1 mo", result: "Pass" },
         { category: "Income", rule: "Income Documentation", threshold: "Bank statement documentation required", actual: "24mo business bank statements provided", result: "Pass" },
       ],
     },

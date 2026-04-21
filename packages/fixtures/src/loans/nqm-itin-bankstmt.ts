@@ -39,7 +39,7 @@ export const nqmItinBankstmt: Scenario = {
       derivedMonthlyIncome: 4750,
     },
     income: { totalMonthlyIncome: 4750, notes: "12mo personal bank statement avg × 50% expense factor" },
-    assets: { totalLiquid: 38000, totalRetirement: 0, reservesMonths: 6.0 },
+    assets: { totalLiquid: 38000, totalRetirement: 0, reservesMonths: 16.6 },
     credit: {
       repScore: 690, tradelinesOpen: 4, tradelinesTotal: 7,
       tradelines: [
@@ -90,7 +90,7 @@ export const nqmItinBankstmt: Scenario = {
         { code: "NQM-002", severity: "Info", description: "Income verified via bank statement deposits (non-standard documentation)", regulation: "12 CFR 1026.43(c)" },
       ],
     },
-    // LTV 80 <= 80 Pass, FICO 690 >= 660 Pass, DTI 48.33 <= 50 Pass, Reserves 6.0 >= 6 Pass
+    // LTV 80 <= 80 Pass, FICO 690 >= 660 Pass, DTI 48.33 <= 50 Pass, Reserves 16.6 >= 6 Pass
     overlay: {
       programName: "NQM ITIN",
       investorName: "NQM Capital",
@@ -103,7 +103,7 @@ export const nqmItinBankstmt: Scenario = {
         { category: "LTV", rule: "Max LTV", threshold: "≤ 80%", actual: "80%", result: "Pass" },
         { category: "FICO", rule: "Min FICO", threshold: "≥ 660", actual: "690", result: "Pass" },
         { category: "DTI", rule: "Max DTI", threshold: "≤ 50%", actual: "48.33%", result: "Pass" },
-        { category: "Reserves", rule: "Min Reserves", threshold: "≥ 6 mo", actual: "6.0 mo", result: "Pass" },
+        { category: "Reserves", rule: "Min Reserves", threshold: "≥ 6 mo", actual: "16.6 mo", result: "Pass" },
         { category: "Income", rule: "Income Documentation", threshold: "Bank statement documentation required", actual: "12mo personal bank statements provided", result: "Pass" },
       ],
     },

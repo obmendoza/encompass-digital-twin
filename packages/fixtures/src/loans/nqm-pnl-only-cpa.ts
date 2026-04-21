@@ -19,7 +19,7 @@ const starter: Condition[] = allTemplates.map((c, i) => ({
 
 // loanAmount 500000, appraised 670000, LTV 75, FICO 720, PITI 3950.75
 // cpaCertifiedNetIncome 14200, derivedMonthlyIncome 14200
-// piPayment ~ PITI - 550 = 3400.75; housingRatio = 3400.75 / 14200 * 100 = 23.9; totalDti = 3950.75 / 14200 * 100 = 27.8
+// piPayment ~ PITI - 550 = 3400.75; housingRatio = 3400.75 / 14200 * 100 = 23.95; totalDti = 3950.75 / 14200 * 100 = 27.82
 export const nqmPnlOnlyCpa: Scenario = {
   id: "nqm-pnl-only-cpa",
   name: "NQM P&L Only — CPA Certified",
@@ -36,14 +36,14 @@ export const nqmPnlOnlyCpa: Scenario = {
       ltv: 75, cltv: 75, hcltv: 75, noteRate: 7.125, term: 360, amortType: "Fixed", lienPosition: 1,
       occupancy: "Primary", isInvestmentProperty: false, piti: 3950.75,
     },
-    qualifying: { housingRatio: 23.9, totalDti: 27.8, piPayment: 3400.75, qualifyingRate: 7.125 },
+    qualifying: { housingRatio: 23.95, totalDti: 27.82, piPayment: 3400.75, qualifyingRate: 7.125 },
     qualifyingWorksheet: {
       method: "PnLCPACertified",
       cpaCertifiedNetIncome: 14200,
       derivedMonthlyIncome: 14200,
     },
     income: { totalMonthlyIncome: 14200, notes: "CPA-certified P&L net income $14,200/mo" },
-    assets: { totalLiquid: 88000, totalRetirement: 55000, reservesMonths: 8.5 },
+    assets: { totalLiquid: 88000, totalRetirement: 55000, reservesMonths: 22.3 },
     credit: {
       repScore: 720, tradelinesOpen: 6, tradelinesTotal: 9,
       tradelines: [
@@ -97,7 +97,7 @@ export const nqmPnlOnlyCpa: Scenario = {
         { code: "NQM-005", severity: "Info", description: "Non-QM: income qualified via CPA-certified P&L (non-standard documentation)", regulation: "12 CFR 1026.43(c)" },
       ],
     },
-    // LTV 75 <= 80 Pass, FICO 720 >= 700 Pass, DTI 27.8 <= 45 Pass, Reserves 8.5 >= 6 Pass
+    // LTV 75 <= 80 Pass, FICO 720 >= 700 Pass, DTI 27.82 <= 45 Pass, Reserves 22.3 >= 6 Pass
     overlay: {
       programName: "NQM P&L",
       investorName: "NQM Capital",
@@ -109,8 +109,8 @@ export const nqmPnlOnlyCpa: Scenario = {
       checks: [
         { category: "LTV", rule: "Max LTV", threshold: "≤ 80%", actual: "75%", result: "Pass" },
         { category: "FICO", rule: "Min FICO", threshold: "≥ 700", actual: "720", result: "Pass" },
-        { category: "DTI", rule: "Max DTI", threshold: "≤ 45%", actual: "27.8%", result: "Pass" },
-        { category: "Reserves", rule: "Min Reserves", threshold: "≥ 6 mo", actual: "8.5 mo", result: "Pass" },
+        { category: "DTI", rule: "Max DTI", threshold: "≤ 45%", actual: "27.82%", result: "Pass" },
+        { category: "Reserves", rule: "Min Reserves", threshold: "≥ 6 mo", actual: "22.3 mo", result: "Pass" },
         { category: "Income", rule: "Income Documentation", threshold: "CPA-certified P&L required", actual: "CPA-certified P&L provided", result: "Pass" },
       ],
     },

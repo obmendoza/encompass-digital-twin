@@ -43,7 +43,7 @@ export const nqmSuspendCandidate: Scenario = {
       derivedMonthlyIncome: 5500,
     },
     income: { totalMonthlyIncome: 5500, notes: "12mo personal bank statement avg × 50% expense factor; 3 NSFs noted" },
-    assets: { totalLiquid: 32000, totalRetirement: 10000, reservesMonths: 4.0 },
+    assets: { totalLiquid: 32000, totalRetirement: 10000, reservesMonths: 10.0 },
     credit: {
       repScore: 680, tradelinesOpen: 4, tradelinesTotal: 7,
       tradelines: [
@@ -96,7 +96,7 @@ export const nqmSuspendCandidate: Scenario = {
         { code: "HPCT-001", severity: "Warning", description: "Higher-priced covered transaction — additional disclosures and escrow required", regulation: "12 CFR 1026.35" },
       ],
     },
-    // LTV 85 <= 90 Exception (high LTV requires conditions), FICO 680 >= 660 Pass, DTI 58.18 > 50 Fail, Reserves 4.0 < 6 Fail
+    // LTV 85 <= 90 Exception (high LTV requires conditions), FICO 680 >= 660 Pass, DTI 58.18 > 50 Fail, Reserves 10.0 >= 6 Pass
     overlay: {
       programName: "NQM Bank Statement",
       investorName: "NQM Capital",
@@ -109,7 +109,7 @@ export const nqmSuspendCandidate: Scenario = {
         { category: "LTV", rule: "Max LTV", threshold: "≤ 90%", actual: "85%", result: "Exception", notes: "LTV > 85% requires additional conditions and compensating factors" },
         { category: "FICO", rule: "Min FICO", threshold: "≥ 660", actual: "680", result: "Pass" },
         { category: "DTI", rule: "Max DTI", threshold: "≤ 50%", actual: "58.18%", result: "Fail" },
-        { category: "Reserves", rule: "Min Reserves", threshold: "≥ 6 mo", actual: "4.0 mo", result: "Fail" },
+        { category: "Reserves", rule: "Min Reserves", threshold: "≥ 6 mo", actual: "10.0 mo", result: "Pass" },
         { category: "Income", rule: "Income Documentation", threshold: "Bank statement documentation required", actual: "12mo personal bank statements provided", result: "Pass" },
       ],
     },

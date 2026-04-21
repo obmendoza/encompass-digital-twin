@@ -36,7 +36,7 @@ export const nqmFullDocRecentBk: Scenario = {
       derivedMonthlyIncome: 8800,
     },
     income: { totalMonthlyIncome: 8800, notes: "Full doc W2 + tax returns" },
-    assets: { totalLiquid: 48000, totalRetirement: 25000, reservesMonths: 6.0 },
+    assets: { totalLiquid: 48000, totalRetirement: 25000, reservesMonths: 15.9 },
     credit: {
       repScore: 680, tradelinesOpen: 4, tradelinesTotal: 7, lastLate30d: "2023-11",
       tradelines: [
@@ -88,7 +88,7 @@ export const nqmFullDocRecentBk: Scenario = {
         { code: "NQM-006", severity: "Info", description: "Non-QM: credit event (bankruptcy) within standard seasoning period", regulation: "12 CFR 1026.43(c)" },
       ],
     },
-    // LTV 70 <= 75 Pass, FICO 680 >= 660 Pass, DTI 34.2 <= 50 Pass, Reserves 6.0 >= 6 Pass, Seasoning BK >= 2 years Pass (housingRatio 31.72)
+    // LTV 70 <= 75 Pass, FICO 680 >= 660 Pass, DTI 34.2 <= 50 Pass, Reserves 15.9 >= 6 Pass, Seasoning BK >= 2 years Pass (housingRatio 31.72)
     overlay: {
       programName: "NQM Full Doc (BK Seasoning)",
       investorName: "NQM Capital",
@@ -101,7 +101,7 @@ export const nqmFullDocRecentBk: Scenario = {
         { category: "LTV", rule: "Max LTV", threshold: "≤ 75%", actual: "70%", result: "Pass" },
         { category: "FICO", rule: "Min FICO", threshold: "≥ 660", actual: "680", result: "Pass" },
         { category: "DTI", rule: "Max DTI", threshold: "≤ 50%", actual: "34.2%", result: "Pass" },
-        { category: "Reserves", rule: "Min Reserves", threshold: "≥ 6 mo", actual: "6.0 mo", result: "Pass" },
+        { category: "Reserves", rule: "Min Reserves", threshold: "≥ 6 mo", actual: "15.9 mo", result: "Pass" },
         { category: "Seasoning", rule: "BK Seasoning", threshold: "BK seasoning ≥ 2 years", actual: "BK discharged 2024 (≥ 2 years)", result: "Pass" },
       ],
     },

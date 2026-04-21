@@ -27,14 +27,14 @@ export const nqmBankstmt12moClean: Scenario = {
       ltv: 80, cltv: 80, hcltv: 80, noteRate: 6.875, term: 360, amortType: "Fixed", lienPosition: 1,
       occupancy: "Primary", isInvestmentProperty: false, piti: 3319.51,
     },
-    qualifying: { housingRatio: 27.3, totalDti: 38.1, piPayment: 2707.41, qualifyingRate: 6.875 },
+    qualifying: { housingRatio: 30.08, totalDti: 36.88, piPayment: 2707.41, qualifyingRate: 6.875 },
     qualifyingWorksheet: {
       method: "BankStatementDeposits",
       monthsCovered: 12, avgDeposits: 18000, expenseFactor: 0.5, nsfCount: 0,
       derivedMonthlyIncome: 9000,
     },
     income: { totalMonthlyIncome: 9000, notes: "12mo personal bank statement avg × 50% expense factor" },
-    assets: { totalLiquid: 78420, totalRetirement: 45000, reservesMonths: 6.4 },
+    assets: { totalLiquid: 78420, totalRetirement: 45000, reservesMonths: 23.6 },
     credit: {
       repScore: 742, tradelinesOpen: 6, tradelinesTotal: 9,
       tradelines: [
@@ -91,7 +91,7 @@ export const nqmBankstmt12moClean: Scenario = {
         { code: "NQM-002", severity: "Info", description: "Income verified via bank statement deposits (non-standard documentation)", regulation: "12 CFR 1026.43(c)" },
       ],
     },
-    // LTV 80 <= 90 Pass, FICO 742 >= 660 Pass, DTI 38.1 <= 50 Pass, Reserves 6.4 >= 6 Pass
+    // LTV 80 <= 90 Pass, FICO 742 >= 660 Pass, DTI 36.88 <= 50 Pass, Reserves 23.6 >= 6 Pass
     overlay: {
       programName: "NQM Bank Statement",
       investorName: "NQM Capital",
@@ -103,8 +103,8 @@ export const nqmBankstmt12moClean: Scenario = {
       checks: [
         { category: "LTV", rule: "Max LTV", threshold: "≤ 90%", actual: "80%", result: "Pass" },
         { category: "FICO", rule: "Min FICO", threshold: "≥ 660", actual: "742", result: "Pass" },
-        { category: "DTI", rule: "Max DTI", threshold: "≤ 50%", actual: "38.1%", result: "Pass" },
-        { category: "Reserves", rule: "Min Reserves", threshold: "≥ 6 mo", actual: "6.4 mo", result: "Pass" },
+        { category: "DTI", rule: "Max DTI", threshold: "≤ 50%", actual: "36.88%", result: "Pass" },
+        { category: "Reserves", rule: "Min Reserves", threshold: "≥ 6 mo", actual: "23.6 mo", result: "Pass" },
         { category: "Income", rule: "Income Documentation", threshold: "Bank statement documentation required", actual: "12mo personal bank statements provided", result: "Pass" },
       ],
     },

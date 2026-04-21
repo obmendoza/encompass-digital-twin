@@ -38,7 +38,7 @@ export const nqmDscrInvestorPurchase: Scenario = {
       derivedMonthlyIncome: 0,
     },
     income: { totalMonthlyIncome: 0, notes: "DSCR qualifying — no personal income used" },
-    assets: { totalLiquid: 62000, totalRetirement: 30000, reservesMonths: 7.0 },
+    assets: { totalLiquid: 62000, totalRetirement: 30000, reservesMonths: 21.5 },
     credit: {
       repScore: 740, tradelinesOpen: 6, tradelinesTotal: 9,
       tradelines: [
@@ -92,7 +92,7 @@ export const nqmDscrInvestorPurchase: Scenario = {
         { code: "NQM-003", severity: "Info", description: "Non-QM: qualified using DSCR coverage (no personal income verification)", regulation: "12 CFR 1026.43(c)" },
       ],
     },
-    // LTV 75 <= 80 Pass, FICO 740 >= 620 Pass, DSCR 1.18 >= 0.75 Pass, Reserves 7.0 >= 6 Pass
+    // LTV 75 <= 80 Pass, FICO 740 >= 620 Pass, DSCR 1.18 >= 0.75 Pass, Reserves 21.5 >= 6 Pass
     overlay: {
       programName: "NQM DSCR",
       investorName: "NQM Capital",
@@ -105,7 +105,7 @@ export const nqmDscrInvestorPurchase: Scenario = {
         { category: "LTV", rule: "Max LTV", threshold: "≤ 80%", actual: "73.91%", result: "Pass" },
         { category: "FICO", rule: "Min FICO", threshold: "≥ 620", actual: "740", result: "Pass" },
         { category: "DSCR", rule: "Min DSCR", threshold: "≥ 0.75", actual: "1.18", result: "Pass" },
-        { category: "Reserves", rule: "Min Reserves", threshold: "≥ 6 mo", actual: "7.0 mo", result: "Pass" },
+        { category: "Reserves", rule: "Min Reserves", threshold: "≥ 6 mo", actual: "21.5 mo", result: "Pass" },
         { category: "Property", rule: "Property Type", threshold: "Investment property required", actual: "Investment", result: "Pass" },
       ],
     },

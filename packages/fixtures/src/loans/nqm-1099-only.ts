@@ -23,7 +23,7 @@ const starter: Condition[] = templates.map((c, i) => ({
 // gross1099 156000, expenseFactor 0.7, derivedMonthlyIncome 9100 (156000 * 0.3 / 12 = 3900... actually 156000/12*0.7 = 9100 gross side)
 // Actually: 1099 gross method = gross1099 * (1 - expenseFactor) / 12 OR gross / 12 * factor depending on interpretation
 // Per spec: expenseFactor 0.7, derivedMonthlyIncome 9100 => 156000 / 12 * 0.7 = 9100
-// piPayment ~ PITI - 480 = 2700.50; housingRatio = 2700.50 / 9100 * 100 = 29.7; totalDti = 3180.50 / 9100 * 100 = 34.9
+// piPayment ~ PITI - 480 = 2700.50; housingRatio = 2700.50 / 9100 * 100 = 29.68; totalDti = 3180.50 / 9100 * 100 = 34.95
 export const nqm1099Only: Scenario = {
   id: "nqm-1099-only",
   name: "NQM 1099 Only — Gig/Contractor",
@@ -40,14 +40,14 @@ export const nqm1099Only: Scenario = {
       ltv: 80, cltv: 80, hcltv: 80, noteRate: 7.25, term: 360, amortType: "Fixed", lienPosition: 1,
       occupancy: "Primary", isInvestmentProperty: false, piti: 3180.50,
     },
-    qualifying: { housingRatio: 29.7, totalDti: 34.9, piPayment: 2700.50, qualifyingRate: 7.25 },
+    qualifying: { housingRatio: 29.68, totalDti: 34.95, piPayment: 2700.50, qualifyingRate: 7.25 },
     qualifyingWorksheet: {
       method: "1099Gross",
       gross1099: 156000, expenseFactor: 0.7,
       derivedMonthlyIncome: 9100,
     },
     income: { totalMonthlyIncome: 9100, notes: "1099 gross $156,000 × 70% income factor / 12" },
-    assets: { totalLiquid: 55000, totalRetirement: 20000, reservesMonths: 6.0 },
+    assets: { totalLiquid: 55000, totalRetirement: 20000, reservesMonths: 17.3 },
     credit: {
       repScore: 710, tradelinesOpen: 5, tradelinesTotal: 8,
       tradelines: [
@@ -100,7 +100,7 @@ export const nqm1099Only: Scenario = {
         { code: "NQM-002", severity: "Info", description: "Income verified via 1099 gross (non-standard documentation)", regulation: "12 CFR 1026.43(c)" },
       ],
     },
-    // LTV 80 <= 85 Pass, FICO 710 >= 680 Pass, DTI 34.9 <= 50 Pass, Reserves 6.0 >= 6 Pass
+    // LTV 80 <= 85 Pass, FICO 710 >= 680 Pass, DTI 34.95 <= 50 Pass, Reserves 17.3 >= 6 Pass
     overlay: {
       programName: "NQM 1099",
       investorName: "NQM Capital",
@@ -112,8 +112,8 @@ export const nqm1099Only: Scenario = {
       checks: [
         { category: "LTV", rule: "Max LTV", threshold: "≤ 85%", actual: "80%", result: "Pass" },
         { category: "FICO", rule: "Min FICO", threshold: "≥ 680", actual: "710", result: "Pass" },
-        { category: "DTI", rule: "Max DTI", threshold: "≤ 50%", actual: "34.9%", result: "Pass" },
-        { category: "Reserves", rule: "Min Reserves", threshold: "≥ 6 mo", actual: "6.0 mo", result: "Pass" },
+        { category: "DTI", rule: "Max DTI", threshold: "≤ 50%", actual: "34.95%", result: "Pass" },
+        { category: "Reserves", rule: "Min Reserves", threshold: "≥ 6 mo", actual: "17.3 mo", result: "Pass" },
         { category: "Income", rule: "Income Documentation", threshold: "1099 documentation required", actual: "Two years 1099 forms provided", result: "Pass" },
       ],
     },

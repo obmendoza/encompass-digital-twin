@@ -44,7 +44,7 @@ export const nqmDenyCandidate: Scenario = {
       derivedMonthlyIncome: 0,
     },
     income: { totalMonthlyIncome: 0, notes: "DSCR qualifying — no personal income used" },
-    assets: { totalLiquid: 45000, totalRetirement: 12000, reservesMonths: 5.0 },
+    assets: { totalLiquid: 45000, totalRetirement: 12000, reservesMonths: 12.9 },
     credit: {
       repScore: 660, tradelinesOpen: 4, tradelinesTotal: 7, lastLate30d: "2025-12",
       tradelines: [
@@ -98,7 +98,7 @@ export const nqmDenyCandidate: Scenario = {
         { code: "CRED-001", severity: "Warning", description: "Recent 30-day late payment (12/2025) and active collection accounts present", regulation: "12 CFR 1026.43(c)(3)" },
       ],
     },
-    // LTV 80 <= 80 Pass, FICO 660 >= 620 Pass, DSCR 0.72 < 0.75 Fail, Reserves 5.0 < 6 Fail, Property Investment Pass
+    // LTV 80 <= 80 Pass, FICO 660 >= 620 Pass, DSCR 0.72 < 0.75 Fail, Reserves 12.9 >= 6 Pass, Property Investment Pass
     overlay: {
       programName: "NQM DSCR",
       investorName: "NQM Capital",
@@ -111,7 +111,7 @@ export const nqmDenyCandidate: Scenario = {
         { category: "LTV", rule: "Max LTV", threshold: "≤ 80%", actual: "80%", result: "Pass" },
         { category: "FICO", rule: "Min FICO", threshold: "≥ 620", actual: "660", result: "Pass" },
         { category: "DSCR", rule: "Min DSCR", threshold: "≥ 0.75", actual: "0.72", result: "Fail" },
-        { category: "Reserves", rule: "Min Reserves", threshold: "≥ 6 mo", actual: "5.0 mo", result: "Fail" },
+        { category: "Reserves", rule: "Min Reserves", threshold: "≥ 6 mo", actual: "12.9 mo", result: "Pass" },
         { category: "Property", rule: "Property Type", threshold: "Investment property required", actual: "Investment", result: "Pass" },
       ],
     },

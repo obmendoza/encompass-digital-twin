@@ -15,7 +15,7 @@ const edgeCondition: Condition = {
   id: `c${bankStatementStarterConditions.length + 1}`,
   category: "PTA",
   source: "UW",
-  description: "NSF count (7) exceeds guideline max (3). Evaluate compensating factors: FICO 748, 12mo reserves, 65% LTV, zero lates. All NSFs from resolved auto-pay timing issue.",
+  description: "NSF count (7) exceeds guideline max (3). Evaluate compensating factors: FICO 748, 34.5mo reserves, 65% LTV, zero lates. All NSFs from resolved auto-pay timing issue.",
   status: "Open",
   addedBy: "system",
   addedAt: "2026-04-08T09:00:00.000Z",
@@ -37,7 +37,7 @@ export const nqmEdgeNsfCompensating: Scenario = {
       ltv: 65, cltv: 65, hcltv: 65, noteRate: 7.375, term: 360, amortType: "Fixed", lienPosition: 1,
       occupancy: "Primary", isInvestmentProperty: false, piti: 2565.44,
     },
-    qualifying: { housingRatio: 33.8, totalDti: 33.8, piPayment: 2035.88, qualifyingRate: 7.375 },
+    qualifying: { housingRatio: 26.79, totalDti: 33.76, piPayment: 2035.88, qualifyingRate: 7.375 },
     qualifyingWorksheet: {
       method: "BankStatementDeposits",
       monthsCovered: 12, avgDeposits: 15200, expenseFactor: 0.5, nsfCount: 7,
@@ -45,9 +45,9 @@ export const nqmEdgeNsfCompensating: Scenario = {
     },
     income: {
       totalMonthlyIncome: 7600,
-      notes: "NSF COUNT: 7 NSFs exceed 3-max guideline. All occurred months 4-8 from auto-pay timing on business account (since corrected). Zero NSFs in last 4 months. Compensating: FICO 748, 12mo reserves, LTV 65%, zero credit lates.",
+      notes: "NSF COUNT: 7 NSFs exceed 3-max guideline. All occurred months 4-8 from auto-pay timing on business account (since corrected). Zero NSFs in last 4 months. Compensating: FICO 748, 34.5mo reserves, LTV 65%, zero credit lates.",
     },
-    assets: { totalLiquid: 88400, totalRetirement: 42000, reservesMonths: 12.4 },
+    assets: { totalLiquid: 88400, totalRetirement: 42000, reservesMonths: 34.5 },
     credit: {
       repScore: 748, tradelinesOpen: 6, tradelinesTotal: 9,
       tradelines: [
@@ -117,9 +117,9 @@ export const nqmEdgeNsfCompensating: Scenario = {
       checks: [
         { category: "LTV", rule: "Max LTV", threshold: "≤ 90%", actual: "65%", result: "Pass" },
         { category: "FICO", rule: "Min FICO", threshold: "≥ 660", actual: "748", result: "Pass" },
-        { category: "DTI", rule: "Max DTI", threshold: "≤ 50%", actual: "33.8%", result: "Pass" },
-        { category: "Reserves", rule: "Min Reserves", threshold: "≥ 6 mo", actual: "12.4 mo", result: "Pass" },
-        { category: "Other", rule: "NSF Count", threshold: "≤ 3 NSFs in 12 months", actual: "7 NSFs (months 4-8, resolved)", result: "Fail", notes: "7 NSFs exceeds 3-max guideline. Compensating: FICO 748, 12mo reserves, 65% LTV, zero credit lates, NSFs resolved 4+ months ago. Exception request required." },
+        { category: "DTI", rule: "Max DTI", threshold: "≤ 50%", actual: "33.76%", result: "Pass" },
+        { category: "Reserves", rule: "Min Reserves", threshold: "≥ 6 mo", actual: "34.5 mo", result: "Pass" },
+        { category: "Other", rule: "NSF Count", threshold: "≤ 3 NSFs in 12 months", actual: "7 NSFs (months 4-8, resolved)", result: "Fail", notes: "7 NSFs exceeds 3-max guideline. Compensating: FICO 748, 34.5mo reserves, 65% LTV, zero credit lates, NSFs resolved 4+ months ago. Exception request required." },
       ],
     },
   },

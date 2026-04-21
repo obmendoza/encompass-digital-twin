@@ -84,7 +84,7 @@ export const nqmEdgeComingledFunds: Scenario = {
       ltv: 70, cltv: 70, hcltv: 70, noteRate: 7.000, term: 360, amortType: "Fixed", lienPosition: 1,
       occupancy: "Primary", isInvestmentProperty: false, piti: 5226.41,
     },
-    qualifying: { housingRatio: 32.7, totalDti: 32.7, piPayment: 4060.18, qualifyingRate: 7.000 },
+    qualifying: { housingRatio: 25.38, totalDti: 32.67, piPayment: 4060.18, qualifyingRate: 7.000 },
     qualifyingWorksheet: {
       method: "BankStatementDeposits",
       monthsCovered: 24, avgDeposits: 32000, expenseFactor: 0.5, nsfCount: 0,
@@ -94,7 +94,7 @@ export const nqmEdgeComingledFunds: Scenario = {
       totalMonthlyIncome: 16000,
       notes: "CO-MINGLED ACCOUNT: Business account shows personal expenses (mortgage $2,800/mo, auto $485/mo, retail). If personal items excluded from expense calc: effective business expense ratio ~35% → income $20,800. If included: 50% → $16,000. CPA letter addresses but does not resolve.",
     },
-    assets: { totalLiquid: 142000, totalRetirement: 88000, reservesMonths: 10.4 },
+    assets: { totalLiquid: 142000, totalRetirement: 88000, reservesMonths: 27.2 },
     credit: {
       repScore: 745, tradelinesOpen: 7, tradelinesTotal: 11,
       tradelines: [
@@ -165,8 +165,8 @@ export const nqmEdgeComingledFunds: Scenario = {
       checks: [
         { category: "LTV", rule: "Max LTV", threshold: "≤ 85%", actual: "70%", result: "Pass" },
         { category: "FICO", rule: "Min FICO", threshold: "≥ 660", actual: "745", result: "Pass" },
-        { category: "DTI", rule: "Max DTI", threshold: "≤ 50%", actual: "32.7%", result: "Pass" },
-        { category: "Reserves", rule: "Min Reserves", threshold: "≥ 6 mo", actual: "10.4 mo", result: "Pass" },
+        { category: "DTI", rule: "Max DTI", threshold: "≤ 50%", actual: "32.67%", result: "Pass" },
+        { category: "Reserves", rule: "Min Reserves", threshold: "≥ 6 mo", actual: "27.2 mo", result: "Pass" },
         { category: "Income", rule: "Expense Factor", threshold: "Appropriate factor per account type", actual: "50% applied (co-mingled account)", result: "Exception", notes: "Co-mingled account — expense factor could range 35%-65% depending on personal/business expense segregation" },
       ],
     },

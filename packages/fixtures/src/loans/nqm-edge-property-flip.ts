@@ -58,7 +58,7 @@ export const nqmEdgePropertyFlip: Scenario = {
       totalMonthlyIncome: 3100,
       notes: "N/A — DSCR qualifying",
     },
-    assets: { totalLiquid: 68000, totalRetirement: 24000, reservesMonths: 7.5 },
+    assets: { totalLiquid: 68000, totalRetirement: 24000, reservesMonths: 23.9 },
     credit: {
       repScore: 730, tradelinesOpen: 5, tradelinesTotal: 8,
       tradelines: [
@@ -130,7 +130,7 @@ export const nqmEdgePropertyFlip: Scenario = {
         { category: "LTV", rule: "Max LTV", threshold: "≤ 80%", actual: "75%", result: "Pass" },
         { category: "FICO", rule: "Min FICO", threshold: "≥ 620", actual: "730", result: "Pass" },
         { category: "DSCR", rule: "Min DSCR", threshold: "≥ 1.00", actual: "1.09", result: "Pass" },
-        { category: "Reserves", rule: "Min Reserves", threshold: "≥ 6 mo", actual: "7.5 mo", result: "Pass" },
+        { category: "Reserves", rule: "Min Reserves", threshold: "≥ 6 mo", actual: "23.9 mo", result: "Pass" },
         { category: "Seasoning", rule: "Property Seasoning", threshold: "≥ 90 days prior ownership", actual: "67 days (seller)", result: "Fail", notes: "Seller held property 67 days — below 90-day flip policy threshold. 56% price increase ($310K → $485K) requires enhanced review. Renovation permits on file." },
       ],
     },

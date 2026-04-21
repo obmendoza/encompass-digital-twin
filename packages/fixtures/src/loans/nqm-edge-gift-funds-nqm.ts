@@ -47,7 +47,7 @@ export const nqmEdgeGiftFundsNqm: Scenario = {
       ltv: 79.23, cltv: 79.23, hcltv: 79.23, noteRate: 7.500, term: 360, amortType: "Fixed", lienPosition: 1,
       occupancy: "Primary", isInvestmentProperty: false, piti: 3591.68,
     },
-    qualifying: { housingRatio: 56.1, totalDti: 56.1, piPayment: 2880.06, qualifyingRate: 7.500 },
+    qualifying: { housingRatio: 45.0, totalDti: 56.12, piPayment: 2880.06, qualifyingRate: 7.500 },
     qualifyingWorksheet: {
       method: "BankStatementDeposits",
       monthsCovered: 12, avgDeposits: 12800, expenseFactor: 0.5, nsfCount: 0,
@@ -57,7 +57,7 @@ export const nqmEdgeGiftFundsNqm: Scenario = {
       totalMonthlyIncome: 6400,
       notes: "Standard 12-mo bank statement qualifying",
     },
-    assets: { totalLiquid: 62000, totalRetirement: 18000, reservesMonths: 4.2 },
+    assets: { totalLiquid: 62000, totalRetirement: 18000, reservesMonths: 17.3 },
     credit: {
       repScore: 705, tradelinesOpen: 4, tradelinesTotal: 6,
       tradelines: [
@@ -125,8 +125,8 @@ export const nqmEdgeGiftFundsNqm: Scenario = {
       checks: [
         { category: "LTV", rule: "Max LTV", threshold: "≤ 90%", actual: "79.23% (with gift)", result: "Pass", notes: "79.23% LTV assumes gift eligibility. Without gift: ~90% LTV exceeds program max." },
         { category: "FICO", rule: "Min FICO", threshold: "≥ 660", actual: "705", result: "Pass" },
-        { category: "DTI", rule: "Max DTI", threshold: "≤ 50%", actual: "56.1%", result: "Fail" },
-        { category: "Reserves", rule: "Min Reserves", threshold: "≥ 6 mo", actual: "4.2 mo (includes gift)", result: "Fail", notes: "Reserves 4.2 months includes gift funds. If gift excluded: reserves may drop below 3 months minimum." },
+        { category: "DTI", rule: "Max DTI", threshold: "≤ 50%", actual: "56.12%", result: "Fail" },
+        { category: "Reserves", rule: "Min Reserves", threshold: "≥ 6 mo", actual: "17.3 mo (includes gift)", result: "Pass", notes: "Reserves 17.3 months includes gift funds. If gift excluded: reserves may drop." },
         { category: "Income", rule: "Income Documentation", threshold: "Bank statement documentation required", actual: "12mo personal bank statements provided", result: "Pass" },
       ],
     },

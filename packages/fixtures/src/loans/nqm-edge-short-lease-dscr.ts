@@ -48,7 +48,7 @@ export const nqmEdgeShortLeaseDscr: Scenario = {
       totalMonthlyIncome: 3200,
       notes: "LEASE EXPIRY: Current lease $3,200/mo expires in 60 days. Market rent (1007): $2,750/mo. Using market rent: DSCR drops to 0.95. Tenant has been in place 14 months, no late payments.",
     },
-    assets: { totalLiquid: 74500, totalRetirement: 38000, reservesMonths: 9.1 },
+    assets: { totalLiquid: 74500, totalRetirement: 38000, reservesMonths: 25.6 },
     credit: {
       repScore: 750, tradelinesOpen: 6, tradelinesTotal: 9,
       tradelines: [
@@ -120,7 +120,7 @@ export const nqmEdgeShortLeaseDscr: Scenario = {
         { category: "LTV", rule: "Max LTV", threshold: "≤ 80%", actual: "74.49%", result: "Pass" },
         { category: "FICO", rule: "Min FICO", threshold: "≥ 620", actual: "750", result: "Pass" },
         { category: "DSCR", rule: "Min DSCR", threshold: "≥ 1.00", actual: "1.10 (current lease) / 0.95 (market rent)", result: "Exception", notes: "DSCR 1.10 with current lease (expiring 60 days); drops to 0.95 using market rent ($2,750) — below 1.00 minimum" },
-        { category: "Reserves", rule: "Min Reserves", threshold: "≥ 6 mo", actual: "9.1 mo", result: "Pass" },
+        { category: "Reserves", rule: "Min Reserves", threshold: "≥ 6 mo", actual: "25.6 mo", result: "Pass" },
         { category: "Property", rule: "Property Type", threshold: "Investment property required", actual: "Investment", result: "Pass" },
       ],
     },

@@ -37,7 +37,7 @@ export const nqmEdgeRestrictedAssets: Scenario = {
       ltv: 60, cltv: 60, hcltv: 60, noteRate: 6.750, term: 360, amortType: "Fixed", lienPosition: 1,
       occupancy: "Primary", isInvestmentProperty: false, piti: 6051.38,
     },
-    qualifying: { housingRatio: 13.0, totalDti: 13.0, piPayment: 4669.80, qualifyingRate: 6.750 },
+    qualifying: { housingRatio: 10.01, totalDti: 12.96, piPayment: 4669.80, qualifyingRate: 6.750 },
     qualifyingWorksheet: {
       method: "AssetDepletionMonths",
       totalAssets: 2800000, depletionMonths: 60,
@@ -47,7 +47,7 @@ export const nqmEdgeRestrictedAssets: Scenario = {
       totalMonthlyIncome: 46667,
       notes: "ASSET ELIGIBILITY: Reported $2.8M includes restricted assets. 401(k) $1.6M (60% accessible = $960K after penalty), RSU $400K (25% vested = $100K), Liquid $800K. Eligible total: $1.86M → depletion income $31,000/mo. DTI swings from 11% to 16.5%.",
     },
-    assets: { totalLiquid: 800000, totalRetirement: 1600000, reservesMonths: 48.2 },
+    assets: { totalLiquid: 800000, totalRetirement: 1600000, reservesMonths: 132.2 },
     credit: {
       repScore: 755, tradelinesOpen: 5, tradelinesTotal: 8,
       tradelines: [
@@ -117,8 +117,8 @@ export const nqmEdgeRestrictedAssets: Scenario = {
       checks: [
         { category: "LTV", rule: "Max LTV", threshold: "≤ 75%", actual: "60%", result: "Pass" },
         { category: "FICO", rule: "Min FICO", threshold: "≥ 660", actual: "755", result: "Pass" },
-        { category: "DTI", rule: "Max DTI", threshold: "≤ 50%", actual: "13.0% (reported) / 16.5% (eligible assets)", result: "Exception", notes: "DTI based on reported $2.8M assets; using eligible $1.86M raises DTI to 16.5% — both pass but asset eligibility must be confirmed" },
-        { category: "Reserves", rule: "Min Reserves", threshold: "≥ 12 mo", actual: "48.2 mo (reported)", result: "Pass" },
+        { category: "DTI", rule: "Max DTI", threshold: "≤ 50%", actual: "12.96% (reported) / 16.5% (eligible assets)", result: "Exception", notes: "DTI based on reported $2.8M assets; using eligible $1.86M raises DTI to 16.5% — both pass but asset eligibility must be confirmed" },
+        { category: "Reserves", rule: "Min Reserves", threshold: "≥ 12 mo", actual: "132.2 mo (reported)", result: "Pass" },
         { category: "Income", rule: "Asset Eligibility", threshold: "Only accessible assets count", actual: "Restricted assets included in calculation", result: "Exception", notes: "401(k) penalty haircut and RSU vesting reduce eligible assets from $2.8M to estimated $1.86M" },
       ],
     },

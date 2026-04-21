@@ -37,7 +37,7 @@ export const nqmEdgeDecliningIncome: Scenario = {
       ltv: 75, cltv: 75, hcltv: 75, noteRate: 7.250, term: 360, amortType: "Fixed", lienPosition: 1,
       occupancy: "Primary", isInvestmentProperty: false, piti: 4518.83,
     },
-    qualifying: { housingRatio: 50.9, totalDti: 50.9, piPayment: 3546.22, qualifyingRate: 7.250 },
+    qualifying: { housingRatio: 39.96, totalDti: 50.94, piPayment: 3546.22, qualifyingRate: 7.250 },
     qualifyingWorksheet: {
       method: "BankStatementDeposits",
       monthsCovered: 12, avgDeposits: 17750, expenseFactor: 0.5, nsfCount: 0,
@@ -47,7 +47,7 @@ export const nqmEdgeDecliningIncome: Scenario = {
       totalMonthlyIncome: 8875,
       notes: "TREND ALERT: Months 1-6 avg $22,000, Months 7-12 avg $13,500. 38.6% decline. 12-mo average $17,750 may overstate current earning capacity.",
     },
-    assets: { totalLiquid: 98500, totalRetirement: 55000, reservesMonths: 8.2 },
+    assets: { totalLiquid: 98500, totalRetirement: 55000, reservesMonths: 21.8 },
     credit: {
       repScore: 735, tradelinesOpen: 6, tradelinesTotal: 10,
       tradelines: [
@@ -117,8 +117,8 @@ export const nqmEdgeDecliningIncome: Scenario = {
       checks: [
         { category: "LTV", rule: "Max LTV", threshold: "≤ 90%", actual: "75%", result: "Pass" },
         { category: "FICO", rule: "Min FICO", threshold: "≥ 660", actual: "735", result: "Pass" },
-        { category: "DTI", rule: "Max DTI", threshold: "≤ 50%", actual: "50.9%", result: "Exception", notes: "DTI 50.9% exceeds max at 12-mo average income; recent 6-mo trend would produce higher DTI — trend review required" },
-        { category: "Reserves", rule: "Min Reserves", threshold: "≥ 6 mo", actual: "8.2 mo", result: "Pass" },
+        { category: "DTI", rule: "Max DTI", threshold: "≤ 50%", actual: "50.94%", result: "Exception", notes: "DTI 50.94% exceeds max at 12-mo average income; recent 6-mo trend would produce higher DTI — trend review required" },
+        { category: "Reserves", rule: "Min Reserves", threshold: "≥ 6 mo", actual: "21.8 mo", result: "Pass" },
         { category: "Income", rule: "Income Documentation", threshold: "Bank statement documentation required", actual: "12mo personal bank statements provided", result: "Pass" },
       ],
     },
