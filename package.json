@@ -1,7 +1,10 @@
 {
   "name": "encompass-digital-twin",
+  "version": "1.0.0",
+  "description": "Digital twin of Encompass LOS for NQM mortgage underwriting with Agentic AI",
   "private": true,
-  "version": "0.1.0",
+  "author": "Omar Mendoza",
+  "license": "MIT",
   "scripts": {
     "build": "pnpm -r build",
     "test": "pnpm -r test",
