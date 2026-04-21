@@ -273,6 +273,14 @@ export interface ProgramOverlay {
   checks: GuidelineCheck[];
 }
 
+export interface LoanAssignment {
+  assignedTo: string;        // user email or VA id
+  assignedBy: string;        // admin/UW who assigned
+  assignedAt: string;        // ISO timestamp
+  status: "queued" | "in_progress" | "report_ready" | "under_review" | "decided";
+  priority: "normal" | "high" | "urgent";
+}
+
 export interface Loan {
   id: LoanId;
   nqmProgram: NqmProgram;
@@ -294,6 +302,7 @@ export interface Loan {
   milestones: Milestone[];
   compliance: ComplianceSnapshot;
   overlay: ProgramOverlay;
+  assignment?: LoanAssignment;
 }
 
 export interface Scenario {
@@ -337,4 +346,7 @@ export type Action =
   | { type: "ClearRecommendation"; loanId: LoanId; actor: Actor }
   | { type: "InjectLoan"; loan: Loan }
   | { type: "AttachFile"; loanId: LoanId; documentId: DocumentId; fileKey: string; fileUrl: string; fileSize: number; mimeType: string; actor: Actor }
-  | { type: "SetExtractedData"; loanId: LoanId; documentId: DocumentId; extractedData: Record<string, unknown>; actor: Actor };
+  | { type: "SetExtractedData"; loanId: LoanId; documentId: DocumentId; extractedData: Record<string, unknown>; actor: Actor }
+  | { type: "AssignLoan"; loanId: LoanId; assignedTo: string; priority: "normal" | "high" | "urgent"; actor: Actor }
+  | { type: "UpdateAssignmentStatus"; loanId: LoanId; status: "queued" | "in_progress" | "report_ready" | "under_review" | "decided"; actor: Actor }
+  | { type: "UnassignLoan"; loanId: LoanId; actor: Actor };

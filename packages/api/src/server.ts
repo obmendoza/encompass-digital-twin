@@ -9,6 +9,7 @@ import { registerConditionRoutes } from "./routes/conditions.js";
 import { registerDocumentRoutes } from "./routes/documents.js";
 import { registerRecommendationRoutes } from "./routes/recommendation.js";
 import { registerUploadRoutes } from "./routes/uploads.js";
+import { registerAssignmentRoutes } from "./routes/assignment.js";
 import { buildOpenApiSpec } from "./openapi.js";
 import * as persistence from "./persistence.js";
 
@@ -37,6 +38,7 @@ export function buildServer(opts: BuildOpts = {}): { app: FastifyInstance; store
   registerDocumentRoutes(app, store);
   registerRecommendationRoutes(app, store);
   registerUploadRoutes(app, store);
+  registerAssignmentRoutes(app, store);
 
   app.get("/health", async () => ({ ok: true }));
 

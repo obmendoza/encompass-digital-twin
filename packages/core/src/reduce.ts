@@ -335,6 +335,37 @@ export function reduce(
       }));
     }
 
+    case "AssignLoan": {
+      return log(withLoan(state, action.loanId, (l) => ({
+        ...l,
+        assignment: {
+          assignedTo: action.assignedTo,
+          assignedBy: action.actor.id,
+          assignedAt: at,
+          status: "queued",
+          priority: action.priority,
+        },
+      })));
+    }
+
+    case "UpdateAssignmentStatus": {
+      const l0 = requireLoan(state, action.loanId);
+      if (!l0.assignment) {
+        throw new ActionError("INVALID_TRANSITION", "loan is not assigned", { loanId: action.loanId });
+      }
+      return log(withLoan(state, action.loanId, (l) => ({
+        ...l,
+        assignment: { ...l.assignment!, status: action.status },
+      })));
+    }
+
+    case "UnassignLoan": {
+      return log(withLoan(state, action.loanId, (l) => ({
+        ...l,
+        assignment: undefined,
+      })));
+    }
+
     default:
       return state;
   }
