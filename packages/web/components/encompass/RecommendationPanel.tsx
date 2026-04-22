@@ -461,6 +461,11 @@ const TOOL_LABELS: Record<string, { label: string; icon: string; desc: string }>
   retrieve_guideline: { label: "Guideline Lookup", icon: "📖", desc: "Retrieved relevant program guideline section" },
   request_human_approval: { label: "Escalation to Senior UW", icon: "🚨", desc: "Requested human review for exception" },
   condo_overlay: { label: "Condo/PUD Overlay", icon: "🏢", desc: "Checked condominium project eligibility" },
+  doc_review_agent: { label: "Document Review Agent", icon: "📄", desc: "Specialist 1/5 — scanned eFolder and verified document inventory" },
+  income_analysis_agent: { label: "Income Analysis Agent", icon: "💰", desc: "Specialist 2/5 — verified qualifying income and DTI" },
+  credit_assessment_agent: { label: "Credit Assessment Agent", icon: "📊", desc: "Specialist 3/5 — evaluated tradelines and credit risk" },
+  compliance_agent: { label: "Compliance Agent", icon: "⚖️", desc: "Specialist 4/5 — ran QM/ATR/HPML/geo checks" },
+  risk_synthesis_agent: { label: "Risk Synthesis Agent", icon: "🎯", desc: "Specialist 5/5 — assembled audit report (Claude Opus)" },
 };
 
 function parseToolCall(content: string): { name: string; args: Record<string, unknown> } {
@@ -517,6 +522,12 @@ function formatToolResult(name: string, result: Record<string, unknown>): string
     case "request_human_approval":
       return `Ticket: ${result.ticket_id} (${result.status})`;
     default:
+      // Handle specialist agent results
+      if (result.agent && result.recommendation) {
+        const rec = String(result.recommendation).toUpperCase();
+        const icon = rec === "PASS" ? "✅" : rec === "FAIL" || rec === "ERROR" ? "❌" : "⚠️";
+        return `${icon} ${rec} — ${String(result.summary ?? "").slice(0, 100)}`;
+      }
       return JSON.stringify(result).slice(0, 120);
   }
 }
