@@ -22,6 +22,7 @@ const LINKS: Record<string, (loanId: string) => string> = {
   "Compliance": (id) => `/loan/${id}/compliance`,
   "Program Overlays": (id) => `/loan/${id}/overlays`,
   "Conversation Log": (id) => `/loan/${id}/log`,
+  "Conditions": (id) => `/loan/${id}/conditions`,
 };
 
 function deriveActiveItem(pathname: string): string {
@@ -36,6 +37,7 @@ function deriveActiveItem(pathname: string): string {
   if (pathname.endsWith("/compliance")) return "Compliance";
   if (pathname.endsWith("/log")) return "Conversation Log";
   if (pathname.endsWith("/overlays")) return "Program Overlays";
+  if (pathname.endsWith("/conditions")) return "Conditions";
   return "Transmittal Summary";
 }
 

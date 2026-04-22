@@ -151,6 +151,31 @@ export async function actionRunIDP(loanId: string, docId: string): Promise<Actio
   }
 }
 
+export async function actionAddConditionBatch(
+  loanId: string,
+  conditions: Array<{ category: string; source: string; description: string }>
+): Promise<ActionResult & { added?: number }> {
+  const actor = await getActor();
+  try {
+    for (const c of conditions) {
+      await api.addCondition(
+        loanId,
+        {
+          category: c.category as "PTA" | "PTD" | "PTF" | "PTP",
+          source: c.source as "UW" | "AUS" | "Compliance" | "Investor",
+          description: c.description,
+        },
+        actor
+      );
+    }
+    revalidatePath(`/loan/${loanId}`, "layout");
+    return { ok: true, added: conditions.length };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, error: { code: "BATCH_FAILED", message: msg } };
+  }
+}
+
 export async function actionUploadFile(loanId: string, docId: string, formData: FormData): Promise<ActionResult & { fileUrl?: string }> {
   const twinApi = process.env.TWIN_API_URL ?? "http://127.0.0.1:4000";
   try {
