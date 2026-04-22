@@ -79,6 +79,28 @@ export async function actionLinkDocument(loanId: string, docId: string, conditio
   return run(loanId, (actor) => api.linkDocument(loanId, docId, conditionId, actor));
 }
 
+export async function actionRunAgentMulti(loanId: string): Promise<ActionResult> {
+  const agentUrl = process.env.AGENT_SERVICE_URL ?? "http://localhost:8000";
+  try {
+    const res = await fetch(`${agentUrl}/api/twin/underwrite-multi/${loanId}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      cache: "no-store",
+      next: { revalidate: 0 },
+      signal: AbortSignal.timeout(600_000),
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`Multi-agent returned ${res.status}: ${body.slice(0, 200)}`);
+    }
+    revalidatePath(`/loan/${loanId}`, "layout");
+    return { ok: true };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, error: { code: "AGENT_ERROR", message: msg } };
+  }
+}
+
 export async function actionRunAgent(loanId: string): Promise<ActionResult> {
   const agentUrl = process.env.AGENT_SERVICE_URL ?? "http://localhost:8000";
   try {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { actionRunAgent } from "@/app/loan/[loanId]/actions";
+import { actionRunAgent, actionRunAgentMulti } from "@/app/loan/[loanId]/actions";
 import { AgentActivityFeed } from "./AgentActivityFeed";
 
 export function RunAgentButton({ loanId, hasRecommendation, userRole }: {
@@ -13,16 +13,17 @@ export function RunAgentButton({ loanId, hasRecommendation, userRole }: {
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
 
-  const run = () => {
+  const run = (multi: boolean) => {
     setError(null);
     setRunning(true);
     startTransition(async () => {
-      const result = await actionRunAgent(loanId);
+      const result = multi
+        ? await actionRunAgentMulti(loanId)
+        : await actionRunAgent(loanId);
       if (!result.ok) {
         setError(result.error?.message ?? "Agent failed");
         setRunning(false);
       }
-      // Don't setRunning(false) on success — feed will detect StageRecommendation
     });
   };
 
@@ -44,9 +45,16 @@ export function RunAgentButton({ loanId, hasRecommendation, userRole }: {
         <button
           className="enc-btn enc-btn--primary"
           disabled={pending}
-          onClick={run}
+          onClick={() => run(true)}
         >
-          {pending ? "🤖 Analyzing…" : "🤖 Run AI Agent"}
+          {pending ? "🤖 Analyzing…" : "🤖 Multi-Agent (5 specialists)"}
+        </button>
+        <button
+          className="enc-btn"
+          disabled={pending}
+          onClick={() => run(false)}
+        >
+          🤖 Single Agent
         </button>
         {error && <span className="text-[10px] text-[#c00]">{error}</span>}
       </div>
