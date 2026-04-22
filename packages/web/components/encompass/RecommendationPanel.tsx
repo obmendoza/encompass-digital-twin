@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import type { PendingRecommendation, AgentStep, Condition } from "@twin/core";
+import { AuditReport, extractAuditData } from "./AuditReport";
 import {
   actionAcceptRecommendation,
   actionClearRecommendation,
@@ -810,6 +811,9 @@ export function RecommendationPanel({
       actionRunAgent(loanId);
     });
 
+  // Extract structured multi-agent audit data (if present)
+  const auditData = extractAuditData(rec);
+
   // Parse rationale into structured sections
   const sections = parseSections(rec.rationale);
   const summary = extractExecutiveSummary(sections);
@@ -832,6 +836,9 @@ export function RecommendationPanel({
         AI Underwriting Report — mlb-uw-agent
       </h4>
       <div className="p-3 bg-[#fffdf5]">
+
+        {/* 0. Structured Audit Report — rendered when multi-agent findings are present */}
+        {auditData && <AuditReport data={auditData} />}
 
         {/* 1. Header — Decision + Confidence + Summary */}
         <div className="mb-3 p-3 bg-white border border-[#c8c4b5]">
