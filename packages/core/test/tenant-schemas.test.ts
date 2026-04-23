@@ -35,6 +35,16 @@ describe("TenantSlugSchema", () => {
   it("rejects slug longer than 31 characters", () => {
     expect(() => TenantSlugSchema.parse("a".repeat(32))).toThrow();
   });
+
+  it("rejects reserved slugs", () => {
+    expect(() => TenantSlugSchema.parse("admin")).toThrow();
+    expect(() => TenantSlugSchema.parse("api")).toThrow();
+    expect(() => TenantSlugSchema.parse("platform")).toThrow();
+  });
+
+  it("rejects trailing hyphens", () => {
+    expect(() => TenantSlugSchema.parse("acme-")).toThrow();
+  });
 });
 
 // ── RESERVED_SLUGS ─────────────────────────────────────────────────

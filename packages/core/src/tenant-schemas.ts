@@ -1,9 +1,11 @@
 import { z } from "zod";
+import { RESERVED_SLUGS } from "./tenant-types.js";
 
 // ── Tenant Slug ────────────────────────────────────────────────────
 export const TenantSlugSchema = z
   .string()
-  .regex(/^[a-z0-9][a-z0-9-]{1,30}$/, "Slug must be 2-31 lowercase alphanumeric characters or hyphens, starting with a letter or digit");
+  .regex(/^[a-z0-9][a-z0-9-]{0,29}[a-z0-9]$/, "Slug must be 2-31 chars, lowercase alphanumeric + hyphens, cannot start/end with hyphen")
+  .refine((s) => !RESERVED_SLUGS.has(s), "Slug is reserved");
 
 // ── SLA Config ─────────────────────────────────────────────────────
 export const SlaConfigSchema = z.object({
@@ -163,3 +165,13 @@ export const IngestionMappingSchema = z.object({
   programMappings: z.record(z.string()).optional(),
   defaultValues: z.record(z.unknown()).optional(),
 });
+
+// ── Inferred Types (compile-time schema ↔ interface verification) ──
+export type SlaConfigInferred = z.infer<typeof SlaConfigSchema>;
+export type TenantSettingsInferred = z.infer<typeof TenantSettingsSchema>;
+export type GuidelineRulesInferred = z.infer<typeof GuidelineRulesSchema>;
+export type WebhookConfigInferred = z.infer<typeof WebhookConfigSchema>;
+export type CreateTenantInput = z.infer<typeof CreateTenantSchema>;
+export type IngestLoanRequest = z.infer<typeof IngestLoanRequestSchema>;
+export type WebhookPayloadInput = z.infer<typeof WebhookPayloadSchema>;
+export type IngestionMappingInput = z.infer<typeof IngestionMappingSchema>;
