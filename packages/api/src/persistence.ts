@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { WorldState, LoggedAction, Loan } from "@twin/core";
+import { DEFAULT_TENANT_ID, type WorldState, type LoggedAction, type Loan } from "@twin/core";
 
 let client: SupabaseClient | null = null;
 
@@ -94,13 +94,14 @@ export async function loadState(): Promise<{
   }
 }
 
-export async function saveState(state: WorldState): Promise<void> {
+export async function saveState(state: WorldState, tenantId: string = DEFAULT_TENANT_ID): Promise<void> {
   if (!isEnabled()) return;
   const db = getClient();
 
   try {
     await db.from("world_state").upsert({
       id: "singleton",
+      tenant_id: tenantId,
       scenario_id: state.scenarioId,
       loans: state.loans,
       updated_at: new Date().toISOString(),
@@ -113,6 +114,7 @@ export async function saveState(state: WorldState): Promise<void> {
       await db.from("action_log").insert(
         newEntries.map((e) => ({
           seq: e.seq,
+          tenant_id: tenantId,
           logged_at: e.at,
           action: e.action,
         })),

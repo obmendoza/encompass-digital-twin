@@ -1,8 +1,14 @@
+import { randomUUID } from "node:crypto";
 import Fastify, { type FastifyInstance } from "fastify";
 import multipart from "@fastify/multipart";
-import { createStore, type Store } from "@twin/core";
+import { createStore, type Store, DEFAULT_TENANT_ID } from "@twin/core";
 import { scenarios } from "@twin/fixtures";
 import { registerErrorHandler } from "./errors.js";
+import { registerTenantResolver } from "./middleware/tenant-resolver.js";
+import { isDbEnabled } from "./db/pool.js";
+import { runMigrations } from "./db/migrations.js";
+import { connectRedis, isRedisEnabled } from "./redis.js";
+import { subscribeToRedisEvents, publishAction } from "./event-bus.js";
 import { registerWorldRoutes } from "./routes/world.js";
 import { registerLoanRoutes } from "./routes/loans.js";
 import { registerConditionRoutes } from "./routes/conditions.js";
@@ -22,7 +28,13 @@ export interface BuildOpts {
 }
 
 export function buildServer(opts: BuildOpts = {}): { app: FastifyInstance; store: Store } {
-  const app = Fastify({ logger: false });
+  const app = Fastify({
+    logger: {
+      level: process.env.LOG_LEVEL ?? "info",
+    },
+    requestIdHeader: "x-request-id",
+    genReqId: () => randomUUID(),
+  });
   app.register(multipart, { limits: { fileSize: 20 * 1024 * 1024 } }); // 20MB max
   const store = createStore({ scenarios, now: opts.now });
 
@@ -35,6 +47,7 @@ export function buildServer(opts: BuildOpts = {}): { app: FastifyInstance; store
   }
 
   registerErrorHandler(app);
+  registerTenantResolver(app);
   registerWorldRoutes(app, store);
   registerLoanRoutes(app, store);
   registerConditionRoutes(app, store);
@@ -56,7 +69,16 @@ export function buildServer(opts: BuildOpts = {}): { app: FastifyInstance; store
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   (async () => {
+    if (isDbEnabled()) {
+      await runMigrations();
+    }
     await persistence.initTables();
+
+    if (isRedisEnabled()) {
+      await connectRedis();
+      await subscribeToRedisEvents();
+    }
+
     const { app, store } = buildServer({ preloadScenarioId: "*" });
 
     // Load persisted state on boot (if Supabase is configured)
@@ -79,6 +101,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
           persistence.clearState().catch(() => {});
         } else {
           persistence.saveState(result).catch(() => {});
+          publishAction(DEFAULT_TENANT_ID, action).catch(() => {});
         }
         return result;
       };
