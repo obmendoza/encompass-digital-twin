@@ -950,8 +950,8 @@ export function RecommendationPanel({
               </select>
             </div>
             <OverrideReasonSelect
-              value={overrideReason as Parameters<typeof setOverrideReason>[0]}
-              onChange={setOverrideReason}
+              value={overrideReason as "" | import("@twin/core").OverrideReasonCategory}
+              onChange={(reason) => setOverrideReason(reason)}
             />
             <div className="mb-2">
               <label className="block text-[10px] font-semibold text-[#404040] mb-1">
