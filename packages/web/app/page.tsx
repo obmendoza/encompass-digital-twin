@@ -4,6 +4,7 @@ import { MenuBar } from "@/components/encompass/MenuBar";
 import { Toolbar } from "@/components/encompass/Toolbar";
 import { PipelineTable } from "@/components/encompass/PipelineTable";
 import { SandboxControls } from "@/components/encompass/ScenarioSelector";
+import { DemoBanner } from "@/components/encompass/DemoBanner";
 import { getUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -16,6 +17,7 @@ export default async function PipelinePage() {
       <MenuBar />
       <Toolbar userRole={user?.role} />
       <div className="bg-white p-3">
+        <DemoBanner />
         <SandboxControls loans={loans} userRole={user?.role} />
         <div className="enc-sec mt-2">
           <h4>Pipeline — {loans.length} Loans</h4>
