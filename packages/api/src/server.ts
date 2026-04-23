@@ -22,12 +22,14 @@ import { registerSystemCheckRoutes } from "./routes/system-check.js";
 import { registerTenantRoutes } from "./routes/tenants.js";
 import { registerGuidelineRoutes } from "./routes/guidelines.js";
 import { registerIngestionRoutes } from "./routes/ingestion.js";
+import { registerWsRoutes } from "./routes/ws.js";
 import { buildOpenApiSpec } from "./openapi.js";
 import * as persistence from "./persistence.js";
 
 export interface BuildOpts {
   now?: () => string;
   preloadScenarioId?: string;
+  enableWebSocket?: boolean;
 }
 
 export function buildServer(opts: BuildOpts = {}): { app: FastifyInstance; store: Store } {
@@ -64,6 +66,7 @@ export function buildServer(opts: BuildOpts = {}): { app: FastifyInstance; store
   registerTenantRoutes(app);
   registerGuidelineRoutes(app);
   registerIngestionRoutes(app);
+  if (opts.enableWebSocket) registerWsRoutes(app);
 
   app.get("/health", async () => ({ ok: true }));
 
@@ -85,7 +88,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       await subscribeToRedisEvents();
     }
 
-    const { app, store } = buildServer({ preloadScenarioId: "*" });
+    const { app, store } = buildServer({ preloadScenarioId: "*", enableWebSocket: true });
 
     // Load persisted state on boot (if Supabase is configured)
     if (persistence.isEnabled()) {
