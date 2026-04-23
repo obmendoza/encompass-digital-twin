@@ -4,6 +4,7 @@ import { TitleBar } from "@/components/encompass/TitleBar";
 import { MenuBar } from "@/components/encompass/MenuBar";
 import { Toolbar } from "@/components/encompass/Toolbar";
 import { AdminPanel } from "@/components/encompass/AdminPanel";
+import { TestDashboard } from "@/components/encompass/TestDashboard";
 import { createServerSupabase } from "@/lib/supabase-server";
 
 export const dynamic = "force-dynamic";
@@ -29,6 +30,9 @@ export default async function AdminPage() {
           <div className="p-2">
             <AdminPanel users={users ?? []} />
           </div>
+        </div>
+        <div className="mt-3">
+          <TestDashboard />
         </div>
       </div>
     </div>
