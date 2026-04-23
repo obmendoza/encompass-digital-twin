@@ -47,7 +47,14 @@ interface WebhookConfig {
   active: boolean;
 }
 
-type WebhookEventType = "loan.received" | "recommendation.staged" | "decision.made" | "sla.breached";
+type WebhookEventType =
+  | "loan.received"
+  | "recommendation.staged"
+  | "decision.made"
+  | "sla.breached"
+  | "agent.started"
+  | "agent.completed"
+  | "document.extracted";
 ```
 
 **Reserved tenant slugs** (validated at creation, rejected if matched):
@@ -75,7 +82,7 @@ CREATE TABLE tenants (
 CREATE TABLE tenant_api_keys (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id UUID NOT NULL REFERENCES tenants(id),
-  key_hash TEXT NOT NULL,           -- SHA-256 hash
+  key_hash TEXT NOT NULL,           -- scrypt hash (not SHA-256 — too fast for credential hashing)
   key_prefix TEXT NOT NULL,         -- first 8 chars for identification
   name TEXT NOT NULL,               -- "Production Ingest Key"
   rate_limit_per_minute INT DEFAULT 60,
@@ -179,8 +186,9 @@ ALTER TABLE tenant_workflows ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ingestion_mappings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ingested_loans ENABLE ROW LEVEL SECURITY;
 ALTER TABLE webhook_deliveries ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tenant_api_keys ENABLE ROW LEVEL SECURITY;
 
--- Policy template (applied to each table above):
+-- Policy template (applied to each table above, including tenant_api_keys):
 -- Uses SET LOCAL app.current_tenant = '<uuid>' per transaction
 CREATE POLICY tenant_isolation ON world_state
   USING (tenant_id = current_setting('app.current_tenant')::uuid);
@@ -201,6 +209,9 @@ CREATE POLICY tenant_isolation ON ingested_loans
   USING (tenant_id = current_setting('app.current_tenant')::uuid);
 
 CREATE POLICY tenant_isolation ON webhook_deliveries
+  USING (tenant_id = current_setting('app.current_tenant')::uuid);
+
+CREATE POLICY tenant_isolation ON tenant_api_keys
   USING (tenant_id = current_setting('app.current_tenant')::uuid);
 ```
 
@@ -317,7 +328,7 @@ interface AuthUser {
 }
 ```
 
-Supabase Auth user metadata stores `tenant_id` and `role`. The `getUser()` helper extracts these from the JWT.
+Supabase Auth `app_metadata` (server-settable, not client-writable) stores `tenant_id` and `role`. The `getUser()` helper extracts these from the JWT. **Never use `user_metadata`** for authorization — it is client-writable and cannot be trusted.
 
 ### 1.7 URL Structure
 
@@ -531,7 +542,7 @@ Complex transformations (filtered arrays, multi-source merging, conditional logi
 ### 3.4 Authentication & Rate Limiting
 
 - API keys generated per tenant via admin UI
-- Keys hashed (SHA-256) before storage; only the `key_prefix` (first 8 chars) stored in plain text
+- Keys hashed with **scrypt** before storage (not SHA-256 — too fast for credential hashing, vulnerable to rainbow tables on a dump); only the `key_prefix` (first 8 chars) stored in plain text
 - Key rotation: create new key → deprecate old key (set `revoked_at`) → old key rejected after revocation
 - **Rate limiting via Redis token bucket:**
   ```
@@ -545,6 +556,7 @@ Complex transformations (filtered arrays, multi-source merging, conditional logi
 
 - Documents referenced by URL are fetched asynchronously after loan creation
 - Stored in tenant-scoped Supabase Storage: `documents/{tenantId}/{loanId}/{docId}`
+- **Supabase Storage bucket RLS:** each tenant's files are in a tenant-prefixed path; Storage policies enforce that only authenticated users with matching `tenant_id` in `app_metadata` can read/write their tenant's bucket prefix
 - Multipart uploads go directly to storage
 - IDP extraction triggered automatically based on tenant workflow config
 - Failed document fetches logged, loan continues processing (documents are non-blocking)
@@ -555,6 +567,7 @@ Complex transformations (filtered arrays, multi-source merging, conditional logi
 interface WebhookPayload {
   eventId: string;        // UUID — idempotency key for consumers
   event: WebhookEventType;
+  apiVersion: string;     // "2026-04-23" — schema evolution via dated versions
   tenantId: string;
   loanId: string;
   externalId?: string;
@@ -568,8 +581,12 @@ interface WebhookPayload {
 - A background worker processes pending deliveries
 - **Retry schedule with jitter:** 1m, 5m, 15m, 1h, 4h (5 attempts over ~6 hours)
 - After 5 failures: status → `dead`, visible in admin UI dead letter inspector
-- Payloads signed with HMAC-SHA256 using the webhook secret (`X-Webhook-Signature` header)
 - Each payload includes `eventId` (UUID) so consumers can dedupe
+
+**Webhook signing (replay-resistant):**
+- Signature scheme: `HMAC-SHA256(secret, timestamp + "." + body)`
+- Two headers sent: `X-Webhook-Signature` (hex-encoded HMAC) and `X-Webhook-Timestamp` (Unix seconds)
+- Consumers should reject payloads where `X-Webhook-Timestamp` is more than 5 minutes old (replay window)
 
 ---
 
@@ -660,6 +677,7 @@ function useLiveUpdates(tenantId: string, loanId?: string): StoreEvent | null {
   // Returns latest event for triggering UI refresh
   // Calls router.refresh() on relevant events to refetch server components
   // Auto-reconnects with exponential backoff on disconnect
+  // Deduplicates events by event.id (cross-replica double-delivery protection)
 }
 ```
 
@@ -667,7 +685,8 @@ function useLiveUpdates(tenantId: string, loanId?: string): StoreEvent | null {
 
 - `AgentActivityFeed` switches from 3-second polling to WebSocket events
 - VA Dashboard and UW Queue get live badge updates
-- Existing polling code removed once WebSocket is verified stable
+- **Polling fallback:** clients behind WS-hostile corporate proxies can pass `?transport=poll` to fall back to 5-second polling via SSE or standard HTTP. The `useLiveUpdates` hook detects WebSocket connection failure and auto-falls back.
+- Existing dedicated polling code removed once WebSocket + fallback is verified stable
 
 ---
 
@@ -899,7 +918,7 @@ export const SlaConfigSchema = z.object({
 export const WebhookConfigSchema = z.object({
   id: z.string().uuid(),
   url: z.string().url(),
-  events: z.array(z.enum(["loan.received", "recommendation.staged", "decision.made", "sla.breached"])),
+  events: z.array(z.enum(["loan.received", "recommendation.staged", "decision.made", "sla.breached", "agent.started", "agent.completed", "document.extracted"])),
   secret: z.string().min(32),
   active: z.boolean(),
 });
@@ -998,7 +1017,8 @@ export const IngestLoanRequestSchema = z.object({
 // ── Webhooks ──
 export const WebhookPayloadSchema = z.object({
   eventId: z.string().uuid(),
-  event: z.enum(["loan.received", "recommendation.staged", "decision.made", "sla.breached"]),
+  event: z.enum(["loan.received", "recommendation.staged", "decision.made", "sla.breached", "agent.started", "agent.completed", "document.extracted"]),
+  apiVersion: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),  // dated version: "2026-04-23"
   tenantId: z.string().uuid(),
   loanId: z.string(),
   externalId: z.string().optional(),
