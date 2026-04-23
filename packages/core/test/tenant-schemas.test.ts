@@ -151,29 +151,19 @@ describe("GuidelineRulesSchema", () => {
 describe("IngestLoanRequestSchema", () => {
   it("validates a minimal request", () => {
     const result = IngestLoanRequestSchema.parse({
+      source: "encompass",
       externalId: "EXT-001",
-      program: "BankStatement12",
-      borrower: { fullName: "Jane Doe" },
-      property: { street: "123 Main", city: "LA", state: "CA", zip: "90001" },
-      loanAmount: 500000,
+      loanData: { borrowerName: "Jane Doe", loanAmount: 500000 },
     });
     expect(result.externalId).toBe("EXT-001");
-    expect(result.documents).toEqual([]);
+    expect(result.source).toBe("encompass");
   });
 
-  it("rejects more than 50 documents", () => {
-    const docs = Array.from({ length: 51 }, (_, i) => ({
-      name: `doc-${i}`,
-      docType: "Other",
-    }));
+  it("rejects missing source", () => {
     expect(() =>
       IngestLoanRequestSchema.parse({
         externalId: "EXT-001",
-        program: "BankStatement12",
-        borrower: { fullName: "Jane Doe" },
-        property: { street: "123 Main", city: "LA", state: "CA", zip: "90001" },
-        loanAmount: 500000,
-        documents: docs,
+        loanData: {},
       })
     ).toThrow();
   });
