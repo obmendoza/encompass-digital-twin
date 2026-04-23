@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 interface Tenant { id: string; name: string; slug: string; status: string; created_at: string; }
 
 export function TenantList({ tenants }: { tenants: Tenant[] }) {
@@ -23,7 +25,7 @@ export function TenantList({ tenants }: { tenants: Tenant[] }) {
       <tbody>
         {tenants.map((t) => (
           <tr key={t.id} className="border-b border-[#e0dfdb] hover:bg-[#f5f5f0] cursor-pointer">
-            <td className="px-3 py-2 font-semibold text-[#1a2b4a]">{t.name}</td>
+            <td className="px-3 py-2"><Link href={`/t/${t.slug}/admin/settings`} className="font-semibold text-[#1a2b4a] hover:underline">{t.name}</Link></td>
             <td className="px-3 py-2 font-mono text-[#6b7a8f]">{t.slug}</td>
             <td className="px-3 py-2">
               <span className={`px-2 py-[2px] text-[9px] font-bold rounded ${statusColors[t.status] ?? ""}`}>

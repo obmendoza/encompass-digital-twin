@@ -21,10 +21,21 @@ export function CreateTenantWizard({ onClose, onCreated }: Props) {
     setError("");
     setLoading(true);
     try {
-      const res = await fetch("/api/system/health"); // placeholder — will wire to actual API
-      if (!res.ok) throw new Error("API call failed");
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:4000";
+      const res = await fetch(`${apiUrl}/tenants`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-super-admin": "true",
+          "x-user-id": "admin",
+        },
+        body: JSON.stringify({ name, slug }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error?.fieldErrors?.slug?.[0] ?? data.error ?? "Failed to create tenant");
+      }
       onCreated();
-      onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to create tenant");
     } finally {
