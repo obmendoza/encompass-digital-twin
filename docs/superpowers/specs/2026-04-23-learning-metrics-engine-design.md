@@ -55,12 +55,35 @@ The existing `OverrideDecision` action gains an `overrideReason` field:
 
 Captures **every** terminal UW action (accept + override + manual), not just overrides. This is required for computing alignment rates, calibration curves, and throughput.
 
+**Loan programs reference table** (supports per-tenant extensibility, prevents typo aggregation):
+
+```sql
+CREATE TABLE loan_programs (
+  code TEXT PRIMARY KEY,
+  display_name TEXT NOT NULL,
+  active BOOLEAN NOT NULL DEFAULT true
+);
+
+-- Seed with known NQM programs
+INSERT INTO loan_programs (code, display_name) VALUES
+  ('BankStatement12', 'Bank Statement 12mo'),
+  ('BankStatement24', 'Bank Statement 24mo'),
+  ('DSCR', 'DSCR'),
+  ('AssetDepletion', 'Asset Depletion'),
+  ('1099Only', '1099 Only'),
+  ('PnL', 'Profit & Loss'),
+  ('ForeignNational', 'Foreign National'),
+  ('ITIN', 'ITIN'),
+  ('FullDocNonQM', 'Full Doc Non-QM')
+ON CONFLICT DO NOTHING;
+```
+
 ```sql
 CREATE TABLE decision_records (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id UUID NOT NULL REFERENCES tenants(id),
   loan_id TEXT NOT NULL,
-  loan_program TEXT NOT NULL,
+  loan_program TEXT NOT NULL REFERENCES loan_programs(code),
   decision_type TEXT NOT NULL CHECK (decision_type IN ('accepted','overridden','manual')),
   agent_recommendation TEXT,
   agent_confidence NUMERIC CHECK (agent_confidence BETWEEN 0 AND 1),
@@ -332,11 +355,14 @@ const suggestGuidelineChangeTool = {
 };
 ```
 
-**Validation flow:**
-1. Call Claude Sonnet with tool_use, force tool call via `tool_choice: { type: "tool", name: "propose_guideline_change" }`
-2. Validate `specific_change.path` resolves against the active guideline's JSON schema
-3. On validation failure: retry once with error appended to prompt
-4. On second failure: mark pattern `analysis_failed`, surface for manual review
+**Two-stage validation flow:**
+1. **Stage 1 — Schema validation:** Call Claude Sonnet with tool_use, force tool call via `tool_choice: { type: "tool", name: "propose_guideline_change" }`. Anthropic validates against the tool `input_schema`.
+2. **Stage 2 — Guideline compatibility validation:**
+   a. Verify `specific_change.path` resolves to an existing field in the active guideline JSON
+   b. Verify `specific_change.to` is type-compatible with the field at that path (number→number, string→string, etc.)
+   c. Verify `specific_change.from` matches the current value at that path (prevents stale-view suggestions)
+3. On validation failure at either stage: retry once with the specific error appended to the prompt
+4. On second failure: mark pattern `analysis_failed`, surface for manual review via regenerate endpoint
 
 ### 4.4 Pattern Suggestions Table
 
@@ -361,12 +387,16 @@ CREATE TABLE pattern_suggestions (
   compliance_reviewed_by TEXT,
   compliance_reviewed_at TIMESTAMPTZ,
   rejection_reason TEXT,
+  visibility TEXT NOT NULL DEFAULT 'admin'
+    CHECK (visibility IN ('admin', 'compliance_only')),
   expires_at TIMESTAMPTZ GENERATED ALWAYS AS (created_at + INTERVAL '14 days') STORED,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 ```
 
 RLS policy: `tenant_id = current_setting('app.current_tenant', true)::uuid`
+
+**Visibility routing:** When any compliance check returns `block`, the service layer sets `visibility = 'compliance_only'`. Admin API routes filter to `visibility = 'admin'`. Compliance officer routes see all suggestions.
 
 ### 4.5 Compliance Checks
 
@@ -500,6 +530,12 @@ POST /metrics/:tenantId/patterns/:patternId/apply
 POST /metrics/:tenantId/patterns/:patternId/dismiss
   Body: { reason: string, cooldownDays: 14 | 30 | "permanent" }
   → { status: "dismissed", suppressedUntil }
+
+POST /metrics/:tenantId/patterns/:patternId/regenerate
+  Preconditions: suggestion expired OR pattern status = analysis_failed
+  → { patternId, newStatus: "new" }
+  Side effect: pattern status reset to 'new', queued for next insight cycle
+  Budget: counts against per-tenant daily LLM cap
 ```
 
 ### 6.2 Platform-Level Metrics (super_admin only)
@@ -698,7 +734,7 @@ demo               → tenant-scoped, read-only
 - Runs every 6 hours via `setInterval`
 - Guarded by `pg_try_advisory_lock(43)`
 - Sequence per cycle:
-  1. Compute `metrics_snapshots` for all active tenants (today's data)
+  1. Compute `metrics_snapshots` for all active tenants (completed days only — yesterday and earlier; today is served by the live query in §2.5)
   2. Evaluate 4 detection rules against `decision_records` per tenant
   3. Write/update `detected_patterns`
   4. Pick up patterns with status `new`, run LLM insight generation
@@ -751,7 +787,7 @@ Exposed via structured pino logs (parseable for Prometheus/Grafana):
   "learningEngine": {
     "lastDetectionRun": "2026-04-23T12:00:00Z",
     "patternsActive": 3,
-    "suggestionssPending": 1,
+    "suggestionsPending": 1,
     "llmCallsToday": 12,
     "llmBudgetRemaining": 28
   }
@@ -812,6 +848,46 @@ Exposed via structured pino logs (parseable for Prometheus/Grafana):
 - Rationale containing email → redacted
 - Numeric fields (DTI, FICO, LTV) → preserved
 - Categorical fields → preserved
+```
+
+### 12.6 Janitor Tests
+
+```
+- Pattern in analyzing > 1 hour → reset to new
+- Pattern reset 3 times → status = analysis_failed
+- Pattern in analysis_failed > 7 days → auto-dismissed
+```
+
+### 12.7 Advisory Lock Tests
+
+```
+- Two workers start simultaneously → only one runs detection cycle
+- Lock released after cycle completes (even on error)
+```
+
+### 12.8 Compliance Routing Tests
+
+```
+- Compliance check returns block → visibility = compliance_only
+- Admin GET /patterns → does not include compliance_only suggestions
+- Compliance officer GET /patterns → includes all suggestions
+```
+
+### 12.9 Regenerate Flow Tests
+
+```
+- Expired suggestion → regenerate → pattern status reset to new
+- analysis_failed pattern → regenerate → pattern status reset to new
+- Regenerate counts against per-tenant daily LLM cap
+- Active (non-expired) suggestion → regenerate rejected
+```
+
+### 12.10 Backfill Idempotency Tests
+
+```
+- Run backfill twice → same row count in decision_records
+- Backfill with missing agent data → sentinel values used
+- Backfill respects tenant_id scoping
 ```
 
 ---
