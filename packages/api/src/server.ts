@@ -9,6 +9,7 @@ import { isDbEnabled } from "./db/pool.js";
 import { runMigrations } from "./db/migrations.js";
 import { connectRedis, isRedisEnabled } from "./redis.js";
 import { subscribeToRedisEvents, publishAction } from "./event-bus.js";
+import { startSlaMonitor } from "./sla-monitor.js";
 import { registerWorldRoutes } from "./routes/world.js";
 import { registerLoanRoutes } from "./routes/loans.js";
 import { registerConditionRoutes } from "./routes/conditions.js";
@@ -87,6 +88,8 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       await connectRedis();
       await subscribeToRedisEvents();
     }
+
+    if (isDbEnabled()) startSlaMonitor();
 
     const { app, store } = buildServer({ preloadScenarioId: "*", enableWebSocket: true });
 
