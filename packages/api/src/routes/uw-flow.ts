@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { ActionError, type Store } from "@twin/core";
+import { ActionError, OverrideReasonSchema, type Store } from "@twin/core";
 import { z } from "zod";
 
 const UwDecisionEnum = z.enum(["pending", "approved", "suspended", "counter", "denied"]);
@@ -12,6 +12,7 @@ const ActorSchema = z.object({
 const OverrideSchema = z.object({
   originalRecommendation: UwDecisionEnum,
   overrideDecision: UwDecisionEnum,
+  overrideReason: OverrideReasonSchema,
   rationale: z.string().min(1),
   actor: ActorSchema,
 });
@@ -35,6 +36,7 @@ export function registerUwFlowRoutes(app: FastifyInstance, store: Store) {
       loanId: req.params.loanId,
       originalRecommendation: body.originalRecommendation,
       overrideDecision: body.overrideDecision,
+      overrideReason: body.overrideReason,
       rationale: body.rationale,
       actor: body.actor,
     });

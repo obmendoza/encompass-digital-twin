@@ -96,9 +96,9 @@ export const api = {
     }),
   getAssignments: (userId: string) =>
     req<Array<{ id: string; borrower: string; program: string; loanAmount: number; status: string; priority: string; assignedAt: string; decision: string }>>(`/assignments/${userId}`),
-  overrideDecision: (loanId: string, originalRecommendation: UwDecision, overrideDecision: UwDecision, rationale: string, actor: Actor) =>
+  overrideDecision: (loanId: string, originalRecommendation: UwDecision, overrideDecision: UwDecision, overrideReason: string, rationale: string, actor: Actor) =>
     req<Loan>(`/loans/${loanId}/override`, {
-      method: "POST", body: JSON.stringify({ originalRecommendation, overrideDecision, rationale, actor }),
+      method: "POST", body: JSON.stringify({ originalRecommendation, overrideDecision, overrideReason, rationale, actor }),
     }),
   sendBackToVA: (loanId: string, notes: string, actor: Actor) =>
     req<Loan>(`/loans/${loanId}/send-back`, {

@@ -131,9 +131,9 @@ export async function actionClearRecommendation(loanId: string) {
   return run(loanId, (actor) => api.clearRecommendation(loanId, actor));
 }
 
-export async function actionOverrideDecision(loanId: string, original: string, override: string, rationale: string) {
+export async function actionOverrideDecision(loanId: string, original: string, override: string, overrideReason: string, rationale: string) {
   return run(loanId, (actor) =>
-    api.overrideDecision(loanId, original as UwDecision, override as UwDecision, rationale, actor)
+    api.overrideDecision(loanId, original as UwDecision, override as UwDecision, overrideReason, rationale, actor)
   );
 }
 

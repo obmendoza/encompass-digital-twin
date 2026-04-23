@@ -6,9 +6,11 @@ import { AuditReport, extractAuditData } from "./AuditReport";
 import {
   actionAcceptRecommendation,
   actionClearRecommendation,
+  actionOverrideDecision,
   actionRunAgent,
   actionAddCondition,
 } from "@/app/loan/[loanId]/actions";
+import { OverrideReasonSelect } from "./OverrideReasonSelect";
 
 // ─── Text Utilities ───────────────────────────────────────────────────────────
 
@@ -793,6 +795,10 @@ export function RecommendationPanel({
   userRole?: string;
 }) {
   const [pending, startTransition] = useTransition();
+  const [showOverride, setShowOverride] = useState(false);
+  const [overrideReason, setOverrideReason] = useState<string>("");
+  const [overrideDec, setOverrideDec] = useState<string>("");
+  const [overrideRationale, setOverrideRationale] = useState("");
 
   const accept = () =>
     startTransition(() => {
@@ -820,6 +826,15 @@ export function RecommendationPanel({
   const rerun = () =>
     startTransition(() => {
       actionRunAgent(loanId);
+    });
+
+  const submitOverride = () =>
+    startTransition(async () => {
+      await actionOverrideDecision(loanId, rec.recommendation, overrideDec, overrideReason, overrideRationale);
+      setShowOverride(false);
+      setOverrideReason("");
+      setOverrideDec("");
+      setOverrideRationale("");
     });
 
   // Extract structured multi-agent audit data (if present)
@@ -901,6 +916,9 @@ export function RecommendationPanel({
               <button className="enc-btn" disabled={pending} onClick={rerun}>
                 ↻ Re-run
               </button>
+              <button className="enc-btn" disabled={pending} onClick={() => setShowOverride(!showOverride)}>
+                ⇄ Override
+              </button>
             </>
           ) : (
             <span className="text-[10px] text-[#6b7a8f]">Review only — decision requires Underwriter role</span>
@@ -909,6 +927,59 @@ export function RecommendationPanel({
             Accept converts to {rec.recommendation.toUpperCase()} decision
           </span>
         </div>
+
+        {/* Override Form */}
+        {showOverride && (
+          <div className="p-3 bg-[#fff8e1] border-t border-[#c8c4b5] -mx-3 -mb-3">
+            <div className="text-[11px] font-bold text-[#8a4b00] mb-2">Override AI Recommendation</div>
+            <div className="mb-2">
+              <label className="block text-[10px] font-semibold text-[#404040] mb-1">
+                New Decision <span className="text-[#c00]">*</span>
+              </label>
+              <select
+                className="enc-input w-full text-[11px]"
+                value={overrideDec}
+                onChange={(e) => setOverrideDec(e.target.value)}
+                required
+              >
+                <option value="">Select decision...</option>
+                <option value="approved">Approved</option>
+                <option value="suspended">Suspended</option>
+                <option value="counter">Counter</option>
+                <option value="denied">Denied</option>
+              </select>
+            </div>
+            <OverrideReasonSelect
+              value={overrideReason as Parameters<typeof setOverrideReason>[0]}
+              onChange={setOverrideReason}
+            />
+            <div className="mb-2">
+              <label className="block text-[10px] font-semibold text-[#404040] mb-1">
+                Rationale <span className="text-[#c00]">*</span>
+              </label>
+              <textarea
+                className="enc-input w-full text-[11px]"
+                rows={3}
+                value={overrideRationale}
+                onChange={(e) => setOverrideRationale(e.target.value)}
+                placeholder="Explain why you are overriding the AI recommendation..."
+                required
+              />
+            </div>
+            <div className="flex gap-2">
+              <button
+                className="enc-btn enc-btn--primary text-[10px]"
+                disabled={pending || !overrideDec || !overrideReason || !overrideRationale.trim()}
+                onClick={submitOverride}
+              >
+                Submit Override
+              </button>
+              <button className="enc-btn text-[10px]" onClick={() => setShowOverride(false)}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
