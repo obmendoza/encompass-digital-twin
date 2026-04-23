@@ -37,3 +37,6 @@ npm-debug.log*
 # Temp
 tmp/
 .tmp/
+
+# Playwright auth state
+e2e/.auth/
