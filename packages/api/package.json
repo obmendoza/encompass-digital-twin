@@ -15,9 +15,11 @@
     "@twin/core": "workspace:*",
     "@twin/fixtures": "workspace:*",
     "fastify": "^4.28.1",
+    "pg": "^8.20.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@types/pg": "^8.20.0",
     "tsx": "^4.19.0",
     "typescript": "^5.5.4",
     "vitest": "^2.0.5"
