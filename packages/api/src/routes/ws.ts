@@ -22,8 +22,8 @@ function broadcastEvent(event: StoreEvent): void {
   }
 }
 
-export async function registerWsRoutes(app: FastifyInstance): Promise<void> {
-  await app.register(websocket);
+export function registerWsRoutes(app: FastifyInstance): void {
+  app.register(websocket);
   onEvent(broadcastEvent);
 
   app.get<{ Params: { tenantId: string } }>("/ws/:tenantId", { websocket: true }, (socket, req) => {
