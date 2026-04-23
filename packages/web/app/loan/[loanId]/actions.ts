@@ -131,6 +131,16 @@ export async function actionClearRecommendation(loanId: string) {
   return run(loanId, (actor) => api.clearRecommendation(loanId, actor));
 }
 
+export async function actionOverrideDecision(loanId: string, original: string, override: string, rationale: string) {
+  return run(loanId, (actor) =>
+    api.overrideDecision(loanId, original as UwDecision, override as UwDecision, rationale, actor)
+  );
+}
+
+export async function actionSendBackToVA(loanId: string, notes: string) {
+  return run(loanId, (actor) => api.sendBackToVA(loanId, notes, actor));
+}
+
 export async function actionGenerateDocs(loanId: string): Promise<ActionResult & { count?: number }> {
   const agentUrl = process.env.AGENT_SERVICE_URL ?? "http://localhost:8000";
   try {

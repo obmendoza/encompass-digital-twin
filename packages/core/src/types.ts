@@ -349,4 +349,6 @@ export type Action =
   | { type: "SetExtractedData"; loanId: LoanId; documentId: DocumentId; extractedData: Record<string, unknown>; actor: Actor }
   | { type: "AssignLoan"; loanId: LoanId; assignedTo: string; priority: "normal" | "high" | "urgent"; actor: Actor }
   | { type: "UpdateAssignmentStatus"; loanId: LoanId; status: "queued" | "in_progress" | "report_ready" | "under_review" | "decided"; actor: Actor }
-  | { type: "UnassignLoan"; loanId: LoanId; actor: Actor };
+  | { type: "UnassignLoan"; loanId: LoanId; actor: Actor }
+  | { type: "OverrideDecision"; loanId: LoanId; originalRecommendation: UwDecision; overrideDecision: UwDecision; rationale: string; actor: Actor }
+  | { type: "SendBackToVA"; loanId: LoanId; notes: string; actor: Actor };

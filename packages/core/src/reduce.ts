@@ -366,6 +366,38 @@ export function reduce(
       })));
     }
 
+    case "OverrideDecision": {
+      if (!action.rationale || action.rationale.trim() === "") {
+        throw new ActionError("REQUIRED_FIELD_MISSING",
+          "rationale is required for OverrideDecision", { loanId: action.loanId });
+      }
+      const next = withLoan(state, action.loanId, (l) => ({
+        ...l,
+        decision: action.overrideDecision,
+        pendingRecommendation: undefined,
+        milestones: [...l.milestones, milestone(
+          `Decision:${action.overrideDecision} (override from ${action.originalRecommendation})`,
+          action.actor.id, at
+        )],
+      }));
+      return log(next);
+    }
+
+    case "SendBackToVA": {
+      const next = withLoan(state, action.loanId, (l) => ({
+        ...l,
+        pendingRecommendation: undefined,
+        assignment: l.assignment
+          ? { ...l.assignment, status: "in_progress" as const }
+          : l.assignment,
+        milestones: [...l.milestones, milestone(
+          `Sent back to VA: ${action.notes}`,
+          action.actor.id, at
+        )],
+      }));
+      return log(next);
+    }
+
     default:
       return state;
   }
