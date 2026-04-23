@@ -303,6 +303,9 @@ export interface Loan {
   compliance: ComplianceSnapshot;
   overlay: ProgramOverlay;
   assignment?: LoanAssignment;
+  tenantId?: string;
+  guidelineVersionId?: string;
+  slaDeadlines?: import("./tenant-types.js").SlaDeadlines;
 }
 
 export interface Scenario {
