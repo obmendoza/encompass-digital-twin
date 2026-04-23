@@ -29,6 +29,21 @@ export const PERMISSIONS: Record<string, UserRole[]> = {
 
   // Sandbox
   "sandbox.reset": ["uw", "admin"],
+
+  // Read-only views (compliance_officer shares UW read access)
+  "loan.view": ["va", "uw", "compliance_officer", "admin"],
+  "transmittal.view": ["va", "uw", "compliance_officer", "admin"],
+  "conditions.view": ["va", "uw", "compliance_officer", "admin"],
+  "documents.view": ["va", "uw", "compliance_officer", "admin"],
+  "metrics.view": ["uw", "compliance_officer", "admin"],
+
+  // Learning engine — suggestions
+  "suggestion.view": ["uw", "compliance_officer", "admin"],
+  "suggestion.view_compliance_only": ["compliance_officer", "admin"],
+  "suggestion.approve_guideline_change": ["compliance_officer", "admin"],
+  "suggestion.approve_threshold_update": ["compliance_officer", "admin"],
+  "suggestion.apply": ["admin"],
+  "suggestion.dismiss": ["uw", "compliance_officer", "admin"],
 };
 
 export function hasPermission(role: UserRole | null | undefined, permission: string): boolean {

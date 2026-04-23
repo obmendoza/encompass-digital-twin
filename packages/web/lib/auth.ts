@@ -2,7 +2,7 @@ import { createServerSupabase } from "./supabase-server";
 
 const DEFAULT_TENANT_ID = "00000000-0000-0000-0000-000000000000";
 
-export type UserRole = "demo" | "va" | "uw" | "admin";
+export type UserRole = "demo" | "va" | "uw" | "compliance_officer" | "admin";
 
 export interface AuthUser {
   id: string;
