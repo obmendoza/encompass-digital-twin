@@ -27,6 +27,7 @@ import { registerWsRoutes, getWsClientCount } from "./routes/ws.js";
 import { buildOpenApiSpec } from "./openapi.js";
 import * as persistence from "./persistence.js";
 import { writeDecisionRecord } from "./learning/decision-writer.js";
+import { registerLearningMetricsRoutes } from "./routes/learning-metrics.js";
 import { startLearningWorker } from "./learning-worker.js";
 
 export interface BuildOpts {
@@ -69,6 +70,7 @@ export function buildServer(opts: BuildOpts = {}): { app: FastifyInstance; store
   registerTenantRoutes(app);
   registerGuidelineRoutes(app);
   registerIngestionRoutes(app);
+  registerLearningMetricsRoutes(app);
   if (opts.enableWebSocket) registerWsRoutes(app);
 
   app.get("/health", async () => {
