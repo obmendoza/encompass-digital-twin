@@ -27,6 +27,7 @@ import { registerWsRoutes, getWsClientCount } from "./routes/ws.js";
 import { buildOpenApiSpec } from "./openapi.js";
 import * as persistence from "./persistence.js";
 import { writeDecisionRecord } from "./learning/decision-writer.js";
+import { startLearningWorker } from "./learning-worker.js";
 
 export interface BuildOpts {
   now?: () => string;
@@ -121,6 +122,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     }
 
     if (isDbEnabled()) startSlaMonitor();
+    if (isDbEnabled()) startLearningWorker();
 
     const { app, store } = buildServer({ preloadScenarioId: "*", enableWebSocket: true });
 
