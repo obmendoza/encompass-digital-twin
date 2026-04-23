@@ -66,7 +66,10 @@ function OverrideModal({ loan, onClose, onSubmit, pending }: OverrideModalProps)
             </select>
           </div>
           <div className="mb-3">
-            <OverrideReasonSelect value={overrideReason} onChange={setOverrideReason} />
+            <OverrideReasonSelect
+              value={overrideReason as "" | import("@twin/core").OverrideReasonCategory}
+              onChange={(reason) => setOverrideReason(reason)}
+            />
           </div>
           <div className="mb-4">
             <label className="block text-[#6b7a8f] mb-1">Rationale <span className="text-[#c00]">*</span></label>

@@ -24,7 +24,7 @@ export function useLiveUpdates({ tenantId, loanId, onEvent }: UseLiveUpdatesOpti
   const [connected, setConnected] = useState(false);
   const [lastEvent, setLastEvent] = useState<StoreEvent | null>(null);
   const seenIds = useRef(new Set<string>());
-  const reconnectTimeout = useRef<ReturnType<typeof setTimeout>>();
+  const reconnectTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectDelay = useRef(1000);
 
   const connect = useCallback(() => {
