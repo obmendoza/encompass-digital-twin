@@ -29,6 +29,7 @@ import * as persistence from "./persistence.js";
 import { writeDecisionRecord } from "./learning/decision-writer.js";
 import { registerLearningMetricsRoutes } from "./routes/learning-metrics.js";
 import { registerPatternRoutes } from "./routes/patterns.js";
+import { registerApiKeyRoutes } from "./routes/api-keys.js";
 import { startLearningWorker } from "./learning-worker.js";
 
 export interface BuildOpts {
@@ -73,6 +74,7 @@ export function buildServer(opts: BuildOpts = {}): { app: FastifyInstance; store
   registerIngestionRoutes(app);
   registerLearningMetricsRoutes(app);
   registerPatternRoutes(app);
+  registerApiKeyRoutes(app);
   if (opts.enableWebSocket) registerWsRoutes(app);
 
   app.get("/health", async () => {
