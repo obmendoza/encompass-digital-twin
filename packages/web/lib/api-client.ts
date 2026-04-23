@@ -96,6 +96,25 @@ export const api = {
     }),
   getAssignments: (userId: string) =>
     req<Array<{ id: string; borrower: string; program: string; loanAmount: number; status: string; priority: string; assignedAt: string; decision: string }>>(`/assignments/${userId}`),
+  overrideDecision: (loanId: string, originalRecommendation: UwDecision, overrideDecision: UwDecision, rationale: string, actor: Actor) =>
+    req<Loan>(`/loans/${loanId}/override`, {
+      method: "POST", body: JSON.stringify({ originalRecommendation, overrideDecision, rationale, actor }),
+    }),
+  sendBackToVA: (loanId: string, notes: string, actor: Actor) =>
+    req<Loan>(`/loans/${loanId}/send-back`, {
+      method: "POST", body: JSON.stringify({ notes, actor }),
+    }),
+  getMetrics: () => req<{
+    totalLoans: number;
+    decisions: { pending: number; approved: number; denied: number; suspended: number; counter: number };
+    assignments: { unassigned: number; queued: number; in_progress: number; report_ready: number; under_review: number; decided: number };
+    programs: Record<string, number>;
+    conditions: { total: number; cleared: number; open: number };
+    documents: { total: number; withFiles: number };
+    pendingRecommendations: number;
+    overrides: number;
+    auditLogEntries: number;
+  }>("/metrics"),
   injectLoan: (loan: unknown) =>
     req<{ ok: boolean; loanId: string }>("/world/inject-loan", {
       method: "POST", body: JSON.stringify({ loan }),

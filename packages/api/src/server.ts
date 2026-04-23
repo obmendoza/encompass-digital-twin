@@ -10,6 +10,8 @@ import { registerDocumentRoutes } from "./routes/documents.js";
 import { registerRecommendationRoutes } from "./routes/recommendation.js";
 import { registerUploadRoutes } from "./routes/uploads.js";
 import { registerAssignmentRoutes } from "./routes/assignment.js";
+import { registerUwFlowRoutes } from "./routes/uw-flow.js";
+import { registerMetricsRoutes } from "./routes/metrics.js";
 import { buildOpenApiSpec } from "./openapi.js";
 import * as persistence from "./persistence.js";
 
@@ -39,6 +41,8 @@ export function buildServer(opts: BuildOpts = {}): { app: FastifyInstance; store
   registerRecommendationRoutes(app, store);
   registerUploadRoutes(app, store);
   registerAssignmentRoutes(app, store);
+  registerUwFlowRoutes(app, store);
+  registerMetricsRoutes(app, store);
 
   app.get("/health", async () => ({ ok: true }));
 
