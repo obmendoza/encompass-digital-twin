@@ -117,7 +117,7 @@ describe("Behavioral Flow Tests", () => {
     it("overrides a recommendation", async () => {
       const res = await app.inject({ method: "POST", url: "/loans/2501000101/override",
         payload: { originalRecommendation: "approved", overrideDecision: "suspended",
-          rationale: "need more docs", actor } });
+          overrideReason: "doc_sufficiency", rationale: "need more docs", actor } });
       expect(res.statusCode).toBe(200);
       expect(res.json().decision).toBe("suspended");
       expect(res.json().pendingRecommendation).toBeUndefined();

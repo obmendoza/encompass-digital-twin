@@ -26,6 +26,7 @@ import { registerIngestionRoutes } from "./routes/ingestion.js";
 import { registerWsRoutes, getWsClientCount } from "./routes/ws.js";
 import { buildOpenApiSpec } from "./openapi.js";
 import * as persistence from "./persistence.js";
+import { writeDecisionRecord } from "./learning/decision-writer.js";
 
 export interface BuildOpts {
   now?: () => string;
@@ -144,6 +145,18 @@ if (import.meta.url === `file://${process.argv[1]}`) {
         } else {
           persistence.saveState(result).catch(() => {});
           publishAction(DEFAULT_TENANT_ID, action).catch(() => {});
+
+          if (action.type === "AcceptRecommendation" || action.type === "OverrideDecision" || action.type === "SetDecision") {
+            const loan = result.loans[(action as { loanId: string }).loanId];
+            if (loan) {
+              writeDecisionRecord({
+                tenantId: DEFAULT_TENANT_ID,
+                loanId: (action as { loanId: string }).loanId,
+                loan,
+                action,
+              }).catch((e) => console.error("[decision-writer] Error:", e));
+            }
+          }
         }
         return result;
       };
