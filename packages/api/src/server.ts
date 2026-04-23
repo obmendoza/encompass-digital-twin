@@ -21,6 +21,7 @@ import { registerMetricsRoutes } from "./routes/metrics.js";
 import { registerSystemCheckRoutes } from "./routes/system-check.js";
 import { registerTenantRoutes } from "./routes/tenants.js";
 import { registerGuidelineRoutes } from "./routes/guidelines.js";
+import { registerIngestionRoutes } from "./routes/ingestion.js";
 import { buildOpenApiSpec } from "./openapi.js";
 import * as persistence from "./persistence.js";
 
@@ -62,6 +63,7 @@ export function buildServer(opts: BuildOpts = {}): { app: FastifyInstance; store
   registerSystemCheckRoutes(app, store);
   registerTenantRoutes(app);
   registerGuidelineRoutes(app);
+  registerIngestionRoutes(app);
 
   app.get("/health", async () => ({ ok: true }));
 

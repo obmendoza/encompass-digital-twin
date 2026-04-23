@@ -123,25 +123,10 @@ export const GuidelineRulesSchema = z.object({
 
 // ── Ingest Loan Request ────────────────────────────────────────────
 export const IngestLoanRequestSchema = z.object({
+  source: z.string().min(1),
   externalId: z.string().min(1),
-  program: z.string().min(1),
-  borrower: z.object({
-    fullName: z.string().min(1),
-    ssnMasked: z.string().optional(),
-    dob: z.string().optional(),
-  }),
-  property: z.object({
-    street: z.string().min(1),
-    city: z.string().min(1),
-    state: z.string().min(1),
-    zip: z.string().min(1),
-  }),
-  loanAmount: z.number().positive(),
-  documents: z.array(z.object({
-    name: z.string().min(1),
-    docType: z.string().min(1),
-    fileUrl: z.string().url().optional(),
-  })).max(50).default([]),
+  loanData: z.record(z.unknown()),
+  program: z.string().min(1).optional(),
   metadata: z.record(z.unknown()).optional(),
 });
 
