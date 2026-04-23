@@ -5,9 +5,9 @@ import { createStore, type Store, DEFAULT_TENANT_ID } from "@twin/core";
 import { scenarios } from "@twin/fixtures";
 import { registerErrorHandler } from "./errors.js";
 import { registerTenantResolver } from "./middleware/tenant-resolver.js";
-import { isDbEnabled } from "./db/pool.js";
+import { isDbEnabled, withDb } from "./db/pool.js";
 import { runMigrations } from "./db/migrations.js";
-import { connectRedis, isRedisEnabled } from "./redis.js";
+import { connectRedis, isRedisEnabled, getRedisPub } from "./redis.js";
 import { subscribeToRedisEvents, publishAction } from "./event-bus.js";
 import { startSlaMonitor } from "./sla-monitor.js";
 import { registerWorldRoutes } from "./routes/world.js";
@@ -23,7 +23,7 @@ import { registerSystemCheckRoutes } from "./routes/system-check.js";
 import { registerTenantRoutes } from "./routes/tenants.js";
 import { registerGuidelineRoutes } from "./routes/guidelines.js";
 import { registerIngestionRoutes } from "./routes/ingestion.js";
-import { registerWsRoutes } from "./routes/ws.js";
+import { registerWsRoutes, getWsClientCount } from "./routes/ws.js";
 import { buildOpenApiSpec } from "./openapi.js";
 import * as persistence from "./persistence.js";
 
@@ -69,7 +69,37 @@ export function buildServer(opts: BuildOpts = {}): { app: FastifyInstance; store
   registerIngestionRoutes(app);
   if (opts.enableWebSocket) registerWsRoutes(app);
 
-  app.get("/health", async () => ({ ok: true }));
+  app.get("/health", async () => {
+    const checks: Record<string, { status: string; latencyMs?: number }> = {};
+
+    if (isDbEnabled()) {
+      const start = Date.now();
+      try {
+        await withDb(async (client) => { await client.query("SELECT 1"); });
+        checks.postgres = { status: "ok", latencyMs: Date.now() - start };
+      } catch {
+        checks.postgres = { status: "error", latencyMs: Date.now() - start };
+      }
+    }
+
+    if (isRedisEnabled()) {
+      const start = Date.now();
+      try {
+        await getRedisPub().ping();
+        checks.redis = { status: "ok", latencyMs: Date.now() - start };
+      } catch {
+        checks.redis = { status: "error", latencyMs: Date.now() - start };
+      }
+    }
+
+    const allOk = Object.values(checks).every((c) => c.status === "ok") || Object.keys(checks).length === 0;
+    return {
+      status: allOk ? "healthy" : "degraded",
+      checks,
+      wsClients: getWsClientCount(),
+      uptime: Math.round(process.uptime()),
+    };
+  });
 
   const spec = buildOpenApiSpec();
   app.get("/openapi.json", async () => spec);
