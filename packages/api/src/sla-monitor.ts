@@ -1,5 +1,6 @@
 import { withDb } from "./db/pool.js";
 import { publishEvent } from "./event-bus.js";
+import { processWebhookDeliveries } from "./webhook-worker.js";
 import { randomUUID } from "node:crypto";
 import type { StoreEvent } from "@twin/core";
 
@@ -15,6 +16,7 @@ export async function runSlaMonitor(): Promise<void> {
       for (const tenant of tenants) {
         await checkTenantSla(tenant.id, tenant.settings, client);
       }
+      await processWebhookDeliveries();
     } finally {
       await client.query("SELECT pg_advisory_unlock(42)");
     }
