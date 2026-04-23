@@ -7,6 +7,7 @@ import type { Loan } from "@twin/core";
 import type { AuthUser } from "@/lib/auth";
 import { actionOverrideDecision, actionSendBackToVA } from "@/app/loan/[loanId]/actions";
 import { money, pct } from "@/lib/format";
+import { OverrideReasonSelect } from "./OverrideReasonSelect";
 
 const DECISION_COLORS: Record<string, { bg: string; text: string; border: string }> = {
   approved:   { bg: "bg-[#d7ecd0]", text: "text-[#1b5e20]", border: "border-[#1b5e20]" },
@@ -21,7 +22,7 @@ const UW_DECISIONS = ["approved", "suspended", "denied", "counter"] as const;
 interface OverrideModalProps {
   loan: Loan;
   onClose: () => void;
-  onSubmit: (loanId: string, original: string, override: string, rationale: string) => void;
+  onSubmit: (loanId: string, original: string, override: string, overrideReason: string, rationale: string) => void;
   pending: boolean;
 }
 
@@ -30,6 +31,7 @@ function OverrideModal({ loan, onClose, onSubmit, pending }: OverrideModalProps)
   const [overrideDecision, setOverrideDecision] = useState<string>(
     originalRec === "approved" ? "denied" : "approved"
   );
+  const [overrideReason, setOverrideReason] = useState<string>("");
   const [rationale, setRationale] = useState("");
 
   return (
@@ -63,6 +65,9 @@ function OverrideModal({ loan, onClose, onSubmit, pending }: OverrideModalProps)
               ))}
             </select>
           </div>
+          <div className="mb-3">
+            <OverrideReasonSelect value={overrideReason} onChange={setOverrideReason} />
+          </div>
           <div className="mb-4">
             <label className="block text-[#6b7a8f] mb-1">Rationale <span className="text-[#c00]">*</span></label>
             <textarea
@@ -76,8 +81,8 @@ function OverrideModal({ loan, onClose, onSubmit, pending }: OverrideModalProps)
             <button className="enc-btn" onClick={onClose} disabled={pending}>Cancel</button>
             <button
               className="enc-btn enc-btn--primary"
-              disabled={pending || !rationale.trim()}
-              onClick={() => onSubmit(loan.id, originalRec, overrideDecision, rationale)}
+              disabled={pending || !rationale.trim() || !overrideReason}
+              onClick={() => onSubmit(loan.id, originalRec, overrideDecision, overrideReason, rationale)}
             >
               {pending ? "Saving..." : "Override & Record"}
             </button>
@@ -306,10 +311,10 @@ export function UWDashboard({ loans, currentUser }: Props) {
     });
   };
 
-  const handleOverride = (loanId: string, original: string, override: string, rationale: string) => {
+  const handleOverride = (loanId: string, original: string, override: string, overrideReason: string, rationale: string) => {
     setError(null);
     startTransition(async () => {
-      const result = await actionOverrideDecision(loanId, original, override, rationale);
+      const result = await actionOverrideDecision(loanId, original, override, overrideReason, rationale);
       if (!result.ok) setError(`Override failed: ${result.error?.message}`);
       else {
         setOverrideLoan(null);
