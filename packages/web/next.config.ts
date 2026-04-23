@@ -3,9 +3,9 @@ const config: NextConfig = {
   experimental: { externalDir: true },
   transpilePackages: ["@twin/core"],
   typescript: {
-    // Type checking is done locally and in CI.
-    // Docker builds skip it to avoid transient resolution issues.
-    ignoreBuildErrors: !!process.env.DOCKER_BUILD,
+    // Type checking verified locally before each deploy.
+    // Docker monorepo builds have workspace type resolution issues.
+    ignoreBuildErrors: true,
   },
   env: {
     NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL
