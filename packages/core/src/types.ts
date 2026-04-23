@@ -353,5 +353,5 @@ export type Action =
   | { type: "AssignLoan"; loanId: LoanId; assignedTo: string; priority: "normal" | "high" | "urgent"; actor: Actor }
   | { type: "UpdateAssignmentStatus"; loanId: LoanId; status: "queued" | "in_progress" | "report_ready" | "under_review" | "decided"; actor: Actor }
   | { type: "UnassignLoan"; loanId: LoanId; actor: Actor }
-  | { type: "OverrideDecision"; loanId: LoanId; originalRecommendation: UwDecision; overrideDecision: UwDecision; rationale: string; actor: Actor }
+  | { type: "OverrideDecision"; loanId: LoanId; originalRecommendation: UwDecision; overrideDecision: UwDecision; overrideReason?: import("./learning-types.js").OverrideReasonCategory; rationale: string; actor: Actor }
   | { type: "SendBackToVA"; loanId: LoanId; notes: string; actor: Actor };
