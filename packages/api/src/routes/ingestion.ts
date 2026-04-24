@@ -46,7 +46,10 @@ export function registerIngestionRoutes(app: FastifyInstance): void {
           if (!transformer) return reply.code(400).send({ error: `Unknown transformer: ${mapping?.transformer_type}` });
 
           const fieldMap = (mapping?.field_map as Record<string, string>) ?? {};
-          const partialLoan = transformer.transform(loanData, fieldMap);
+          // If no field mapping configured, pass raw data through as-is (assume canonical format)
+          const partialLoan = Object.keys(fieldMap).length > 0
+            ? transformer.transform(loanData, fieldMap)
+            : (loanData as Partial<import("@twin/core").Loan>);
           const validation = transformer.validate(partialLoan);
           if (!validation.valid) return reply.code(400).send({ error: "Validation failed", details: validation.errors });
 
