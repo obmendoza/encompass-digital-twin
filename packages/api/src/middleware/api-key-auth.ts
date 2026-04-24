@@ -17,6 +17,9 @@ export async function validateApiKey(key: string): Promise<ApiKeyInfo | null> {
   const hexPart = underscoreIdx > 0 ? key.slice(underscoreIdx + 1, underscoreIdx + 9) : key.slice(0, 8);
   const prefix = slug ? `${slug}_${hexPart}` : key.slice(0, 8);
   return withDb(async (client) => {
+    // Note: tenant_api_keys has RLS but this query JOINs on tenants
+    // which doesn't have RLS. If RLS blocks this, we need to disable
+    // RLS on tenant_api_keys (it's a server-only auth boundary table).
     const { rows } = await client.query(
       `SELECT k.id, k.tenant_id, k.rate_limit_per_minute, t.status
        FROM tenant_api_keys k JOIN tenants t ON t.id = k.tenant_id
