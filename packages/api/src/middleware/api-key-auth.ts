@@ -11,7 +11,11 @@ export interface ApiKeyInfo { tenantId: string; keyId: string; rateLimitPerMinut
 
 export async function validateApiKey(key: string): Promise<ApiKeyInfo | null> {
   const hash = hashKey(key);
-  const prefix = key.slice(0, 8);
+  // Key format: slug_randomhex — prefix stored as slug_first8hex
+  const underscoreIdx = key.indexOf("_");
+  const slug = underscoreIdx > 0 ? key.slice(0, underscoreIdx) : "";
+  const hexPart = underscoreIdx > 0 ? key.slice(underscoreIdx + 1, underscoreIdx + 9) : key.slice(0, 8);
+  const prefix = slug ? `${slug}_${hexPart}` : key.slice(0, 8);
   return withDb(async (client) => {
     const { rows } = await client.query(
       `SELECT k.id, k.tenant_id, k.rate_limit_per_minute, t.status
