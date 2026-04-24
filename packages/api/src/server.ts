@@ -71,7 +71,7 @@ export function buildServer(opts: BuildOpts = {}): { app: FastifyInstance; store
   registerSystemCheckRoutes(app, store);
   registerTenantRoutes(app);
   registerGuidelineRoutes(app);
-  registerIngestionRoutes(app);
+  registerIngestionRoutes(app, store);
   registerLearningMetricsRoutes(app);
   registerPatternRoutes(app);
   registerApiKeyRoutes(app);
