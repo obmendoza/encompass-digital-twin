@@ -28,7 +28,9 @@ export async function withTenantTx<T>(
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
-    await client.query("SET LOCAL app.current_tenant = $1", [tenantId]);
+    // SET doesn't support parameterized queries — use escaped string literal
+    // tenantId is always a UUID, validated upstream
+    await client.query(`SET LOCAL app.current_tenant = '${tenantId.replace(/'/g, "''")}'`);
     const result = await fn(client);
     await client.query("COMMIT");
     return result;
