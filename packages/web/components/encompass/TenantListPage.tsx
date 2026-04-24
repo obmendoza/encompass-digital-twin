@@ -18,10 +18,13 @@ export function TenantListPage({ tenants }: { tenants: Tenant[] }) {
   const router = useRouter();
 
   return (
-    <div className="p-4 max-w-4xl mx-auto">
-      <div className="flex justify-between items-center mb-4">
-        <h1 className="text-lg font-bold text-[#1a2b4a]">Platform Admin — Tenants</h1>
-        <button className="enc-btn enc-btn--primary" onClick={() => setShowWizard(true)}>
+    <div>
+      <div className="flex justify-between items-center mb-3 border-b border-[#c8c4b5] pb-2">
+        <div>
+          <h2 className="text-[13px] font-bold text-[#1a2b4a]">Tenant Management</h2>
+          <p className="text-[10px] text-[#6b7a8f]">{tenants.length} tenant{tenants.length !== 1 ? "s" : ""} registered</p>
+        </div>
+        <button className="enc-btn enc-btn--primary text-[10px]" onClick={() => setShowWizard(true)}>
           + Create Tenant
         </button>
       </div>

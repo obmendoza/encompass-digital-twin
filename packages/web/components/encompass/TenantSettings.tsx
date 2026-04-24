@@ -167,11 +167,13 @@ export function TenantSettings({ tenantSlug, tenant }: Props) {
 
   return (
     <div>
-      <div className="flex border-b border-[#c8c4b5] mb-4">
+      <div className="flex border-b border-[#c8c4b5] mb-3 bg-[#ece9d8]">
         {TABS.map((tab) => (
           <button key={tab}
-            className={`px-4 py-2 text-[11px] font-semibold ${
-              activeTab === tab ? "border-b-2 border-[#1f4478] text-[#1f4478]" : "text-[#6b7a8f]"
+            className={`px-4 py-[6px] text-[11px] font-semibold border-r border-[#c8c4b5] ${
+              activeTab === tab
+                ? "bg-white text-[#1a2b4a] border-b-2 border-b-white -mb-[1px]"
+                : "text-[#6b7a8f] hover:bg-[#f5f3eb]"
             }`}
             onClick={() => setActiveTab(tab)}
           >{tab}</button>
@@ -180,29 +182,47 @@ export function TenantSettings({ tenantSlug, tenant }: Props) {
 
       {/* General Tab */}
       {activeTab === "General" && (
-        <div className="enc-panel p-4">
-          <h3 className="text-[12px] font-bold text-[#1a2b4a] mb-3">General Settings</h3>
-          <div className="text-[11px] space-y-2 mb-4">
-            <div><span className="text-[#6b7a8f]">Name:</span> {tenant.name}</div>
-            <div><span className="text-[#6b7a8f]">Slug:</span> {tenantSlug}</div>
-            <div><span className="text-[#6b7a8f]">Status:</span> <span className="font-bold">{currentStatus.toUpperCase()}</span></div>
+        <div>
+          <div className="grid grid-cols-3 gap-3 mb-4">
+            <div className="enc-panel p-3 text-center">
+              <div className="text-[10px] text-[#6b7a8f] uppercase">Status</div>
+              <div className={`text-[14px] font-bold ${currentStatus === 'active' ? 'text-[#065f46]' : currentStatus === 'suspended' ? 'text-[#991b1b]' : 'text-[#92400e]'}`}>
+                {currentStatus.toUpperCase()}
+              </div>
+            </div>
+            <div className="enc-panel p-3 text-center">
+              <div className="text-[10px] text-[#6b7a8f] uppercase">Slug</div>
+              <div className="text-[14px] font-bold text-[#1a2b4a] font-mono">{tenantSlug}</div>
+            </div>
+            <div className="enc-panel p-3 text-center">
+              <div className="text-[10px] text-[#6b7a8f] uppercase">Tenant ID</div>
+              <div className="text-[11px] font-mono text-[#6b7a8f]">{tenant.id?.slice(0, 8) ?? "\u2014"}...</div>
+            </div>
           </div>
-          <div className="flex gap-2">
-            {currentStatus === "onboarding" && (
-              <button className="enc-btn enc-btn--primary text-[10px]" disabled={statusLoading} onClick={() => updateStatus("active")}>
-                {statusLoading ? "..." : "Activate"}
-              </button>
-            )}
-            {currentStatus === "active" && (
-              <button className="enc-btn text-[10px]" style={{ background: "#c00", color: "white" }} disabled={statusLoading} onClick={() => updateStatus("suspended")}>
-                {statusLoading ? "..." : "Suspend"}
-              </button>
-            )}
-            {currentStatus === "suspended" && (
-              <button className="enc-btn enc-btn--primary text-[10px]" disabled={statusLoading} onClick={() => updateStatus("active")}>
-                {statusLoading ? "..." : "Resume"}
-              </button>
-            )}
+          <div className="enc-panel p-4">
+            <h3 className="text-[12px] font-bold text-[#1a2b4a] mb-3">General Settings</h3>
+            <div className="text-[11px] space-y-2 mb-4">
+              <div><span className="text-[#6b7a8f]">Name:</span> {tenant.name}</div>
+              <div><span className="text-[#6b7a8f]">Slug:</span> {tenantSlug}</div>
+              <div><span className="text-[#6b7a8f]">Status:</span> <span className="font-bold">{currentStatus.toUpperCase()}</span></div>
+            </div>
+            <div className="flex gap-2">
+              {currentStatus === "onboarding" && (
+                <button className="enc-btn enc-btn--primary text-[10px]" disabled={statusLoading} onClick={() => updateStatus("active")}>
+                  {statusLoading ? "..." : "Activate"}
+                </button>
+              )}
+              {currentStatus === "active" && (
+                <button className="enc-btn text-[10px]" style={{ background: "#c00", color: "white" }} disabled={statusLoading} onClick={() => updateStatus("suspended")}>
+                  {statusLoading ? "..." : "Suspend"}
+                </button>
+              )}
+              {currentStatus === "suspended" && (
+                <button className="enc-btn enc-btn--primary text-[10px]" disabled={statusLoading} onClick={() => updateStatus("active")}>
+                  {statusLoading ? "..." : "Resume"}
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -229,39 +249,46 @@ export function TenantSettings({ tenantSlug, tenant }: Props) {
           {keysLoading ? (
             <p className="text-[10px] text-[#6b7a8f]">Loading...</p>
           ) : (
+            <div className="border border-[#6b7a8f] rounded-sm overflow-hidden">
             <table className="w-full text-[11px] border-collapse">
               <thead>
-                <tr className="bg-[#e8ecf0] text-[#404040]">
-                  <th className="text-left px-3 py-2 font-semibold">Name</th>
-                  <th className="text-left px-3 py-2 font-semibold">Prefix</th>
-                  <th className="text-left px-3 py-2 font-semibold">Rate Limit</th>
-                  <th className="text-left px-3 py-2 font-semibold">Status</th>
-                  <th className="text-left px-3 py-2 font-semibold">Created</th>
-                  <th className="px-3 py-2"></th>
+                <tr className="bg-[#1f4478] text-white">
+                  <th className="text-left px-3 py-[6px] font-semibold">Name</th>
+                  <th className="text-left px-3 py-[6px] font-semibold">Prefix</th>
+                  <th className="text-left px-3 py-[6px] font-semibold">Rate Limit</th>
+                  <th className="text-left px-3 py-[6px] font-semibold">Status</th>
+                  <th className="text-left px-3 py-[6px] font-semibold">Created</th>
+                  <th className="px-3 py-[6px]"></th>
                 </tr>
               </thead>
               <tbody>
-                {apiKeys.map((k) => (
-                  <tr key={k.id} className="border-b border-[#e0dfdb]">
-                    <td className="px-3 py-2">{k.name}</td>
-                    <td className="px-3 py-2 font-mono">{k.key_prefix}...</td>
-                    <td className="px-3 py-2">{k.rate_limit}/min</td>
-                    <td className="px-3 py-2">
-                      <span className={`px-2 py-[2px] text-[9px] font-bold rounded ${k.status === "active" ? "bg-[#d1fae5] text-[#065f46]" : "bg-[#fee2e2] text-[#991b1b]"}`}>
+                {apiKeys.map((k, i) => (
+                  <tr key={k.id} className={`border-b border-[#e0dfdb] hover:bg-[#eef3f8] ${i % 2 === 1 ? "bg-[#fafaf5]" : "bg-white"}`}>
+                    <td className="px-3 py-[5px] font-semibold text-[#1a2b4a]">{k.name}</td>
+                    <td className="px-3 py-[5px] font-mono text-[#6b7a8f]">{k.key_prefix}...</td>
+                    <td className="px-3 py-[5px]">{k.rate_limit}/min</td>
+                    <td className="px-3 py-[5px]">
+                      <span className={`inline-block px-2 py-[1px] text-[9px] font-bold rounded-sm ${k.status === "active" ? "bg-[#d1fae5] text-[#065f46] border border-[#10b981]" : "bg-[#fee2e2] text-[#991b1b] border border-[#ef4444]"}`}>
                         {k.status.toUpperCase()}
                       </span>
                     </td>
-                    <td className="px-3 py-2 text-[#6b7a8f]">{new Date(k.created_at).toLocaleDateString()}</td>
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-[5px] text-[#6b7a8f]">{new Date(k.created_at).toLocaleDateString()}</td>
+                    <td className="px-3 py-[5px]">
                       <button className="text-[10px] text-[#c00] hover:underline" onClick={() => revokeKey(k.id)}>Revoke</button>
                     </td>
                   </tr>
                 ))}
                 {apiKeys.length === 0 && (
-                  <tr><td colSpan={6} className="px-3 py-4 text-center text-[#8899aa]">No API keys</td></tr>
+                  <tr>
+                    <td colSpan={6} className="px-3 py-8 text-center text-[#8899aa]">
+                      <div className="text-[12px] font-semibold mb-1">No API keys</div>
+                      <div className="text-[10px]">Generate a key above to enable API access for this tenant</div>
+                    </td>
+                  </tr>
                 )}
               </tbody>
             </table>
+            </div>
           )}
         </div>
       )}
@@ -281,22 +308,25 @@ export function TenantSettings({ tenantSlug, tenant }: Props) {
           {guidelinesLoading ? (
             <p className="text-[10px] text-[#6b7a8f]">Loading...</p>
           ) : guidelines.length === 0 ? (
-            <p className="text-[10px] text-[#8899aa]">No guidelines uploaded yet</p>
+            <div className="enc-panel p-8 text-center">
+              <div className="text-[12px] font-semibold text-[#1a2b4a] mb-1">No guidelines uploaded yet</div>
+              <div className="text-[10px] text-[#6b7a8f]">Click &quot;Upload Guidelines&quot; to configure underwriting rules for this tenant</div>
+            </div>
           ) : (
             <div className="space-y-2">
               {guidelines.map((g) => (
-                <div key={g.program} className="border border-[#e0dfdb]">
-                  <div className="flex justify-between items-center px-3 py-2 bg-[#f5f5f0] cursor-pointer" onClick={() => setExpandedProgram(expandedProgram === g.program ? null : g.program)}>
-                    <div className="text-[11px]">
-                      <span className="font-semibold text-[#1a2b4a]">{g.program}</span>
-                      <span className="text-[#6b7a8f] ml-3">v{g.version}</span>
-                      <span className="text-[#6b7a8f] ml-3">{new Date(g.created_at).toLocaleDateString()}</span>
+                <div key={g.program} className="border border-[#c8c4b5] rounded-sm overflow-hidden">
+                  <div className="flex justify-between items-center px-3 py-2 bg-[#f5f3eb] cursor-pointer hover:bg-[#ece9d8]" onClick={() => setExpandedProgram(expandedProgram === g.program ? null : g.program)}>
+                    <div className="text-[11px] flex items-center gap-2">
+                      <span className="font-bold text-[#1a2b4a]">{g.program}</span>
+                      <span className="inline-block px-2 py-[1px] text-[9px] font-bold rounded-sm bg-[#1f4478] text-white">v{g.version}</span>
+                      <span className="text-[#8899aa] text-[10px]">{new Date(g.created_at).toLocaleDateString()}</span>
                     </div>
                     <span className="text-[10px] text-[#6b7a8f]">{expandedProgram === g.program ? "[-]" : "[+]"}</span>
                   </div>
                   {expandedProgram === g.program && (
-                    <div className="px-3 py-2 bg-white">
-                      <pre className="text-[10px] font-mono bg-[#f8f8f8] p-2 border overflow-auto max-h-[300px]">{JSON.stringify(g.rules, null, 2)}</pre>
+                    <div className="px-3 py-2 bg-white border-t border-[#c8c4b5]">
+                      <pre className="text-[10px] font-mono bg-[#f8f8f8] p-2 border border-[#e0dfdb] overflow-auto max-h-[300px]">{JSON.stringify(g.rules, null, 2)}</pre>
                     </div>
                   )}
                 </div>
@@ -338,9 +368,10 @@ export function TenantSettings({ tenantSlug, tenant }: Props) {
 
       {/* Placeholder tabs */}
       {(["SLA", "Ingestion", "Users"] as const).includes(activeTab as "SLA" | "Ingestion" | "Users") && (
-        <div className="enc-panel p-4">
-          <h3 className="text-[12px] font-bold text-[#1a2b4a] mb-3">{activeTab}</h3>
-          <p className="text-[10px] text-[#6b7a8f]">{activeTab} configuration — coming soon</p>
+        <div className="enc-panel p-8 text-center">
+          <div className="text-[24px] mb-2 text-[#c8c4b5]">&#9881;</div>
+          <div className="text-[12px] font-semibold text-[#1a2b4a] mb-1">{activeTab} Configuration</div>
+          <div className="text-[10px] text-[#6b7a8f]">This feature is under development and will be available soon.</div>
         </div>
       )}
     </div>
