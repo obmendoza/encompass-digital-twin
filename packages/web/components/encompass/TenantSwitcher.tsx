@@ -10,21 +10,17 @@ export function TenantSwitcher() {
   const pathname = usePathname();
   const [tenants, setTenants] = useState<Tenant[]>([]);
 
-  // Extract current tenant slug from URL
   const match = pathname.match(/^\/t\/([a-z0-9][a-z0-9-]*)\//);
   const currentSlug = match ? match[1] : "default";
 
   useEffect(() => {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:4000";
-    fetch(`${apiUrl}/tenants`, {
-      headers: { "x-super-admin": "true", "x-user-id": "admin" },
-    })
+    fetch("/api/tenants")
       .then((res) => res.ok ? res.json() : [])
       .then((data) => setTenants(data))
       .catch(() => {});
   }, []);
 
-  if (tenants.length <= 1) return null; // Don't show if only default tenant
+  if (tenants.length === 0) return null;
 
   return (
     <div className="flex items-center gap-1 ml-2 border-l border-[#c8c4b5] pl-2">
