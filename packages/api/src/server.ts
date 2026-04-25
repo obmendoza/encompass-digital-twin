@@ -157,8 +157,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
           if (action.type === "AcceptRecommendation" || action.type === "OverrideDecision" || action.type === "SetDecision") {
             const loan = result.loans[(action as { loanId: string }).loanId];
             if (loan) {
+              const recordTenantId = loan.tenantId ?? DEFAULT_TENANT_ID;
               writeDecisionRecord({
-                tenantId: DEFAULT_TENANT_ID,
+                tenantId: recordTenantId,
                 loanId: (action as { loanId: string }).loanId,
                 loan,
                 action,

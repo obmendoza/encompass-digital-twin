@@ -32,7 +32,7 @@ async function checkTenantSla(
   if (!sla) return;
 
   const now = Date.now();
-  await client.query("SET LOCAL app.current_tenant = $1", [tenantId]);
+  await client.query(`SET LOCAL app.current_tenant = '${tenantId.replace(/'/g, "''")}'`);
 
   const { rows } = await client.query(
     "SELECT id, loans FROM world_state WHERE tenant_id = $1", [tenantId]
