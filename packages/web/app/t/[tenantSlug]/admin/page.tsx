@@ -1,2 +1,11 @@
 import { redirect } from "next/navigation";
-export default function TenantAdminPage() { redirect("/admin"); }
+
+export default async function TenantAdminPage({
+  params,
+}: {
+  params: Promise<{ tenantSlug: string }>;
+}) {
+  const { tenantSlug } = await params;
+  // Redirect to the tenant's settings page
+  redirect(`/t/${tenantSlug}/admin/settings`);
+}
