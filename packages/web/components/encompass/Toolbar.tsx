@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { TenantSwitcher } from "./TenantSwitcher";
 
 const BTNS = ["Open", "Save", "Print", "Conditions", "Log", "eFolder", "AUS"];
 
@@ -27,6 +28,7 @@ export function Toolbar({ userRole }: { userRole?: string }) {
       {BTNS.map((b) => (
         <button key={b} className="enc-btn">{b}</button>
       ))}
+      <TenantSwitcher />
     </div>
   );
 }
