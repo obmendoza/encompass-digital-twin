@@ -10,8 +10,13 @@ export function TenantSwitcher() {
   const pathname = usePathname();
   const [tenants, setTenants] = useState<Tenant[]>([]);
 
-  const match = pathname.match(/^\/t\/([a-z0-9][a-z0-9-]*)\//);
+  const match = pathname.match(/^\/t\/([a-z0-9][a-z0-9-]*)(\/.*)?$/);
   const currentSlug = match ? match[1] : "default";
+  // Extract the page path after the tenant slug (e.g., /va, /uw, /metrics)
+  const pagePath = match?.[2] ?? "/";
+  // For legacy routes, extract the page path directly
+  const legacyPageMatch = pathname.match(/^\/(va|uw|metrics|admin|hitl|workshop)(\/.*)?$/);
+  const currentPage = pagePath !== "/" ? pagePath : (legacyPageMatch ? `/${legacyPageMatch[1]}${legacyPageMatch[2] ?? ""}` : "/");
 
   useEffect(() => {
     fetch("/api/tenants")
@@ -31,9 +36,11 @@ export function TenantSwitcher() {
         onChange={(e) => {
           const slug = e.target.value;
           if (slug === "default") {
-            router.push("/");
+            // Navigate to legacy route preserving current page
+            router.push(currentPage === "/" ? "/" : currentPage);
           } else {
-            router.push(`/t/${slug}/`);
+            // Navigate to tenant-scoped route preserving current page
+            router.push(`/t/${slug}${currentPage}`);
           }
         }}
       >
