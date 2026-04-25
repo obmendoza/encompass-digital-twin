@@ -167,6 +167,14 @@ export function TenantSettings({ tenantSlug, tenant }: Props) {
 
   return (
     <div>
+      <div className="flex items-center gap-2 mb-3 pb-2 border-b border-[#c8c4b5]">
+        <span className="text-[10px] text-[#6b7a8f]">Quick Links:</span>
+        <a href={`/t/${tenantSlug}/`} className="enc-btn text-[9px] px-2 py-[2px]">Pipeline</a>
+        <a href={`/t/${tenantSlug}/va`} className="enc-btn text-[9px] px-2 py-[2px]">VA Dashboard</a>
+        <a href={`/t/${tenantSlug}/uw`} className="enc-btn text-[9px] px-2 py-[2px]">UW Queue</a>
+        <a href={`/t/${tenantSlug}/metrics`} className="enc-btn text-[9px] px-2 py-[2px]">Metrics</a>
+        <a href={`/t/${tenantSlug}/admin/settings`} className="enc-btn text-[9px] px-2 py-[2px] bg-[#1f4478] text-white">Settings</a>
+      </div>
       <div className="flex border-b border-[#c8c4b5] mb-3 bg-[#ece9d8]">
         {TABS.map((tab) => (
           <button key={tab}
