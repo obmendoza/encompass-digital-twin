@@ -1,21 +1,9 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-// Inline tenant slug extraction (Edge runtime cannot import from @twin/core)
-const DEFAULT_TENANT_SLUG = "default";
-function getTenantSlugFromPath(pathname: string): string {
-  const match = pathname.match(/^\/t\/([a-z0-9][a-z0-9-]{1,30})\//);
-  return match?.[1] ?? DEFAULT_TENANT_SLUG;
-}
-
 export async function middleware(request: NextRequest) {
-  // Resolve tenant from URL and propagate via request headers
-  const tenantSlug = getTenantSlugFromPath(request.nextUrl.pathname);
   const requestHeaders = new Headers(request.headers);
-  requestHeaders.set("x-tenant-slug", tenantSlug);
-
   const response = NextResponse.next({ request: { headers: requestHeaders } });
-  response.headers.set("x-tenant-slug", tenantSlug);
 
   // Skip auth if env vars are not set (local dev without Supabase)
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
@@ -39,6 +27,21 @@ export async function middleware(request: NextRequest) {
   );
 
   const { data: { user } } = await supabase.auth.getUser();
+
+  // Extract tenant info from JWT app_metadata (rendering-only — API verifies JWT independently)
+  const appMeta = user?.app_metadata ?? {};
+  const tenantId = appMeta.tenant_id ?? "";
+  const role = appMeta.role ?? "demo";
+  const isSuperAdmin = appMeta.is_super_admin === true;
+
+  requestHeaders.set("x-user-tenant-id", tenantId);
+  requestHeaders.set("x-user-role", role);
+  requestHeaders.set("x-is-super-admin", String(isSuperAdmin));
+
+  // Enforce /platform/* access for super_admin only
+  if (request.nextUrl.pathname.startsWith("/platform/") && !isSuperAdmin) {
+    return NextResponse.redirect(new URL("/", request.url));
+  }
 
   // Public paths that don't require auth
   const publicPaths = ["/login", "/auth/callback", "/api/", "/t/"];
