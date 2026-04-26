@@ -37,8 +37,7 @@ export function TenantListPage({ tenants }: { tenants: Tenant[] }) {
     setError("");
     setLoading(true);
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:4000";
-      const res = await fetch(`${apiUrl}/onboarding`, {
+      const res = await fetch("/api/onboarding", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
