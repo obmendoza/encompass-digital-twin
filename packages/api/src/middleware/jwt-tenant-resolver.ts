@@ -64,7 +64,10 @@ export function registerJwtTenantResolver(app: FastifyInstance): void {
         if (!tenantId) {
           try {
             tenantId = await getDemoTenantId();
-          } catch { /* no demo tenant — fresh install */ }
+            console.log(`[middleware] Demo tenant fallback resolved: ${tenantId}`);
+          } catch (e) {
+            console.error(`[middleware] getDemoTenantId() failed:`, e);
+          }
         }
 
         if (tenantId) {
