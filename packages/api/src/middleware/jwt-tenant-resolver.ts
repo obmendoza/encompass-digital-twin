@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { tenantStore } from "../tenant-context.js";
 import { extractJwt, verifyJwt } from "../auth/jwt-verifier.js";
-import { getTenantIdBySlug, getTenantStatus } from "../tenant-cache.js";
+import { getTenantIdBySlug, getTenantStatus, getDemoTenantId } from "../tenant-cache.js";
 import { isRedisEnabled, getRedisPub } from "../redis.js";
 import { isDbEnabled, withDb } from "../db/pool.js";
 import { DEFAULT_TENANT_ID } from "@twin/core";
@@ -63,7 +63,6 @@ export function registerJwtTenantResolver(app: FastifyInstance): void {
         // If no tenant specified, default to demo tenant
         if (!tenantId) {
           try {
-            const { getDemoTenantId } = await import("../tenant-cache.js");
             tenantId = await getDemoTenantId();
           } catch { /* no demo tenant — fresh install */ }
         }
