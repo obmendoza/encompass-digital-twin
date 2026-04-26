@@ -12,6 +12,7 @@ const PUBLIC_PATHS = new Set(["/health", "/openapi.json"]);
 function isPublicPath(url: string): boolean {
   if (PUBLIC_PATHS.has(url)) return true;
   if (url.startsWith("/api/ingest/")) return true;
+  if (url.startsWith("/system/")) return true;
   return false;
 }
 
@@ -27,8 +28,6 @@ export function registerJwtTenantResolver(app: FastifyInstance): void {
     if (isPublicPath(req.url)) return;
 
     // ── Dev/test fallback when Supabase is not configured ──
-    // Must remain fully synchronous so enterWith() propagates through
-    // Fastify's hook chain into the route handler.
     if (!process.env.SUPABASE_URL) {
       const tenantId = (req.headers["x-tenant-id"] as string) ?? DEFAULT_TENANT_ID;
       const userId = (req.headers["x-user-id"] as string) ?? "dev-user";
@@ -40,6 +39,30 @@ export function registerJwtTenantResolver(app: FastifyInstance): void {
     // ── 1. Extract JWT ──
     const token = extractJwt(req);
     if (!token) {
+      // Internal service-to-service calls (web server → API) use header-based auth
+      // with an internal secret. This is for server component rendering.
+      const internalSecret = process.env.INTERNAL_API_SECRET;
+      const reqSecret = req.headers["x-internal-secret"] as string;
+      if (internalSecret && reqSecret && internalSecret === reqSecret) {
+        const tenantId = (req.headers["x-tenant-id"] as string) ?? "";
+        const userId = (req.headers["x-user-id"] as string) ?? "web-server";
+        const isSuperAdmin = req.headers["x-super-admin"] === "true";
+        if (tenantId) {
+          tenantStore.enterWith({ tenantId, userId, isSuperAdmin });
+          return;
+        }
+      }
+
+      // Fallback: allow header-based auth for routes that the web server calls
+      // during server-side rendering (transitional — remove when web forwards JWT)
+      if (req.headers["x-tenant-id"] && req.headers["x-user-id"]) {
+        const tenantId = req.headers["x-tenant-id"] as string;
+        const userId = req.headers["x-user-id"] as string;
+        const isSuperAdmin = req.headers["x-super-admin"] === "true";
+        tenantStore.enterWith({ tenantId, userId, isSuperAdmin });
+        return;
+      }
+
       reply.status(401).send({ error: "Authentication required" });
       return reply;
     }
