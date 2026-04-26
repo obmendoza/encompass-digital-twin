@@ -98,16 +98,13 @@ export function OnboardingWizard({ session, tenant }: OnboardingWizardProps) {
       setSaving(true);
       setError("");
       try {
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:4000";
         const body: Record<string, unknown> = { currentStep: step };
         if (stepData) body.stepData = stepData;
 
-        const res = await fetch(`${apiUrl}/onboarding/${session.tenantId}`, {
+        const res = await fetch(`/api/onboarding/${session.tenantId}`, {
           method: "PATCH",
           headers: {
             "Content-Type": "application/json",
-            "x-super-admin": "true",
-            "x-user-id": "admin",
             "If-Match": String(version),
           },
           body: JSON.stringify(body),
