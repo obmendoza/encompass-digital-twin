@@ -160,3 +160,23 @@ export type CreateTenantInput = z.infer<typeof CreateTenantSchema>;
 export type IngestLoanRequest = z.infer<typeof IngestLoanRequestSchema>;
 export type WebhookPayloadInput = z.infer<typeof WebhookPayloadSchema>;
 export type IngestionMappingInput = z.infer<typeof IngestionMappingSchema>;
+
+// ── Onboarding Schemas ────────────────────────────────────────────
+
+export const CreateOnboardingSchema = z.object({
+  tenantName: z.string().min(1).max(100),
+  slug: TenantSlugSchema,
+  contactEmail: z.string().email(),
+  phone: z.string().optional(),
+  lenderType: z.enum(["correspondent", "wholesale", "retail", "direct"]),
+  programs: z.array(z.string()).min(1, "At least one program required"),
+});
+
+export const UpdateOnboardingSchema = z.object({
+  currentStep: z.number().int().min(1).max(8).optional(),
+  stepData: z.record(z.unknown()).optional(),
+  notes: z.string().optional(),
+});
+
+export type CreateOnboardingInput = z.infer<typeof CreateOnboardingSchema>;
+export type UpdateOnboardingInput = z.infer<typeof UpdateOnboardingSchema>;

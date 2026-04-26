@@ -195,3 +195,74 @@ export const DETECTION_RULES: Record<string, DetectionRuleConfig> = {
     windowDays: 30,
   },
 };
+
+// ── Onboarding Types ────────────────────────────────────────────
+
+export interface OnboardingSession {
+  id: string;
+  tenantId: string;
+  currentStep: number;
+  stepData: Record<string, unknown>;
+  uploadedDocuments: UploadedDocument[];
+  extractionResults: Record<string, unknown>;
+  checklistResults: Record<string, unknown>;
+  notes?: string;
+  version: number;
+  startedBy?: string;
+  startedAt: string;
+  updatedAt: string;
+  completedAt?: string;
+  abandonedAt?: string;
+}
+
+export interface UploadedDocument {
+  id: string;
+  fileName: string;
+  fileUrl: string;
+  category: string;
+  program?: string;
+  uploadedAt: string;
+  processorUsed?: string;
+  extractionStatus: "pending" | "processing" | "extracted" | "reviewed" | "failed";
+  confidence?: number;
+}
+
+export interface ProcessorInput {
+  fileUrl: string;
+  fileName: string;
+  mimeType: string;
+  category: string;
+  program?: string;
+  tenantId: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface ProcessorOutput {
+  success: boolean;
+  extractedRules?: Partial<import("./tenant-types.js").GuidelineRules>;
+  perFieldConfidence?: Record<string, number>;
+  overallConfidence?: number;
+  warnings?: string[];
+  error?: string;
+  tokensUsed?: { input: number; output: number };
+  cost?: number;
+}
+
+export interface TestLoanResult {
+  testCase: string;
+  expected: string;
+  actual: string;
+  match: boolean;
+  confidence: number;
+  conditions: string[];
+  loanId: string;
+}
+
+export type LenderType = "correspondent" | "wholesale" | "retail" | "direct";
+
+export const SLA_PRESETS: Record<LenderType, { maxQueueTimeMinutes: number; maxProcessingTimeMinutes: number; maxReviewTimeMinutes: number; maxTotalTimeMinutes: number }> = {
+  correspondent: { maxQueueTimeMinutes: 30, maxProcessingTimeMinutes: 60, maxReviewTimeMinutes: 120, maxTotalTimeMinutes: 240 },
+  wholesale: { maxQueueTimeMinutes: 20, maxProcessingTimeMinutes: 45, maxReviewTimeMinutes: 90, maxTotalTimeMinutes: 180 },
+  retail: { maxQueueTimeMinutes: 45, maxProcessingTimeMinutes: 90, maxReviewTimeMinutes: 180, maxTotalTimeMinutes: 360 },
+  direct: { maxQueueTimeMinutes: 15, maxProcessingTimeMinutes: 30, maxReviewTimeMinutes: 60, maxTotalTimeMinutes: 120 },
+};
