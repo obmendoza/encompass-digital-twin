@@ -1,21 +1,16 @@
 import type { FastifyInstance } from "fastify";
-import { ActionError, type Store } from "@twin/core";
+import type { Store } from "@twin/core";
 import { NewDocumentSchema, UpdateDocumentSchema, LinkDocumentSchema } from "../schemas.js";
-
-function requireLoan(store: Store, id: string) {
-  const l = store.getLoan(id);
-  if (!l) throw new ActionError("LOAN_NOT_FOUND", `loan '${id}' not found`, { loanId: id });
-  return l;
-}
+import { requireLoanForTenant } from "./_helpers.js";
 
 export function registerDocumentRoutes(app: FastifyInstance, store: Store) {
   app.get<{ Params: { loanId: string } }>("/loans/:loanId/documents", async (req) =>
-    requireLoan(store, req.params.loanId).documents);
+    requireLoanForTenant(store, req.params.loanId).documents);
 
   app.post<{ Params: { loanId: string } }>("/loans/:loanId/documents", async (req, reply) => {
     const body = NewDocumentSchema.parse(req.body);
     store.dispatch({ type: "AddDocument", loanId: req.params.loanId, doc: body.doc, actor: body.actor });
-    reply.send(requireLoan(store, req.params.loanId));
+    reply.send(requireLoanForTenant(store, req.params.loanId));
   });
 
   app.patch<{ Params: { loanId: string; docId: string } }>(
@@ -30,7 +25,7 @@ export function registerDocumentRoutes(app: FastifyInstance, store: Store) {
         store.dispatch({ type: "LinkDocument", loanId: req.params.loanId,
           documentId: req.params.docId, conditionId: body.linkedConditionId, actor: body.actor });
       }
-      reply.send(requireLoan(store, req.params.loanId));
+      reply.send(requireLoanForTenant(store, req.params.loanId));
     });
 
   app.post<{ Params: { loanId: string; docId: string } }>(
@@ -39,7 +34,7 @@ export function registerDocumentRoutes(app: FastifyInstance, store: Store) {
       const body = LinkDocumentSchema.parse(req.body);
       store.dispatch({ type: "LinkDocument", loanId: req.params.loanId,
         documentId: req.params.docId, conditionId: body.conditionId, actor: body.actor });
-      reply.send(requireLoan(store, req.params.loanId));
+      reply.send(requireLoanForTenant(store, req.params.loanId));
     });
 
   app.post<{ Params: { loanId: string; docId: string } }>(
@@ -53,6 +48,6 @@ export function registerDocumentRoutes(app: FastifyInstance, store: Store) {
         extractedData: body.extractedData,
         actor: body.actor as { kind: "human" | "agent"; id: string },
       });
-      reply.send(requireLoan(store, req.params.loanId));
+      reply.send(requireLoanForTenant(store, req.params.loanId));
     });
 }

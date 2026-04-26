@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
-import { ActionError, OverrideReasonSchema, type Store } from "@twin/core";
+import { OverrideReasonSchema, type Store } from "@twin/core";
 import { z } from "zod";
+import { requireLoanForTenant } from "./_helpers.js";
 
 const UwDecisionEnum = z.enum(["pending", "approved", "suspended", "counter", "denied"]);
 
@@ -22,12 +23,6 @@ const SendBackSchema = z.object({
   actor: ActorSchema,
 });
 
-function requireLoan(store: Store, id: string) {
-  const l = store.getLoan(id);
-  if (!l) throw new ActionError("LOAN_NOT_FOUND", `loan '${id}' not found`, { loanId: id });
-  return l;
-}
-
 export function registerUwFlowRoutes(app: FastifyInstance, store: Store) {
   app.post<{ Params: { loanId: string } }>("/loans/:loanId/override", async (req, reply) => {
     const body = OverrideSchema.parse(req.body);
@@ -40,7 +35,7 @@ export function registerUwFlowRoutes(app: FastifyInstance, store: Store) {
       rationale: body.rationale,
       actor: body.actor,
     });
-    reply.send(requireLoan(store, req.params.loanId));
+    reply.send(requireLoanForTenant(store, req.params.loanId));
   });
 
   app.post<{ Params: { loanId: string } }>("/loans/:loanId/send-back", async (req, reply) => {
@@ -51,6 +46,6 @@ export function registerUwFlowRoutes(app: FastifyInstance, store: Store) {
       notes: body.notes,
       actor: body.actor,
     });
-    reply.send(requireLoan(store, req.params.loanId));
+    reply.send(requireLoanForTenant(store, req.params.loanId));
   });
 }

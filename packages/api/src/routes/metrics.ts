@@ -1,9 +1,10 @@
 import type { FastifyInstance } from "fastify";
 import type { Store } from "@twin/core";
+import { getLoansForTenant } from "./_helpers.js";
 
 export function registerMetricsRoutes(app: FastifyInstance, store: Store) {
   app.get("/metrics", async () => {
-    const loans = Object.values(store.getState().loans);
+    const loans = getLoansForTenant(store);
     const log = store.getAuditLog();
 
     const decisions = { pending: 0, approved: 0, denied: 0, suspended: 0, counter: 0 };

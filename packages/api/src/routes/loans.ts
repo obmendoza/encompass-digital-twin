@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
-import { ActionError, type Store } from "@twin/core";
+import type { Store } from "@twin/core";
 import { DecisionSchema, MilestoneSchema, QualifyingIncomeSchema } from "../schemas.js";
+import { getLoansForTenant, requireLoanForTenant } from "./_helpers.js";
 
 function pipelineRow(l: { id: string; borrower: { fullName: string };
   nqmProgram: string; transaction: { loanAmount: number; ltv: number };
@@ -16,18 +17,12 @@ function pipelineRow(l: { id: string; borrower: { fullName: string };
   };
 }
 
-function requireLoan(store: Store, id: string) {
-  const l = store.getLoan(id);
-  if (!l) throw new ActionError("LOAN_NOT_FOUND", `loan '${id}' not found`, { loanId: id });
-  return l;
-}
-
 export function registerLoanRoutes(app: FastifyInstance, store: Store) {
   app.get("/loans", async () =>
-    Object.values(store.getState().loans).map(pipelineRow));
+    getLoansForTenant(store).map(pipelineRow));
 
   app.get<{ Params: { loanId: string } }>("/loans/:loanId", async (req) =>
-    requireLoan(store, req.params.loanId));
+    requireLoanForTenant(store, req.params.loanId));
 
   app.get<{ Params: { loanId: string } }>("/loans/:loanId/audit", async () =>
     store.getAuditLog());
@@ -35,19 +30,19 @@ export function registerLoanRoutes(app: FastifyInstance, store: Store) {
   app.post<{ Params: { loanId: string } }>("/loans/:loanId/decision", async (req, reply) => {
     const body = DecisionSchema.parse(req.body);
     store.dispatch({ type: "SetDecision", loanId: req.params.loanId, ...body });
-    reply.send(requireLoan(store, req.params.loanId));
+    reply.send(requireLoanForTenant(store, req.params.loanId));
   });
 
   app.post<{ Params: { loanId: string } }>("/loans/:loanId/milestone", async (req, reply) => {
     const body = MilestoneSchema.parse(req.body);
     store.dispatch({ type: "AdvanceMilestone", loanId: req.params.loanId, ...body });
-    reply.send(requireLoan(store, req.params.loanId));
+    reply.send(requireLoanForTenant(store, req.params.loanId));
   });
 
   app.post<{ Params: { loanId: string } }>("/loans/:loanId/qualifying-income", async (req, reply) => {
     const body = QualifyingIncomeSchema.parse(req.body);
     store.dispatch({ type: "RecalculateQualifyingIncome", loanId: req.params.loanId,
       worksheet: body.worksheet, actor: body.actor });
-    reply.send(requireLoan(store, req.params.loanId));
+    reply.send(requireLoanForTenant(store, req.params.loanId));
   });
 }

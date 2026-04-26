@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
-import { ActionError, type Store } from "@twin/core";
+import type { Store } from "@twin/core";
 import * as fs from "../file-store.js";
+import { requireLoanForTenant } from "./_helpers.js";
 
 export function registerUploadRoutes(app: FastifyInstance, store: Store) {
   // Serve stored files
@@ -20,6 +21,9 @@ export function registerUploadRoutes(app: FastifyInstance, store: Store) {
   app.post<{ Params: { loanId: string; docId: string } }>(
     "/loans/:loanId/documents/:docId/upload",
     async (req, reply) => {
+      // Verify loan ownership before processing upload
+      requireLoanForTenant(store, req.params.loanId);
+
       const data = await req.file();
       if (!data) {
         reply.status(400).send({ error: "No file uploaded" });
@@ -44,8 +48,7 @@ export function registerUploadRoutes(app: FastifyInstance, store: Store) {
         actor: { kind: "human", id: "uploader" },
       });
 
-      const loan = store.getLoan(req.params.loanId);
-      if (!loan) throw new ActionError("LOAN_NOT_FOUND", "loan not found", { loanId: req.params.loanId });
+      const loan = requireLoanForTenant(store, req.params.loanId);
 
       reply.send({
         ok: true,

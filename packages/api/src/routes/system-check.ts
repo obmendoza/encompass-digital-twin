@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { Store } from "@twin/core";
+import { getLoansForTenant } from "./_helpers.js";
 
 export function registerSystemCheckRoutes(app: FastifyInstance, store: Store) {
 
@@ -14,9 +15,9 @@ export function registerSystemCheckRoutes(app: FastifyInstance, store: Store) {
     };
   });
 
-  // 2. Data integrity check — validates all loans
+  // 2. Data integrity check — validates all loans (scoped to tenant)
   app.get("/system/integrity", async () => {
-    const loans = Object.values(store.getState().loans);
+    const loans = getLoansForTenant(store);
     const results: Array<{ loanId: string; checks: number; passed: number; failed: number; issues: string[] }> = [];
 
     for (const loan of loans) {
