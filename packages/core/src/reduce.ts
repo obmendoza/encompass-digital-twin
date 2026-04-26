@@ -294,9 +294,13 @@ export function reduce(
     }
 
     case "InjectLoan": {
+      const loan = action.loan;
+      if (!loan.tenantId) {
+        throw new ActionError("REQUIRED_FIELD_MISSING", "InjectLoan requires tenantId on the loan object", {});
+      }
       return log({
         ...state,
-        loans: { ...state.loans, [action.loan.id]: structuredClone(action.loan) },
+        loans: { ...state.loans, [loan.id]: structuredClone(loan) },
       });
     }
 

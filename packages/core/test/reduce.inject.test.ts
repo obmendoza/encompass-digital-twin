@@ -8,6 +8,7 @@ const now = () => "2026-04-16T12:00:00.000Z";
 function customLoan(): Loan {
   return {
     id: "CUSTOM-001",
+    tenantId: "test-tenant",
     nqmProgram: "DSCR",
     qualifyingMethod: "DSCRCoverage",
     borrower: { fullName: "Test, Custom", ssnMasked: "xxx-xx-9999", dob: "1990-01-01", maritalStatus: "Unmarried" },
@@ -50,5 +51,13 @@ describe("reduce — InjectLoan", () => {
     }, actionLog: [], now };
     const next = reduce(init, { type: "InjectLoan", loan: customLoan() }, () => undefined);
     expect(Object.keys(next.loans)).toHaveLength(2);
+  });
+
+  it("rejects InjectLoan without tenantId", () => {
+    const init: WorldState = { scenarioId: null, loans: {}, actionLog: [], now };
+    const loanWithoutTenant = { ...customLoan(), tenantId: undefined };
+    expect(() =>
+      reduce(init, { type: "InjectLoan", loan: loanWithoutTenant }, () => undefined),
+    ).toThrow("InjectLoan requires tenantId");
   });
 });
