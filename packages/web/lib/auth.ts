@@ -1,7 +1,5 @@
 import { createServerSupabase } from "./supabase-server";
 
-const DEFAULT_TENANT_ID = "00000000-0000-0000-0000-000000000000";
-
 export type UserRole = "demo" | "va" | "uw" | "compliance_officer" | "admin";
 
 export interface AuthUser {
@@ -21,7 +19,7 @@ export async function getUser(): Promise<AuthUser | null> {
 
   // Extract tenant info from app_metadata (set by Supabase admin API / hooks)
   const appMeta = user.app_metadata ?? {};
-  const tenantId = (appMeta.tenant_id as string) ?? DEFAULT_TENANT_ID;
+  const tenantId = (appMeta.tenant_id as string) ?? "";
   const isSuperAdmin = appMeta.is_super_admin === true;
 
   // Get role from user_roles table
