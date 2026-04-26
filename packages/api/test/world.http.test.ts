@@ -51,7 +51,7 @@ describe("world routes", () => {
   it("POST /world/inject-loan adds a custom loan", async () => {
     const { app } = buildServer({ now: fixed });
     const customLoan = {
-      id: "INJECT-TEST-001", nqmProgram: "DSCR", qualifyingMethod: "DSCRCoverage",
+      id: "INJECT-TEST-001", tenantId: "test-tenant", nqmProgram: "DSCR", qualifyingMethod: "DSCRCoverage",
       borrower: { fullName: "Injected, Test", ssnMasked: "xxx-xx-0000", dob: "1990-01-01", maritalStatus: "Unmarried" },
       property: { street: "1 Inject", city: "Test", state: "CA", zip: "90001", propertyType: "SFR Det.", units: 1, yearBuilt: 2005 },
       transaction: { loanPurpose: "Purchase", loanAmount: 300000, appraisedValue: 400000, salesPrice: 400000,
@@ -75,12 +75,14 @@ describe("world routes", () => {
       overlay: { programName: "Test", investorName: "Test", maxLTV: 80, minFICO: 660,
         maxDTI: null, minDSCR: null, minReserves: 6, checks: [] },
     };
+    const tenantHeaders = { "x-tenant-id": "test-tenant", "x-user-id": "test" };
     const res = await app.inject({
       method: "POST", url: "/world/inject-loan", payload: { loan: customLoan },
+      headers: tenantHeaders,
     });
     expect(res.statusCode).toBe(200);
     expect(res.json().loanId).toBe("INJECT-TEST-001");
-    const loan = await app.inject({ method: "GET", url: "/loans/INJECT-TEST-001" });
+    const loan = await app.inject({ method: "GET", url: "/loans/INJECT-TEST-001", headers: tenantHeaders });
     expect(loan.statusCode).toBe(200);
     expect(loan.json().nqmProgram).toBe("DSCR");
   });
