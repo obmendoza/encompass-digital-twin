@@ -3,13 +3,23 @@ ALTER TABLE tenants ADD COLUMN IF NOT EXISTS type TEXT NOT NULL DEFAULT 'product
   CHECK (type IN ('demo', 'production'));
 
 -- 2. Migrate Default Tenant to Demo Tenant with real UUID
+-- Strategy: insert new row, migrate FKs, delete old row (avoids FK violation on UPDATE id)
 DO $$
 DECLARE
   new_demo_id UUID := gen_random_uuid();
   old_id UUID := '00000000-0000-0000-0000-000000000000';
+  old_settings JSONB;
+  old_created_at TIMESTAMPTZ;
 BEGIN
   IF EXISTS (SELECT 1 FROM tenants WHERE id = old_id) THEN
-    UPDATE tenants SET id = new_demo_id, name = 'Demo Tenant', slug = 'demo', type = 'demo' WHERE id = old_id;
+    -- Capture old tenant data
+    SELECT settings, created_at INTO old_settings, old_created_at FROM tenants WHERE id = old_id;
+
+    -- Insert new demo tenant row
+    INSERT INTO tenants (id, name, slug, status, type, settings, created_at)
+    VALUES (new_demo_id, 'Demo Tenant', 'demo', 'active', 'demo', old_settings, old_created_at);
+
+    -- Migrate all FK references to new ID
     UPDATE world_state SET tenant_id = new_demo_id WHERE tenant_id = old_id;
     UPDATE action_log SET tenant_id = new_demo_id WHERE tenant_id = old_id;
     UPDATE decision_records SET tenant_id = new_demo_id WHERE tenant_id = old_id;
@@ -17,6 +27,13 @@ BEGIN
     UPDATE pattern_suggestions SET tenant_id = new_demo_id WHERE tenant_id = old_id;
     UPDATE metrics_snapshots SET tenant_id = new_demo_id WHERE tenant_id = old_id;
     UPDATE learning_outcomes SET tenant_id = new_demo_id WHERE tenant_id = old_id;
+    UPDATE tenant_api_keys SET tenant_id = new_demo_id WHERE tenant_id = old_id;
+    UPDATE ingested_loans SET tenant_id = new_demo_id WHERE tenant_id = old_id;
+    UPDATE webhook_deliveries SET tenant_id = new_demo_id WHERE tenant_id = old_id;
+    UPDATE tenant_audit_log SET target_tenant_id = new_demo_id WHERE target_tenant_id = old_id;
+
+    -- Delete old row (now has no FK references)
+    DELETE FROM tenants WHERE id = old_id;
   END IF;
 END $$;
 
