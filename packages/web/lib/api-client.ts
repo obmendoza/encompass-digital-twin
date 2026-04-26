@@ -4,14 +4,30 @@ import type {
 
 const base = process.env.API_URL ?? process.env.TWIN_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:4000";
 
+// Resolve the user's tenant ID from request headers (set by web middleware)
+// This runs in server components where headers() is available
+async function getUserTenantId(): Promise<string> {
+  try {
+    const { headers } = await import("next/headers");
+    const h = await headers();
+    return h.get("x-user-tenant-id") ?? "";
+  } catch {
+    return ""; // not in a server component context
+  }
+}
+
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
-  // Merge tenant/user headers for server-side API calls
+  // Resolve tenant from the current user's JWT (via middleware headers)
+  const userTenantId = await getUserTenantId();
+
   const defaultHeaders: Record<string, string> = {
     "content-type": "application/json",
-    "x-tenant-id": "00000000-0000-0000-0000-000000000000", // fallback — overridden by caller
     "x-user-id": "web-server",
     "x-super-admin": "true",
   };
+  // Only set x-tenant-id if we have one — API uses its own fallback otherwise
+  if (userTenantId) defaultHeaders["x-tenant-id"] = userTenantId;
+
   const mergedHeaders = { ...defaultHeaders, ...(init?.headers as Record<string, string>) };
 
   const res = await fetch(`${base}${path}`, {

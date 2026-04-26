@@ -55,12 +55,23 @@ export function registerJwtTenantResolver(app: FastifyInstance): void {
 
       // Fallback: allow header-based auth for routes that the web server calls
       // during server-side rendering (transitional — remove when web forwards JWT)
-      if (req.headers["x-tenant-id"] && req.headers["x-user-id"]) {
-        const tenantId = req.headers["x-tenant-id"] as string;
+      if (req.headers["x-user-id"]) {
+        let tenantId = (req.headers["x-tenant-id"] as string) ?? "";
         const userId = req.headers["x-user-id"] as string;
         const isSuperAdmin = req.headers["x-super-admin"] === "true";
-        tenantStore.enterWith({ tenantId, userId, isSuperAdmin });
-        return;
+
+        // If no tenant specified, default to demo tenant
+        if (!tenantId) {
+          try {
+            const { getDemoTenantId } = await import("../tenant-cache.js");
+            tenantId = await getDemoTenantId();
+          } catch { /* no demo tenant — fresh install */ }
+        }
+
+        if (tenantId) {
+          tenantStore.enterWith({ tenantId, userId, isSuperAdmin });
+          return;
+        }
       }
 
       reply.status(401).send({ error: "Authentication required" });
