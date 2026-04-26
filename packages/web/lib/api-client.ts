@@ -4,16 +4,36 @@ import type {
 
 const base = process.env.API_URL ?? process.env.TWIN_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:4000";
 
+// Cache the demo tenant ID after first lookup
+let cachedDemoTenantId: string | null = null;
+
+async function resolveDemoTenantId(): Promise<string> {
+  if (cachedDemoTenantId) return cachedDemoTenantId;
+  try {
+    // Look up the demo tenant from the API (using super_admin access)
+    const res = await fetch(`${base}/tenants/demo`, {
+      headers: { "x-user-id": "web-server", "x-super-admin": "true", "x-tenant-id": "any" },
+      cache: "no-store",
+    });
+    if (res.ok) {
+      const tenant = await res.json();
+      cachedDemoTenantId = tenant.id;
+      return tenant.id;
+    }
+  } catch { /* API not reachable */ }
+  return "";
+}
+
 // Resolve the user's tenant ID from request headers (set by web middleware)
-// This runs in server components where headers() is available
 async function getUserTenantId(): Promise<string> {
   try {
     const { headers } = await import("next/headers");
     const h = await headers();
-    return h.get("x-user-tenant-id") ?? "";
-  } catch {
-    return ""; // not in a server component context
-  }
+    const tenantId = h.get("x-user-tenant-id") ?? "";
+    if (tenantId) return tenantId;
+  } catch { /* not in server component context */ }
+  // No user tenant → default to demo
+  return resolveDemoTenantId();
 }
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {

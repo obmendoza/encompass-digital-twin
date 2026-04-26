@@ -27,6 +27,19 @@ export function registerJwtTenantResolver(app: FastifyInstance): void {
     // Skip auth for public and ingestion paths
     if (isPublicPath(req.url)) return;
 
+    // ── Header-based auth (web server → API, dev/test, transitional) ──
+    // This runs BEFORE JWT extraction. When the web server sends x-user-id,
+    // we trust it as an internal service call.
+    // IMPORTANT: Use synchronous enterWith BEFORE any await to ensure
+    // AsyncLocalStorage context propagates through Fastify's hook chain.
+    if (req.headers["x-user-id"]) {
+      const tenantId = (req.headers["x-tenant-id"] as string) || DEFAULT_TENANT_ID;
+      const userId = req.headers["x-user-id"] as string;
+      const isSuperAdmin = req.headers["x-super-admin"] === "true";
+      tenantStore.enterWith({ tenantId, userId, isSuperAdmin });
+      return;
+    }
+
     // ── Dev/test fallback when Supabase is not configured ──
     if (!process.env.SUPABASE_URL) {
       const tenantId = (req.headers["x-tenant-id"] as string) ?? DEFAULT_TENANT_ID;
