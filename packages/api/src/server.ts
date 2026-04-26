@@ -4,7 +4,8 @@ import multipart from "@fastify/multipart";
 import { createStore, type Store, DEFAULT_TENANT_ID } from "@twin/core";
 import { scenarios } from "@twin/fixtures";
 import { registerErrorHandler } from "./errors.js";
-import { registerTenantResolver } from "./middleware/tenant-resolver.js";
+import { registerJwtTenantResolver } from "./middleware/jwt-tenant-resolver.js";
+import cookie from "@fastify/cookie";
 import { isDbEnabled, withDb } from "./db/pool.js";
 import { runMigrations } from "./db/migrations.js";
 import { connectRedis, isRedisEnabled, getRedisPub } from "./redis.js";
@@ -58,7 +59,8 @@ export function buildServer(opts: BuildOpts = {}): { app: FastifyInstance; store
   }
 
   registerErrorHandler(app);
-  registerTenantResolver(app);
+  app.register(cookie);
+  registerJwtTenantResolver(app);
   registerWorldRoutes(app, store);
   registerLoanRoutes(app, store);
   registerConditionRoutes(app, store);
