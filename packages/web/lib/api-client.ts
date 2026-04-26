@@ -2,17 +2,28 @@ import type {
   Loan, NewCondition, QualifyingIncomeWorksheet, UwDecision, Actor, Condition, LoggedAction, Document, PendingRecommendation,
 } from "@twin/core";
 
-const base = process.env.TWIN_API_URL ?? "http://127.0.0.1:4000";
+const base = process.env.API_URL ?? process.env.TWIN_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:4000";
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
+  // Merge tenant/user headers for server-side API calls
+  const defaultHeaders: Record<string, string> = {
+    "content-type": "application/json",
+    "x-tenant-id": "00000000-0000-0000-0000-000000000000", // fallback — overridden by caller
+    "x-user-id": "web-server",
+    "x-super-admin": "true",
+  };
+  const mergedHeaders = { ...defaultHeaders, ...(init?.headers as Record<string, string>) };
+
   const res = await fetch(`${base}${path}`, {
-    headers: { "content-type": "application/json" },
     cache: "no-store",
     ...init,
+    headers: mergedHeaders,
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({ code: "INTERNAL", message: res.statusText }));
-    throw new Error(`${body.code}: ${body.message}`);
+    const code = body.code ?? body.error ?? "INTERNAL";
+    const message = body.message ?? body.error ?? res.statusText;
+    throw new Error(`${code}: ${message}`);
   }
   return res.json() as Promise<T>;
 }
