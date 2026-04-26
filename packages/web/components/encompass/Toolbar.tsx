@@ -24,6 +24,9 @@ export function Toolbar({ userRole }: { userRole?: string }) {
       {userRole === "admin" && (
         <Link href="/admin" className="enc-btn font-bold text-[#8a0000]">Admin</Link>
       )}
+      {userRole === "admin" && (
+        <Link href="/platform/tenants" className="enc-btn font-bold text-[#1f4478]">Platform</Link>
+      )}
       {BTNS.map((b) => (
         <button key={b} className="enc-btn">{b}</button>
       ))}
