@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import Fastify, { type FastifyInstance } from "fastify";
 import multipart from "@fastify/multipart";
-import { createStore, type Store, DEFAULT_TENANT_ID } from "@twin/core";
+import { createStore, type Store } from "@twin/core";
 import { scenarios } from "@twin/fixtures";
 import { registerErrorHandler } from "./errors.js";
 import { registerJwtTenantResolver } from "./middleware/jwt-tenant-resolver.js";
@@ -32,6 +32,7 @@ import { registerLearningMetricsRoutes } from "./routes/learning-metrics.js";
 import { registerPatternRoutes } from "./routes/patterns.js";
 import { registerApiKeyRoutes } from "./routes/api-keys.js";
 import { startLearningWorker } from "./learning-worker.js";
+import { getDemoTenantId, getTenantType } from "./tenant-cache.js";
 
 export interface BuildOpts {
   now?: () => string;
@@ -132,46 +133,93 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     if (isDbEnabled()) startSlaMonitor();
     if (isDbEnabled()) startLearningWorker();
 
-    const { app, store } = buildServer({ preloadScenarioId: "*", enableWebSocket: true });
+    // Resolve demo tenant ID (for fixture loading + dispatch routing)
+    let DEMO_TENANT_ID: string | undefined;
+    if (isDbEnabled()) {
+      try { DEMO_TENANT_ID = await getDemoTenantId(); } catch { /* fresh install */ }
+    }
 
-    // Load persisted state on boot (if Supabase is configured)
+    const { app, store } = buildServer({ enableWebSocket: true });
+
+    // Load demo fixture loans with real demo tenant UUID
+    if (DEMO_TENANT_ID) {
+      for (const id of Object.keys(scenarios)) {
+        store.dispatch({
+          type: "InjectLoan",
+          loan: { ...scenarios[id].loan, tenantId: DEMO_TENANT_ID },
+        });
+      }
+      console.log(`[boot] Loaded ${Object.keys(scenarios).length} fixture loans into demo tenant`);
+    }
+
+    // Load persisted production loans from Supabase
     if (persistence.isEnabled()) {
       const saved = await persistence.loadState();
       if (saved && Object.keys(saved.loans).length > 0) {
         console.log(`[persistence] Restoring ${Object.keys(saved.loans).length} loans from Supabase`);
         for (const loan of Object.values(saved.loans)) {
-          store.dispatch({ type: "InjectLoan", loan });
-        }
-        console.log("[persistence] State restored from Supabase");
-      }
-
-      // Wrap dispatch with save hook
-      const _dispatch = store.dispatch.bind(store);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (store as any).dispatch = (action: Parameters<typeof _dispatch>[0]) => {
-        const result = _dispatch(action);
-        if (action.type === "ResetWorld") {
-          persistence.clearState().catch(() => {});
-        } else {
-          persistence.saveState(result).catch(() => {});
-          publishAction(DEFAULT_TENANT_ID, action).catch(() => {});
-
-          if (action.type === "AcceptRecommendation" || action.type === "OverrideDecision" || action.type === "SetDecision") {
-            const loan = result.loans[(action as { loanId: string }).loanId];
-            if (loan) {
-              const recordTenantId = loan.tenantId ?? DEFAULT_TENANT_ID;
-              writeDecisionRecord({
-                tenantId: recordTenantId,
-                loanId: (action as { loanId: string }).loanId,
-                loan,
-                action,
-              }).catch((e) => console.error("[decision-writer] Error:", e));
-            }
+          if (loan.tenantId && loan.tenantId !== DEMO_TENANT_ID) {
+            store.dispatch({ type: "InjectLoan", loan });
           }
         }
-        return result;
-      };
+      }
     }
+
+    // Tenant-aware dispatch wrapper
+    const _dispatch = store.dispatch.bind(store);
+    const tenantTypeCache = new Map<string, string>();
+    if (DEMO_TENANT_ID) tenantTypeCache.set(DEMO_TENANT_ID, "demo");
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (store as any).dispatch = (action: Parameters<typeof _dispatch>[0]) => {
+      const result = _dispatch(action);
+
+      let tenantId: string | undefined;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let loan: any;
+
+      if ("loanId" in action && (action as { loanId: string }).loanId) {
+        loan = result.loans[(action as { loanId: string }).loanId];
+        tenantId = loan?.tenantId;
+      } else if (action.type === "InjectLoan") {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        tenantId = (action as any).loan?.tenantId;
+      } else if (action.type === "LoadScenario") {
+        tenantId = DEMO_TENANT_ID;
+      } else if (action.type === "ResetWorld") {
+        return result;
+      }
+
+      if (!tenantId) return result;
+
+      const tenantType = tenantTypeCache.get(tenantId) ?? "production";
+
+      // Persist production tenants only
+      if (tenantType === "production" && persistence.isEnabled()) {
+        persistence.saveState(result, tenantId).catch((e) => {
+          console.error(`[persistence] FAILED tenant=${tenantId}:`, e);
+        });
+      }
+
+      // Publish event
+      publishAction(tenantId, action).catch((e) => {
+        console.error(`[event-bus] FAILED tenant=${tenantId}:`, e);
+      });
+
+      // Decision records (both demo and production)
+      if (action.type === "AcceptRecommendation" || action.type === "OverrideDecision" || action.type === "SetDecision") {
+        if (loan) {
+          writeDecisionRecord({
+            tenantId,
+            loanId: (action as { loanId: string }).loanId,
+            loan,
+            action,
+          }).catch((e) => console.error("[decision-writer] FAILED:", e));
+        }
+      }
+
+      return result;
+    };
 
     const host = process.env.RAILWAY_ENVIRONMENT ? "0.0.0.0" : "127.0.0.1";
     const port = Number(process.env.PORT ?? 4000);
