@@ -260,11 +260,15 @@ export function Step3ReviewRules({ programs, tenantId, onNext, onBack }: Step3Pr
     rules: Record<string, unknown>,
     confidence: Record<string, number>,
   ) => {
-    const toConfidence = (score: number | undefined): Confidence => {
-      if (score === undefined) return "gray";
-      if (score >= 0.8) return "green";
-      if (score >= 0.5) return "yellow";
-      return "red";
+    // Convert confidence score to color. If no explicit score but field was extracted, default to yellow.
+    const toConfidence = (score: number | undefined, wasExtracted: boolean = true): Confidence => {
+      if (score !== undefined) {
+        if (score >= 0.8) return "green";
+        if (score >= 0.5) return "yellow";
+        return "red";
+      }
+      // No explicit confidence from Claude, but field has a value → yellow (extracted but unscored)
+      return wasExtracted ? "yellow" : "gray";
     };
 
     setGuidelines((prev) => {
