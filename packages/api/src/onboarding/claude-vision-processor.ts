@@ -203,41 +203,33 @@ class ClaudeVisionProcessor implements DocumentProcessor {
 
       const anthropic = getClient();
 
-      const systemBlocks: Anthropic.TextBlockParam[] = [
-        {
-          type: "text",
-          text: SYSTEM_PROMPT,
-          cache_control: { type: "ephemeral" },
-        },
-      ];
-
-      // Build content block based on document type
+      // Determine how to send the document to Claude
       const isPdf = input.mimeType === "application/pdf";
-      const userContent: Anthropic.ContentBlockParam[] = [];
+
+      // Build message content — use document type for PDFs, image for images
+      const contentBlocks: unknown[] = [];
 
       if (isPdf) {
-        // PDFs use the document type (native Anthropic support)
-        userContent.push({
-          type: "document" as "image",
+        contentBlocks.push({
+          type: "document",
           source: {
             type: "base64",
-            media_type: "application/pdf" as "image/png",
+            media_type: "application/pdf",
             data: base64,
           },
-        } as Anthropic.ContentBlockParam);
+        });
       } else {
-        // Images use the image type
         const mediaType = this.resolveMediaType(input.mimeType);
         if (!mediaType) {
           return { success: false, error: `Unsupported media type: ${input.mimeType}` };
         }
-        userContent.push({
+        contentBlocks.push({
           type: "image",
           source: { type: "base64", media_type: mediaType, data: base64 },
         });
       }
 
-      userContent.push({
+      contentBlocks.push({
         type: "text",
         text: `Extract the underwriting guideline rules from this ${input.category} document for the ${input.program ?? "general"} program. File: ${input.fileName}`,
       });
@@ -245,10 +237,10 @@ class ClaudeVisionProcessor implements DocumentProcessor {
       const response = await anthropic.messages.create({
         model: VISION_MODEL,
         max_tokens: 4096,
-        system: systemBlocks,
+        system: SYSTEM_PROMPT,
         tools: [EXTRACT_GUIDELINES_TOOL],
         tool_choice: { type: "tool", name: "extract_guideline_rules" },
-        messages: [{ role: "user", content: userContent }],
+        messages: [{ role: "user", content: contentBlocks as Anthropic.MessageCreateParams["messages"][0]["content"] }],
       });
 
       // Extract tool use block
