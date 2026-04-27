@@ -25,6 +25,18 @@ interface GuidelineField {
   confidence: Confidence;
 }
 
+interface LtvMatrixRow {
+  minFico: number;
+  maxFico: number;
+  maxLtv: number;
+  occupancy?: string;
+}
+
+interface ReserveTierRow {
+  maxLtv: number;
+  minMonths: number;
+}
+
 interface GuidelineData {
   credit: {
     minFico: GuidelineField;
@@ -32,17 +44,41 @@ interface GuidelineData {
     maxLate60d: GuidelineField;
     maxLate90d: GuidelineField;
     disputePolicy: GuidelineField;
+    maxOpenCollections: GuidelineField;
   };
   income: {
     maxDtiFront: GuidelineField;
     maxDtiBack: GuidelineField;
     qualifyingMethods: GuidelineField;
+    expenseFactors: GuidelineField;
+    minDscrRatio: GuidelineField;
   };
   ltv: {
     maxLtv: GuidelineField;
+    matrix: GuidelineField;
   };
   reserves: {
     minMonths: GuidelineField;
+    byLtvTier: GuidelineField;
+  };
+  documents: {
+    required: GuidelineField;
+  };
+  compliance: {
+    stateRestrictions: GuidelineField;
+    maxPointsFeesPct: GuidelineField;
+  };
+  loanParams: {
+    minLoanAmount: GuidelineField;
+    maxLoanAmount: GuidelineField;
+    propertyTypes: GuidelineField;
+    occupancyTypes: GuidelineField;
+  };
+  seasoning: {
+    bankruptcyMonths: GuidelineField;
+    foreclosureMonths: GuidelineField;
+    shortSaleMonths: GuidelineField;
+    deedInLieuMonths: GuidelineField;
   };
 }
 
@@ -89,17 +125,41 @@ function defaultGuidelines(): GuidelineData {
       maxLate60d: { value: 1, confidence: "gray" },
       maxLate90d: { value: 0, confidence: "gray" },
       disputePolicy: { value: "exclude_over_500", confidence: "gray" },
+      maxOpenCollections: { value: 0, confidence: "gray" },
     },
     income: {
       maxDtiFront: { value: 43, confidence: "gray" },
       maxDtiBack: { value: 50, confidence: "gray" },
       qualifyingMethods: { value: ["bank_statements", "1099"], confidence: "gray" },
+      expenseFactors: { value: {} as Record<string, number>, confidence: "gray" },
+      minDscrRatio: { value: 0, confidence: "gray" },
     },
     ltv: {
       maxLtv: { value: 80, confidence: "gray" },
+      matrix: { value: [] as LtvMatrixRow[], confidence: "gray" },
     },
     reserves: {
       minMonths: { value: 6, confidence: "gray" },
+      byLtvTier: { value: [] as ReserveTierRow[], confidence: "gray" },
+    },
+    documents: {
+      required: { value: [] as string[], confidence: "gray" },
+    },
+    compliance: {
+      stateRestrictions: { value: [] as string[], confidence: "gray" },
+      maxPointsFeesPct: { value: 0, confidence: "gray" },
+    },
+    loanParams: {
+      minLoanAmount: { value: 0, confidence: "gray" },
+      maxLoanAmount: { value: 0, confidence: "gray" },
+      propertyTypes: { value: [] as string[], confidence: "gray" },
+      occupancyTypes: { value: [] as string[], confidence: "gray" },
+    },
+    seasoning: {
+      bankruptcyMonths: { value: 0, confidence: "gray" },
+      foreclosureMonths: { value: 0, confidence: "gray" },
+      shortSaleMonths: { value: 0, confidence: "gray" },
+      deedInLieuMonths: { value: 0, confidence: "gray" },
     },
   };
 }
@@ -218,13 +278,18 @@ export function Step3ReviewRules({ programs, tenantId, onNext, onBack }: Step3Pr
         if (credit.maxLatePayments90 !== undefined) {
           next.credit = { ...next.credit, maxLate90d: { value: Number(credit.maxLatePayments90), confidence: toConfidence(confidence["credit.maxLatePayments90"]) } };
         }
+        if (credit.maxOpenCollections !== undefined) {
+          next.credit = { ...next.credit, maxOpenCollections: { value: Number(credit.maxOpenCollections), confidence: toConfidence(confidence["credit.maxOpenCollections"]) } };
+        }
+        if (credit.disputePolicy !== undefined) {
+          next.credit = { ...next.credit, disputePolicy: { value: String(credit.disputePolicy), confidence: toConfidence(confidence["credit.disputePolicy"]) } };
+        }
       }
 
       // Income — processor uses methods, form uses qualifyingMethods
       const income = rules.income as Record<string, unknown> | undefined;
       if (income) {
         if (income.methods !== undefined && Array.isArray(income.methods)) {
-          // Map processor method names to form values where possible
           const methodMap: Record<string, string> = {
             BankStatementDeposits: "bank_statements",
             "1099Gross": "1099",
@@ -240,6 +305,18 @@ export function Step3ReviewRules({ programs, tenantId, onNext, onBack }: Step3Pr
             next.income = { ...next.income, qualifyingMethods: { value: mapped, confidence: toConfidence(confidence["income.methods"]) } };
           }
         }
+        if (income.maxDtiFront !== undefined) {
+          next.income = { ...next.income, maxDtiFront: { value: Number(income.maxDtiFront), confidence: toConfidence(confidence["income.maxDtiFront"]) } };
+        }
+        if (income.maxDtiBack !== undefined) {
+          next.income = { ...next.income, maxDtiBack: { value: Number(income.maxDtiBack), confidence: toConfidence(confidence["income.maxDtiBack"]) } };
+        }
+        if (income.expenseFactors !== undefined && typeof income.expenseFactors === "object") {
+          next.income = { ...next.income, expenseFactors: { value: income.expenseFactors as Record<string, number>, confidence: toConfidence(confidence["income.expenseFactors"]) } };
+        }
+        if (income.minDscrRatio !== undefined) {
+          next.income = { ...next.income, minDscrRatio: { value: Number(income.minDscrRatio), confidence: toConfidence(confidence["income.minDscrRatio"]) } };
+        }
       }
 
       // LTV
@@ -247,11 +324,71 @@ export function Step3ReviewRules({ programs, tenantId, onNext, onBack }: Step3Pr
       if (ltv?.maxLtv !== undefined) {
         next.ltv = { ...next.ltv, maxLtv: { value: Number(ltv.maxLtv), confidence: toConfidence(confidence["ltv.maxLtv"]) } };
       }
+      if (ltv?.matrix !== undefined && Array.isArray(ltv.matrix)) {
+        next.ltv = { ...next.ltv, matrix: { value: ltv.matrix as LtvMatrixRow[], confidence: toConfidence(confidence["ltv.matrix"]) } };
+      }
 
       // Reserves
       const reserves = rules.reserves as Record<string, unknown> | undefined;
       if (reserves?.minMonths !== undefined) {
         next.reserves = { ...next.reserves, minMonths: { value: Number(reserves.minMonths), confidence: toConfidence(confidence["reserves.minMonths"]) } };
+      }
+      if (reserves?.byLtvTier !== undefined && Array.isArray(reserves.byLtvTier)) {
+        next.reserves = { ...next.reserves, byLtvTier: { value: reserves.byLtvTier as ReserveTierRow[], confidence: toConfidence(confidence["reserves.byLtvTier"]) } };
+      }
+
+      // Documents
+      const documents = rules.documents as Record<string, unknown> | undefined;
+      if (documents?.required !== undefined && Array.isArray(documents.required)) {
+        next.documents = { ...next.documents, required: { value: documents.required as string[], confidence: toConfidence(confidence["documents.required"]) } };
+      }
+
+      // Compliance
+      const compliance = rules.compliance as Record<string, unknown> | undefined;
+      if (compliance) {
+        if (compliance.stateRestrictions !== undefined && Array.isArray(compliance.stateRestrictions)) {
+          next.compliance = { ...next.compliance, stateRestrictions: { value: compliance.stateRestrictions as string[], confidence: toConfidence(confidence["compliance.stateRestrictions"]) } };
+        }
+        if (compliance.maxPointsAndFees !== undefined) {
+          next.compliance = { ...next.compliance, maxPointsFeesPct: { value: Number(compliance.maxPointsAndFees), confidence: toConfidence(confidence["compliance.maxPointsAndFees"]) } };
+        }
+      }
+
+      // Loan Parameters (from property + loanLimits sections)
+      const property = rules.property as Record<string, unknown> | undefined;
+      if (property) {
+        if (property.allowedTypes !== undefined && Array.isArray(property.allowedTypes)) {
+          next.loanParams = { ...next.loanParams, propertyTypes: { value: property.allowedTypes as string[], confidence: toConfidence(confidence["property.allowedTypes"]) } };
+        }
+        if (property.occupancyTypes !== undefined && Array.isArray(property.occupancyTypes)) {
+          next.loanParams = { ...next.loanParams, occupancyTypes: { value: property.occupancyTypes as string[], confidence: toConfidence(confidence["property.occupancyTypes"]) } };
+        }
+      }
+      const loanLimits = rules.loanLimits as Record<string, unknown> | undefined;
+      if (loanLimits) {
+        if (loanLimits.minLoanAmount !== undefined) {
+          next.loanParams = { ...next.loanParams, minLoanAmount: { value: Number(loanLimits.minLoanAmount), confidence: toConfidence(confidence["loanLimits.minLoanAmount"]) } };
+        }
+        if (loanLimits.maxLoanAmount !== undefined) {
+          next.loanParams = { ...next.loanParams, maxLoanAmount: { value: Number(loanLimits.maxLoanAmount), confidence: toConfidence(confidence["loanLimits.maxLoanAmount"]) } };
+        }
+      }
+
+      // Seasoning
+      const seasoning = rules.seasoning as Record<string, unknown> | undefined;
+      if (seasoning) {
+        if (seasoning.bankruptcyMonths !== undefined) {
+          next.seasoning = { ...next.seasoning, bankruptcyMonths: { value: Number(seasoning.bankruptcyMonths), confidence: toConfidence(confidence["seasoning.bankruptcyMonths"]) } };
+        }
+        if (seasoning.foreclosureMonths !== undefined) {
+          next.seasoning = { ...next.seasoning, foreclosureMonths: { value: Number(seasoning.foreclosureMonths), confidence: toConfidence(confidence["seasoning.foreclosureMonths"]) } };
+        }
+        if (seasoning.shortSaleMonths !== undefined) {
+          next.seasoning = { ...next.seasoning, shortSaleMonths: { value: Number(seasoning.shortSaleMonths), confidence: toConfidence(confidence["seasoning.shortSaleMonths"]) } };
+        }
+        if (seasoning.deedInLieuMonths !== undefined) {
+          next.seasoning = { ...next.seasoning, deedInLieuMonths: { value: Number(seasoning.deedInLieuMonths), confidence: toConfidence(confidence["seasoning.deedInLieuMonths"]) } };
+        }
       }
 
       return next;
@@ -331,7 +468,7 @@ export function Step3ReviewRules({ programs, tenantId, onNext, onBack }: Step3Pr
         </div>
 
         {/* Right side: Guideline form */}
-        <div className="space-y-6">
+        <div className="space-y-6 max-h-[80vh] overflow-y-auto pr-2">
           {/* Credit Section */}
           <div>
             <h3 className="text-sm font-bold text-gray-800 uppercase tracking-wider mb-3 border-b border-gray-200 pb-2">
@@ -391,6 +528,19 @@ export function Step3ReviewRules({ programs, tenantId, onNext, onBack }: Step3Pr
                   onChange={(e) => updateField("credit", "maxLate90d", parseInt(e.target.value, 10) || 0)}
                 />
               </div>
+              <div>
+                <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1">
+                  <ConfidenceDot confidence={getConfidence("credit", "maxOpenCollections")} />
+                  Max Open Collections
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  value={guidelines.credit.maxOpenCollections.value as number}
+                  onChange={(e) => updateField("credit", "maxOpenCollections", parseInt(e.target.value, 10) || 0)}
+                />
+              </div>
             </div>
             <div className="mt-4">
               <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1">
@@ -445,8 +595,22 @@ export function Step3ReviewRules({ programs, tenantId, onNext, onBack }: Step3Pr
                   onChange={(e) => updateField("income", "maxDtiBack", parseInt(e.target.value, 10) || 0)}
                 />
               </div>
+              <div>
+                <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1">
+                  <ConfidenceDot confidence={getConfidence("income", "minDscrRatio")} />
+                  Min DSCR Ratio
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  value={guidelines.income.minDscrRatio.value as number}
+                  onChange={(e) => updateField("income", "minDscrRatio", parseFloat(e.target.value) || 0)}
+                />
+              </div>
             </div>
-            <div>
+            <div className="mb-4">
               <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
                 <ConfidenceDot confidence={getConfidence("income", "qualifyingMethods")} />
                 Qualifying Methods
@@ -474,6 +638,27 @@ export function Step3ReviewRules({ programs, tenantId, onNext, onBack }: Step3Pr
                 ))}
               </div>
             </div>
+            {/* Expense Factors (read-only display) */}
+            {guidelines.income.expenseFactors.value &&
+              typeof guidelines.income.expenseFactors.value === "object" &&
+              Object.keys(guidelines.income.expenseFactors.value as Record<string, number>).length > 0 && (
+              <div>
+                <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+                  <ConfidenceDot confidence={getConfidence("income", "expenseFactors")} />
+                  Expense Factors
+                </label>
+                <div className="bg-gray-50 border border-gray-200 rounded-md p-3">
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    {Object.entries(guidelines.income.expenseFactors.value as Record<string, number>).map(([key, val]) => (
+                      <div key={key} className="flex justify-between border-b border-gray-100 pb-1">
+                        <span className="text-gray-600">{key}</span>
+                        <span className="font-medium text-gray-800">{(val * 100).toFixed(0)}%</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* LTV Section */}
@@ -481,7 +666,7 @@ export function Step3ReviewRules({ programs, tenantId, onNext, onBack }: Step3Pr
             <h3 className="text-sm font-bold text-gray-800 uppercase tracking-wider mb-3 border-b border-gray-200 pb-2">
               LTV
             </h3>
-            <div>
+            <div className="mb-4">
               <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1">
                 <ConfidenceDot confidence={getConfidence("ltv", "maxLtv")} />
                 Max LTV (%)
@@ -495,6 +680,36 @@ export function Step3ReviewRules({ programs, tenantId, onNext, onBack }: Step3Pr
                 onChange={(e) => updateField("ltv", "maxLtv", parseInt(e.target.value, 10) || 0)}
               />
             </div>
+            {/* LTV/FICO Matrix (read-only) */}
+            {Array.isArray(guidelines.ltv.matrix.value) &&
+              (guidelines.ltv.matrix.value as LtvMatrixRow[]).length > 0 && (
+              <div>
+                <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+                  <ConfidenceDot confidence={getConfidence("ltv", "matrix")} />
+                  LTV/FICO Matrix
+                </label>
+                <div className="bg-gray-50 border border-gray-200 rounded-md overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-gray-100 text-gray-600">
+                        <th className="text-left px-3 py-2 font-medium">FICO Range</th>
+                        <th className="text-left px-3 py-2 font-medium">Max LTV</th>
+                        <th className="text-left px-3 py-2 font-medium">Occupancy</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(guidelines.ltv.matrix.value as LtvMatrixRow[]).map((row, i) => (
+                        <tr key={i} className="border-t border-gray-100">
+                          <td className="px-3 py-1.5 text-gray-800">{row.minFico}-{row.maxFico}</td>
+                          <td className="px-3 py-1.5 text-gray-800">{row.maxLtv}%</td>
+                          <td className="px-3 py-1.5 text-gray-600">{row.occupancy ?? "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Reserves Section */}
@@ -502,7 +717,7 @@ export function Step3ReviewRules({ programs, tenantId, onNext, onBack }: Step3Pr
             <h3 className="text-sm font-bold text-gray-800 uppercase tracking-wider mb-3 border-b border-gray-200 pb-2">
               Reserves
             </h3>
-            <div>
+            <div className="mb-4">
               <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1">
                 <ConfidenceDot confidence={getConfidence("reserves", "minMonths")} />
                 Min Months
@@ -514,6 +729,236 @@ export function Step3ReviewRules({ programs, tenantId, onNext, onBack }: Step3Pr
                 value={guidelines.reserves.minMonths.value as number}
                 onChange={(e) => updateField("reserves", "minMonths", parseInt(e.target.value, 10) || 0)}
               />
+            </div>
+            {/* Reserves by LTV Tier (read-only) */}
+            {Array.isArray(guidelines.reserves.byLtvTier.value) &&
+              (guidelines.reserves.byLtvTier.value as ReserveTierRow[]).length > 0 && (
+              <div>
+                <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+                  <ConfidenceDot confidence={getConfidence("reserves", "byLtvTier")} />
+                  Reserves by LTV Tier
+                </label>
+                <div className="bg-gray-50 border border-gray-200 rounded-md overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-gray-100 text-gray-600">
+                        <th className="text-left px-3 py-2 font-medium">Max LTV</th>
+                        <th className="text-left px-3 py-2 font-medium">Min Months</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(guidelines.reserves.byLtvTier.value as ReserveTierRow[]).map((row, i) => (
+                        <tr key={i} className="border-t border-gray-100">
+                          <td className="px-3 py-1.5 text-gray-800">{row.maxLtv}%</td>
+                          <td className="px-3 py-1.5 text-gray-800">{row.minMonths}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Documents Section */}
+          <div>
+            <h3 className="text-sm font-bold text-gray-800 uppercase tracking-wider mb-3 border-b border-gray-200 pb-2">
+              Documents
+            </h3>
+            <div>
+              <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+                <ConfidenceDot confidence={getConfidence("documents", "required")} />
+                Required Documents
+              </label>
+              {Array.isArray(guidelines.documents.required.value) &&
+                (guidelines.documents.required.value as string[]).length > 0 ? (
+                <ul className="bg-gray-50 border border-gray-200 rounded-md p-3 space-y-1">
+                  {(guidelines.documents.required.value as string[]).map((doc, i) => (
+                    <li key={i} className="text-sm text-gray-700 flex items-start gap-2">
+                      <span className="text-gray-400 mt-0.5">&#8226;</span>
+                      {doc}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-gray-400 italic">No documents extracted yet</p>
+              )}
+            </div>
+          </div>
+
+          {/* Compliance Section */}
+          <div>
+            <h3 className="text-sm font-bold text-gray-800 uppercase tracking-wider mb-3 border-b border-gray-200 pb-2">
+              Compliance
+            </h3>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="col-span-2">
+                <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1">
+                  <ConfidenceDot confidence={getConfidence("compliance", "stateRestrictions")} />
+                  Restricted States
+                </label>
+                <input
+                  type="text"
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  value={Array.isArray(guidelines.compliance.stateRestrictions.value)
+                    ? (guidelines.compliance.stateRestrictions.value as string[]).join(", ")
+                    : ""}
+                  onChange={(e) => {
+                    const states = e.target.value.split(",").map((s) => s.trim()).filter(Boolean);
+                    updateField("compliance", "stateRestrictions", states);
+                  }}
+                  placeholder="e.g. NY, NJ, CA"
+                />
+              </div>
+              <div>
+                <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1">
+                  <ConfidenceDot confidence={getConfidence("compliance", "maxPointsFeesPct")} />
+                  Max Points & Fees (%)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={0.1}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  value={guidelines.compliance.maxPointsFeesPct.value as number}
+                  onChange={(e) => updateField("compliance", "maxPointsFeesPct", parseFloat(e.target.value) || 0)}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Loan Parameters Section */}
+          <div>
+            <h3 className="text-sm font-bold text-gray-800 uppercase tracking-wider mb-3 border-b border-gray-200 pb-2">
+              Loan Parameters
+            </h3>
+            <div className="grid grid-cols-2 gap-4 mb-4">
+              <div>
+                <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1">
+                  <ConfidenceDot confidence={getConfidence("loanParams", "minLoanAmount")} />
+                  Min Loan Amount ($)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  value={guidelines.loanParams.minLoanAmount.value as number}
+                  onChange={(e) => updateField("loanParams", "minLoanAmount", parseInt(e.target.value, 10) || 0)}
+                />
+              </div>
+              <div>
+                <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1">
+                  <ConfidenceDot confidence={getConfidence("loanParams", "maxLoanAmount")} />
+                  Max Loan Amount ($)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  value={guidelines.loanParams.maxLoanAmount.value as number}
+                  onChange={(e) => updateField("loanParams", "maxLoanAmount", parseInt(e.target.value, 10) || 0)}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1">
+                  <ConfidenceDot confidence={getConfidence("loanParams", "propertyTypes")} />
+                  Property Types
+                </label>
+                <input
+                  type="text"
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  value={Array.isArray(guidelines.loanParams.propertyTypes.value)
+                    ? (guidelines.loanParams.propertyTypes.value as string[]).join(", ")
+                    : ""}
+                  onChange={(e) => {
+                    const types = e.target.value.split(",").map((s) => s.trim()).filter(Boolean);
+                    updateField("loanParams", "propertyTypes", types);
+                  }}
+                  placeholder="e.g. SFR, Condo, PUD"
+                />
+              </div>
+              <div>
+                <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1">
+                  <ConfidenceDot confidence={getConfidence("loanParams", "occupancyTypes")} />
+                  Occupancy Types
+                </label>
+                <input
+                  type="text"
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  value={Array.isArray(guidelines.loanParams.occupancyTypes.value)
+                    ? (guidelines.loanParams.occupancyTypes.value as string[]).join(", ")
+                    : ""}
+                  onChange={(e) => {
+                    const types = e.target.value.split(",").map((s) => s.trim()).filter(Boolean);
+                    updateField("loanParams", "occupancyTypes", types);
+                  }}
+                  placeholder="e.g. Primary, Second Home, Investment"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Seasoning Section */}
+          <div>
+            <h3 className="text-sm font-bold text-gray-800 uppercase tracking-wider mb-3 border-b border-gray-200 pb-2">
+              Seasoning
+            </h3>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1">
+                  <ConfidenceDot confidence={getConfidence("seasoning", "bankruptcyMonths")} />
+                  Bankruptcy (months)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  value={guidelines.seasoning.bankruptcyMonths.value as number}
+                  onChange={(e) => updateField("seasoning", "bankruptcyMonths", parseInt(e.target.value, 10) || 0)}
+                />
+              </div>
+              <div>
+                <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1">
+                  <ConfidenceDot confidence={getConfidence("seasoning", "foreclosureMonths")} />
+                  Foreclosure (months)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  value={guidelines.seasoning.foreclosureMonths.value as number}
+                  onChange={(e) => updateField("seasoning", "foreclosureMonths", parseInt(e.target.value, 10) || 0)}
+                />
+              </div>
+              <div>
+                <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1">
+                  <ConfidenceDot confidence={getConfidence("seasoning", "shortSaleMonths")} />
+                  Short Sale (months)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  value={guidelines.seasoning.shortSaleMonths.value as number}
+                  onChange={(e) => updateField("seasoning", "shortSaleMonths", parseInt(e.target.value, 10) || 0)}
+                />
+              </div>
+              <div>
+                <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1">
+                  <ConfidenceDot confidence={getConfidence("seasoning", "deedInLieuMonths")} />
+                  Deed-in-Lieu (months)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  value={guidelines.seasoning.deedInLieuMonths.value as number}
+                  onChange={(e) => updateField("seasoning", "deedInLieuMonths", parseInt(e.target.value, 10) || 0)}
+                />
+              </div>
             </div>
           </div>
         </div>
