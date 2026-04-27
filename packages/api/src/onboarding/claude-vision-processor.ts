@@ -240,26 +240,43 @@ class ClaudeVisionProcessor implements DocumentProcessor {
         messages: [{ role: "user", content: contentBlocks }],
       };
 
-      const httpResponse = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-          "anthropic-beta": "pdfs-2024-09-25",
-        },
-        body: JSON.stringify(requestBody),
-      });
-
-      if (!httpResponse.ok) {
-        const errBody = await httpResponse.text();
-        return { success: false, error: `Anthropic API ${httpResponse.status}: ${errBody.slice(0, 300)}` };
-      }
-
-      const response = await httpResponse.json() as {
+      // Use node:https to avoid undici/fetch ByteString encoding issues
+      const response = await new Promise<{
         content: Array<{ type: string; id?: string; name?: string; input?: Record<string, unknown>; text?: string }>;
         usage?: { input_tokens: number; output_tokens: number };
-      };
+      }>((resolve, reject) => {
+        const https = require("node:https");
+        const bodyStr = JSON.stringify(requestBody);
+        const bodyBuf = Buffer.from(bodyStr, "utf-8");
+
+        const req = https.request({
+          hostname: "api.anthropic.com",
+          path: "/v1/messages",
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Content-Length": bodyBuf.length,
+            "x-api-key": apiKey,
+            "anthropic-version": "2023-06-01",
+            "anthropic-beta": "pdfs-2024-09-25",
+          },
+        }, (res: { statusCode: number; on: Function }) => {
+          let data = "";
+          res.on("data", (chunk: string) => { data += chunk; });
+          res.on("end", () => {
+            if ((res.statusCode as number) >= 400) {
+              reject(new Error(`Anthropic API ${res.statusCode}: ${data.slice(0, 300)}`));
+            } else {
+              try { resolve(JSON.parse(data)); }
+              catch { reject(new Error(`Invalid JSON from Anthropic: ${data.slice(0, 200)}`)); }
+            }
+          });
+        });
+
+        req.on("error", (e: Error) => reject(e));
+        req.write(bodyBuf);
+        req.end();
+      });
 
       // Extract tool use block from raw response
       const toolBlock = response.content.find((b) => b.type === "tool_use");
