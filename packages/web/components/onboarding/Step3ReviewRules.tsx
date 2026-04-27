@@ -110,6 +110,8 @@ export function Step3ReviewRules({ programs, tenantId, onNext, onBack }: Step3Pr
   const [extractionError, setExtractionError] = useState("");
   const [extractionCost, setExtractionCost] = useState<{ tokens: number; cost: number } | null>(null);
   const [extractionWarnings, setExtractionWarnings] = useState<string[]>([]);
+  const [documentPreviewUrl, setDocumentPreviewUrl] = useState<string | null>(null);
+  const [documentName, setDocumentName] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleExtract = () => {
@@ -122,6 +124,11 @@ export function Step3ReviewRules({ programs, tenantId, onNext, onBack }: Step3Pr
 
     // Reset the input so the same file can be re-selected
     e.target.value = "";
+
+    // Create preview URL for the document
+    const previewUrl = URL.createObjectURL(file);
+    setDocumentPreviewUrl(previewUrl);
+    setDocumentName(file.name);
 
     setExtracting(true);
     setExtractionError("");
@@ -293,23 +300,34 @@ export function Step3ReviewRules({ programs, tenantId, onNext, onBack }: Step3Pr
       </p>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Left side: Document Preview placeholder */}
-        <div className="bg-gray-50 border border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center min-h-[500px]">
-          <svg
-            className="w-16 h-16 text-gray-300 mb-3"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={1}
-              d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-            />
-          </svg>
-          <p className="text-sm text-gray-400 font-medium">Document Preview</p>
-          <p className="text-xs text-gray-300 mt-1">PDF viewer will render here</p>
+        {/* Left side: Document Preview */}
+        <div className="bg-gray-50 border border-gray-300 rounded-lg min-h-[500px] flex flex-col">
+          {documentPreviewUrl ? (
+            <>
+              <div className="bg-gray-100 border-b border-gray-300 px-3 py-2 rounded-t-lg flex items-center justify-between">
+                <span className="text-xs font-medium text-gray-600 truncate">{documentName}</span>
+                <button
+                  className="text-xs text-blue-600 hover:text-blue-700"
+                  onClick={() => window.open(documentPreviewUrl, "_blank")}
+                >
+                  Open in new tab
+                </button>
+              </div>
+              <iframe
+                src={documentPreviewUrl}
+                className="flex-1 w-full rounded-b-lg"
+                title="Document Preview"
+              />
+            </>
+          ) : (
+            <div className="flex-1 flex flex-col items-center justify-center border border-dashed border-gray-300 rounded-lg m-1">
+              <svg className="w-16 h-16 text-gray-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              <p className="text-sm text-gray-400 font-medium">Document Preview</p>
+              <p className="text-xs text-gray-300 mt-1">Click &quot;Extract with AI&quot; to upload and analyze a document</p>
+            </div>
+          )}
         </div>
 
         {/* Right side: Guideline form */}
