@@ -186,25 +186,23 @@ class ClaudeVisionProcessor implements DocumentProcessor {
         }
       }
 
-      // Fetch document as base64
-      const fileResponse = await fetch(input.fileUrl);
-      if (!fileResponse.ok) {
-        return {
-          success: false,
-          error: `Failed to fetch document: ${fileResponse.status} ${fileResponse.statusText}`,
-        };
-      }
-
-      const buffer = await fileResponse.arrayBuffer();
-      const base64 = Buffer.from(buffer).toString("base64");
-
-      // Determine media type
-      const mediaType = this.resolveMediaType(input.mimeType);
-      if (!mediaType) {
-        return {
-          success: false,
-          error: `Unsupported media type: ${input.mimeType}`,
-        };
+      // Get base64 data — either from data URL or by fetching
+      let base64: string;
+      if (input.fileUrl.startsWith("data:")) {
+        // Data URL: extract base64 portion after the comma
+        const commaIdx = input.fileUrl.indexOf(",");
+        base64 = commaIdx >= 0 ? input.fileUrl.slice(commaIdx + 1) : input.fileUrl;
+      } else {
+        // Regular URL: fetch and convert
+        const fileResponse = await fetch(input.fileUrl);
+        if (!fileResponse.ok) {
+          return {
+            success: false,
+            error: `Failed to fetch document: ${fileResponse.status} ${fileResponse.statusText}`,
+          };
+        }
+        const buffer = await fileResponse.arrayBuffer();
+        base64 = Buffer.from(buffer).toString("base64");
       }
 
       const anthropic = getClient();
@@ -217,20 +215,36 @@ class ClaudeVisionProcessor implements DocumentProcessor {
         },
       ];
 
-      const userContent: Anthropic.ContentBlockParam[] = [
-        {
-          type: "image",
+      // Build content block based on document type
+      const isPdf = input.mimeType === "application/pdf";
+      const userContent: Anthropic.ContentBlockParam[] = [];
+
+      if (isPdf) {
+        // PDFs use the document type (native Anthropic support)
+        userContent.push({
+          type: "document" as "image",
           source: {
             type: "base64",
-            media_type: mediaType,
+            media_type: "application/pdf" as "image/png",
             data: base64,
           },
-        },
-        {
-          type: "text",
-          text: `Extract the underwriting guideline rules from this ${input.category} document for the ${input.program ?? "general"} program. File: ${input.fileName}`,
-        },
-      ];
+        } as Anthropic.ContentBlockParam);
+      } else {
+        // Images use the image type
+        const mediaType = this.resolveMediaType(input.mimeType);
+        if (!mediaType) {
+          return { success: false, error: `Unsupported media type: ${input.mimeType}` };
+        }
+        userContent.push({
+          type: "image",
+          source: { type: "base64", media_type: mediaType, data: base64 },
+        });
+      }
+
+      userContent.push({
+        type: "text",
+        text: `Extract the underwriting guideline rules from this ${input.category} document for the ${input.program ?? "general"} program. File: ${input.fileName}`,
+      });
 
       const response = await anthropic.messages.create({
         model: VISION_MODEL,
