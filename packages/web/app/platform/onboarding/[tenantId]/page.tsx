@@ -62,7 +62,7 @@ export default async function OnboardingPage({ params }: PageProps) {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-5xl mx-auto py-8 px-4">
+      <div className="max-w-7xl mx-auto py-8 px-6">
         {/* Header */}
         <div className="mb-6">
           <div className="flex items-center gap-3 mb-1">

@@ -81,7 +81,7 @@ export function Step4ConfigureSettings({ lenderType, initialData, onNext, onBack
   return (
     <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-8">
       <h2 className="text-xl font-bold text-gray-900 mb-1">Configure Settings</h2>
-      <p className="text-sm text-gray-500 mb-6">
+      <p className="text-sm text-gray-500 mb-8">
         Set SLA targets and agent behavior for this lender.
       </p>
 
@@ -99,7 +99,7 @@ export function Step4ConfigureSettings({ lenderType, initialData, onNext, onBack
             <input
               type="number"
               min={1}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full border border-gray-300 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               value={queue}
               onChange={(e) => setQueue(parseInt(e.target.value, 10) || 1)}
             />
@@ -109,7 +109,7 @@ export function Step4ConfigureSettings({ lenderType, initialData, onNext, onBack
             <input
               type="number"
               min={1}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full border border-gray-300 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               value={processing}
               onChange={(e) => setProcessing(parseInt(e.target.value, 10) || 1)}
             />
@@ -119,7 +119,7 @@ export function Step4ConfigureSettings({ lenderType, initialData, onNext, onBack
             <input
               type="number"
               min={1}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full border border-gray-300 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               value={review}
               onChange={(e) => setReview(parseInt(e.target.value, 10) || 1)}
             />
@@ -129,7 +129,7 @@ export function Step4ConfigureSettings({ lenderType, initialData, onNext, onBack
             <input
               type="number"
               min={1}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full border border-gray-300 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               value={total}
               onChange={(e) => setTotal(parseInt(e.target.value, 10) || 1)}
             />
@@ -162,7 +162,7 @@ export function Step4ConfigureSettings({ lenderType, initialData, onNext, onBack
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Risk Tolerance</label>
             <select
-              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+              className="w-full border border-gray-300 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
               value={riskTolerance}
               onChange={(e) => setRiskTolerance(e.target.value as typeof riskTolerance)}
             >

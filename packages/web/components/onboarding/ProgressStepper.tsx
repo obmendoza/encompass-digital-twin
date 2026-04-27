@@ -30,7 +30,7 @@ export function ProgressStepper({ currentStep }: ProgressStepperProps) {
               <div className="flex flex-col items-center">
                 <div
                   className={`
-                    w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold
+                    w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold
                     transition-colors duration-200
                     ${isComplete ? "bg-emerald-500 text-white" : ""}
                     ${isActive ? "bg-blue-600 text-white ring-4 ring-blue-100" : ""}
@@ -59,7 +59,7 @@ export function ProgressStepper({ currentStep }: ProgressStepperProps) {
 
               {/* Connecting line */}
               {i < STEPS.length - 1 && (
-                <div className="flex-1 mx-2 mt-[-1.25rem]">
+                <div className="flex-1 mx-3 mt-[-1.25rem]">
                   <div
                     className={`h-0.5 w-full transition-colors duration-200 ${
                       stepNum < currentStep ? "bg-emerald-500" : "bg-gray-200"

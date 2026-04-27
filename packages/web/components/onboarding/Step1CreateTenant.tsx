@@ -79,19 +79,19 @@ export function Step1CreateTenant({ initialData, onNext }: Step1Props) {
   return (
     <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-8">
       <h2 className="text-xl font-bold text-gray-900 mb-1">Create Lender Tenant</h2>
-      <p className="text-sm text-gray-500 mb-6">
+      <p className="text-sm text-gray-500 mb-8">
         Configure the basic details for this lender organization.
       </p>
 
       {/* Grid: Name + Slug, Email + Phone */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-8">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
             Lender Name <span className="text-red-500">*</span>
           </label>
           <input
             type="text"
-            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="w-full border border-gray-300 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             placeholder="Acme Lending"
             value={tenantName}
             onChange={(e) => setTenantName(e.target.value)}
@@ -121,7 +121,7 @@ export function Step1CreateTenant({ initialData, onNext }: Step1Props) {
           </label>
           <input
             type="email"
-            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="w-full border border-gray-300 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             placeholder="admin@acmelending.com"
             value={contactEmail}
             onChange={(e) => setContactEmail(e.target.value)}
@@ -131,7 +131,7 @@ export function Step1CreateTenant({ initialData, onNext }: Step1Props) {
           <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
           <input
             type="tel"
-            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="w-full border border-gray-300 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             placeholder="(555) 123-4567"
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
@@ -145,7 +145,7 @@ export function Step1CreateTenant({ initialData, onNext }: Step1Props) {
           Lender Type <span className="text-red-500">*</span>
         </label>
         <select
-          className="w-full max-w-xs border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+          className="w-full max-w-xs border border-gray-300 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
           value={lenderType}
           onChange={(e) => setLenderType(e.target.value)}
         >
@@ -163,7 +163,7 @@ export function Step1CreateTenant({ initialData, onNext }: Step1Props) {
           NQM Programs <span className="text-red-500">*</span>
           <span className="text-gray-400 font-normal ml-2">(select at least one)</span>
         </label>
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
           {NQM_PROGRAMS.map((prog) => (
             <label
               key={prog.value}
