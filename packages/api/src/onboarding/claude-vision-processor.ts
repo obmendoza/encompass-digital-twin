@@ -1,6 +1,7 @@
 // ── Claude Vision Processor — AI-based guideline extraction via tool_use ────
 
 import Anthropic from "@anthropic-ai/sdk";
+import https from "node:https";
 import type { ProcessorInput, ProcessorOutput } from "@twin/core";
 import type { GuidelineRules } from "@twin/core";
 import { registerProcessor } from "./document-processor.js";
@@ -245,7 +246,6 @@ class ClaudeVisionProcessor implements DocumentProcessor {
         content: Array<{ type: string; id?: string; name?: string; input?: Record<string, unknown>; text?: string }>;
         usage?: { input_tokens: number; output_tokens: number };
       }>((resolve, reject) => {
-        const https = require("node:https");
         const bodyStr = JSON.stringify(requestBody);
         const bodyBuf = Buffer.from(bodyStr, "utf-8");
 
