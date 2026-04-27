@@ -201,22 +201,19 @@ class ClaudeVisionProcessor implements DocumentProcessor {
         return { success: false, error: "No document data provided" };
       }
 
-      const anthropic = getClient();
+      // Use raw fetch to Anthropic API to avoid SDK encoding issues
+      const apiKey = process.env.ANTHROPIC_API_KEY;
+      if (!apiKey) {
+        return { success: false, error: "ANTHROPIC_API_KEY not set" };
+      }
 
-      // Determine how to send the document to Claude
       const isPdf = input.mimeType === "application/pdf";
-
-      // Build message content — use document type for PDFs, image for images
       const contentBlocks: unknown[] = [];
 
       if (isPdf) {
         contentBlocks.push({
           type: "document",
-          source: {
-            type: "base64",
-            media_type: "application/pdf",
-            data: base64,
-          },
+          source: { type: "base64", media_type: "application/pdf", data: base64 },
         });
       } else {
         const mediaType = this.resolveMediaType(input.mimeType);
@@ -234,20 +231,39 @@ class ClaudeVisionProcessor implements DocumentProcessor {
         text: `Extract the underwriting guideline rules from this ${input.category} document for the ${input.program ?? "general"} program. File: ${input.fileName}`,
       });
 
-      const response = await anthropic.messages.create({
+      const requestBody = {
         model: VISION_MODEL,
         max_tokens: 4096,
         system: SYSTEM_PROMPT,
         tools: [EXTRACT_GUIDELINES_TOOL],
         tool_choice: { type: "tool", name: "extract_guideline_rules" },
-        messages: [{ role: "user", content: contentBlocks as Anthropic.MessageCreateParams["messages"][0]["content"] }],
+        messages: [{ role: "user", content: contentBlocks }],
+      };
+
+      const httpResponse = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+          "anthropic-beta": "pdfs-2024-09-25",
+        },
+        body: JSON.stringify(requestBody),
       });
 
-      // Extract tool use block
-      const toolBlock = response.content.find(
-        (b): b is Anthropic.ToolUseBlock => b.type === "tool_use",
-      );
-      if (!toolBlock) {
+      if (!httpResponse.ok) {
+        const errBody = await httpResponse.text();
+        return { success: false, error: `Anthropic API ${httpResponse.status}: ${errBody.slice(0, 300)}` };
+      }
+
+      const response = await httpResponse.json() as {
+        content: Array<{ type: string; id?: string; name?: string; input?: Record<string, unknown>; text?: string }>;
+        usage?: { input_tokens: number; output_tokens: number };
+      };
+
+      // Extract tool use block from raw response
+      const toolBlock = response.content.find((b) => b.type === "tool_use");
+      if (!toolBlock || !toolBlock.input) {
         return {
           success: false,
           error: "No tool_use block in LLM response",
