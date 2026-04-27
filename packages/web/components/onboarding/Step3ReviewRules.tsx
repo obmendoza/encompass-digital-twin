@@ -128,14 +128,18 @@ export function Step3ReviewRules({ programs, tenantId, onNext, onBack }: Step3Pr
     setExtractionWarnings([]);
 
     try {
-      // Read file as base64 (chunked to avoid stack overflow on large files)
-      const buffer = await file.arrayBuffer();
-      const bytes = new Uint8Array(buffer);
-      let binary = "";
-      for (let i = 0; i < bytes.length; i++) {
-        binary += String.fromCharCode(bytes[i]);
-      }
-      const base64 = btoa(binary);
+      // Read file as base64 using FileReader (handles binary data correctly)
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const dataUrl = reader.result as string;
+          // Strip the "data:mime;base64," prefix to get raw base64
+          const base64Data = dataUrl.split(",")[1] ?? "";
+          resolve(base64Data);
+        };
+        reader.onerror = () => reject(new Error("Failed to read file"));
+        reader.readAsDataURL(file);
+      });
 
       // Call extraction API
       const res = await fetch(`/api/onboarding/${tenantId}/extract`, {
