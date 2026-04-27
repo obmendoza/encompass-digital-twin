@@ -237,13 +237,28 @@ const EXTRACT_GUIDELINES_TOOL: Anthropic.Tool = {
           maxPrepayPct: { type: "number", description: "Maximum prepayment penalty percentage" },
         },
       },
+      additionalParameters: {
+        type: "array",
+        description: "ANY additional underwriting parameters found in the document that don't fit the structured fields above. Extract EVERYTHING — every threshold, requirement, restriction, exception, note, matrix entry, tier, overlay, or rule. Each item should have a name, value, category, and the exact text from the document.",
+        items: {
+          type: "object",
+          properties: {
+            name: { type: "string", description: "Parameter name (e.g. 'Max Cash-Out Amount', 'Interest-Only Allowed', 'Non-Warrantable Condo Policy')" },
+            value: { type: "string", description: "Parameter value as found in the document" },
+            category: { type: "string", description: "Category: credit, income, ltv, property, loan_terms, documentation, compliance, pricing, eligibility, exceptions, other" },
+            sourceText: { type: "string", description: "Exact text or excerpt from the document where this was found" },
+            confidence: { type: "number", description: "Confidence score 0-1" },
+          },
+          required: ["name", "value", "category", "confidence"],
+        },
+      },
       fieldConfidence: {
         type: "object",
         description: "Per-field confidence scores (0-1). Keys should be dot-path field names like 'credit.minFico', 'ltv.maxLtv', 'seasoning.bankruptcyMonths'",
         additionalProperties: { type: "number" },
       },
     },
-    required: ["credit", "income", "ltv", "reserves", "documents", "fieldConfidence"],
+    required: ["credit", "income", "ltv", "reserves", "documents", "additionalParameters", "fieldConfidence"],
   },
 };
 
@@ -251,7 +266,16 @@ const EXTRACT_GUIDELINES_TOOL: Anthropic.Tool = {
 
 const SYSTEM_PROMPT = [
   "You are an expert mortgage underwriting guideline analyst.",
-  "Your job is to extract structured guideline rules from lender product guideline documents.",
+  "Your job is to extract EVERY underwriting parameter from lender product guideline documents.",
+  "",
+  "## CRITICAL: Extract EVERYTHING",
+  "- Your goal is 100% extraction — miss NOTHING from the document",
+  "- Extract every numeric threshold, matrix entry, tier, requirement, restriction, exception, overlay, and rule",
+  "- If a parameter fits one of the structured fields (credit, income, ltv, reserves, documents, compliance, seasoning, etc.), put it there",
+  "- If a parameter does NOT fit any structured field, put it in additionalParameters — this is your catch-all",
+  "- The additionalParameters array should contain EVERY rule, note, exception, special requirement, or condition that doesn't have a dedicated field",
+  "- Examples of what goes in additionalParameters: interest-only eligibility, cash-out limits, non-warrantable condo rules, gift fund restrictions, self-employed requirements, asset seasoning, rate lock policies, appraisal requirements, insurance requirements, escrow waivers, ARM terms, balloon terms, subordinate financing rules, etc.",
+  "- When in doubt, INCLUDE the parameter in additionalParameters rather than omitting it",
   "",
   "## Extraction Rules",
   "- Extract all numeric thresholds, requirements, and conditions you can identify",
@@ -260,6 +284,7 @@ const SYSTEM_PROMPT = [
   "  - Clearly stated in the document: >= 0.9",
   "  - Inferred from context: 0.5-0.8",
   "  - Guessed or uncertain: < 0.5",
+  "- For additionalParameters, include the sourceText — the exact excerpt from the document",
   "",
   "## Field Formats",
   "- FICO scores: integer values 300-850",

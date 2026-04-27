@@ -172,6 +172,7 @@ export function Step3ReviewRules({ programs, tenantId, onNext, onBack }: Step3Pr
   const [extractionWarnings, setExtractionWarnings] = useState<string[]>([]);
   const [documentPreviewUrl, setDocumentPreviewUrl] = useState<string | null>(null);
   const [documentName, setDocumentName] = useState<string | null>(null);
+  const [additionalParams, setAdditionalParams] = useState<Array<{ name: string; value: string; category: string; sourceText?: string; confidence: number }>>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleExtract = () => {
@@ -230,6 +231,12 @@ export function Step3ReviewRules({ programs, tenantId, onNext, onBack }: Step3Pr
       // Map extracted rules to form fields with confidence
       if (result.extractedRules) {
         mapExtractionToForm(result.extractedRules, result.perFieldConfidence ?? {});
+
+        // Capture additional parameters (catch-all for everything not in structured fields)
+        const additional = (result.extractedRules as Record<string, unknown>).additionalParameters;
+        if (Array.isArray(additional) && additional.length > 0) {
+          setAdditionalParams(additional as Array<{ name: string; value: string; category: string; sourceText?: string; confidence: number }>);
+        }
       }
 
       if (result.warnings && result.warnings.length > 0) {
@@ -422,7 +429,7 @@ export function Step3ReviewRules({ programs, tenantId, onNext, onBack }: Step3Pr
   };
 
   const handleApprove = () => {
-    onNext({ guidelines, status: "approved" });
+    onNext({ guidelines, status: "approved", additionalParameters: additionalParams });
   };
 
   return (
@@ -963,6 +970,54 @@ export function Step3ReviewRules({ programs, tenantId, onNext, onBack }: Step3Pr
           </div>
         </div>
       </div>
+
+      {/* Additional Parameters — catch-all for everything not in structured fields */}
+      {additionalParams.length > 0 && (
+        <div className="mt-6 bg-white border border-gray-200 rounded-lg shadow-sm p-6">
+          <h3 className="text-sm font-bold text-gray-800 uppercase tracking-wider mb-3 border-b border-gray-200 pb-2">
+            Additional Parameters ({additionalParams.length} extracted)
+          </h3>
+          <p className="text-xs text-gray-500 mb-3">
+            These parameters were found in the document but don&apos;t fit the structured fields above. Review them to ensure nothing important is missed.
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-200 text-left text-xs text-gray-500 uppercase">
+                  <th className="py-2 pr-3">Parameter</th>
+                  <th className="py-2 pr-3">Value</th>
+                  <th className="py-2 pr-3">Category</th>
+                  <th className="py-2 pr-3">Confidence</th>
+                  <th className="py-2">Source Text</th>
+                </tr>
+              </thead>
+              <tbody>
+                {additionalParams.map((param, i) => (
+                  <tr key={i} className="border-b border-gray-100 hover:bg-gray-50">
+                    <td className="py-2 pr-3 font-medium text-gray-900">{param.name}</td>
+                    <td className="py-2 pr-3 text-gray-700">{param.value}</td>
+                    <td className="py-2 pr-3">
+                      <span className="inline-block px-2 py-0.5 text-xs rounded-full bg-gray-100 text-gray-600">
+                        {param.category}
+                      </span>
+                    </td>
+                    <td className="py-2 pr-3">
+                      <span className={`inline-block w-2.5 h-2.5 rounded-full ${
+                        param.confidence >= 0.8 ? "bg-green-500" :
+                        param.confidence >= 0.5 ? "bg-yellow-400" : "bg-red-500"
+                      }`} />
+                      <span className="ml-1 text-xs text-gray-500">{Math.round(param.confidence * 100)}%</span>
+                    </td>
+                    <td className="py-2 text-xs text-gray-400 max-w-[300px] truncate" title={param.sourceText}>
+                      {param.sourceText ?? "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Extract with AI */}
       <div className="mt-6">
