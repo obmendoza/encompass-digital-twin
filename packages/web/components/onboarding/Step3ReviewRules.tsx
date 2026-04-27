@@ -20,11 +20,6 @@ const QUALIFYING_METHODS = [
 
 type Confidence = "green" | "yellow" | "red" | "gray";
 
-interface GuidelineField {
-  value: string | number | string[];
-  confidence: Confidence;
-}
-
 interface LtvMatrixRow {
   minFico: number;
   maxFico: number;
@@ -35,6 +30,11 @@ interface LtvMatrixRow {
 interface ReserveTierRow {
   maxLtv: number;
   minMonths: number;
+}
+
+interface GuidelineField {
+  value: string | number | string[] | Record<string, number> | LtvMatrixRow[] | ReserveTierRow[];
+  confidence: Confidence;
 }
 
 interface GuidelineData {
