@@ -92,14 +92,6 @@ export function Step7GoLiveChecklist({ stepData, onNext, onBack }: Step7Props) {
         Verify all required configuration is complete before activation.
       </p>
 
-      {/* Debug: show what data the checklist sees */}
-      <details className="mb-4 text-xs text-gray-400">
-        <summary>Debug: step data received</summary>
-        <pre className="bg-gray-100 p-2 rounded mt-1 overflow-auto max-h-40">
-          {JSON.stringify(stepData, null, 2)}
-        </pre>
-      </details>
-
       {/* Can Activate badge */}
       <div className="mb-8">
         {allRequiredPassed ? (
