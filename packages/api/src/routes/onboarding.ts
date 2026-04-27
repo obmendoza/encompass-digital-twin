@@ -9,6 +9,11 @@ import {
   updateOnboardingSession,
   completeOnboardingSession,
 } from "../onboarding/session-manager.js";
+import { getProcessor } from "../onboarding/document-processor.js";
+
+// Side-effect imports: register processors at load time
+import "../onboarding/claude-vision-processor.js";
+import "../onboarding/manual-entry-processor.js";
 
 export function registerOnboardingRoutes(app: FastifyInstance): void {
   // Create tenant + onboarding session (super_admin only)
@@ -213,5 +218,50 @@ export function registerOnboardingRoutes(app: FastifyInstance): void {
     await completeOnboardingSession(tenantId);
 
     return { status: "active", tenantId };
+  });
+
+  // Extract guideline rules from a document using Claude Vision (super_admin only)
+  app.post<{ Params: { tenantId: string } }>("/onboarding/:tenantId/extract", async (req, reply) => {
+    const ctx = getTenantContext();
+    if (!ctx.isSuperAdmin) return reply.code(403).send({ error: "super_admin required" });
+
+    const { tenantId } = req.params;
+    const body = req.body as {
+      documentUrl?: string;
+      documentBase64?: string;
+      mimeType: string;
+      category: string;
+      program?: string;
+      fileName?: string;
+    };
+
+    if (!body.mimeType || !body.category) {
+      return reply.code(400).send({ error: "mimeType and category are required" });
+    }
+
+    if (!body.documentUrl && !body.documentBase64) {
+      return reply.code(400).send({ error: "Either documentUrl or documentBase64 is required" });
+    }
+
+    const processor = getProcessor("claude-vision");
+    if (!processor) {
+      return reply.code(500).send({ error: "Claude Vision processor not available" });
+    }
+
+    // Build fileUrl: use provided URL or construct a data URL from base64
+    const fileUrl = body.documentUrl
+      ? body.documentUrl
+      : `data:${body.mimeType};base64,${body.documentBase64}`;
+
+    const result = await processor.process({
+      fileUrl,
+      fileName: body.fileName ?? "upload.pdf",
+      mimeType: body.mimeType,
+      category: body.category,
+      program: body.program,
+      tenantId,
+    });
+
+    return reply.code(result.success ? 200 : 422).send(result);
   });
 }

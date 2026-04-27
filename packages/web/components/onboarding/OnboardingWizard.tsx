@@ -196,6 +196,7 @@ export function OnboardingWizard({ session, tenant }: OnboardingWizardProps) {
         return (
           <Step3ReviewRules
             programs={tenant.settings?.programs as string[] ?? []}
+            tenantId={session.tenantId}
             onNext={(data) => goNext({ step3: data })}
             onBack={goBack}
           />

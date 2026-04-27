@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 
 const DISPUTE_POLICIES = [
   { value: "exclude_all", label: "Exclude All Disputes" },
@@ -53,6 +53,7 @@ export interface Step3Data {
 
 interface Step3Props {
   programs: string[];
+  tenantId: string;
   onNext: (data: Step3Data) => void;
   onBack: () => void;
 }
@@ -103,8 +104,148 @@ function defaultGuidelines(): GuidelineData {
   };
 }
 
-export function Step3ReviewRules({ programs, onNext, onBack }: Step3Props) {
+export function Step3ReviewRules({ programs, tenantId, onNext, onBack }: Step3Props) {
   const [guidelines, setGuidelines] = useState<GuidelineData>(defaultGuidelines);
+  const [extracting, setExtracting] = useState(false);
+  const [extractionError, setExtractionError] = useState("");
+  const [extractionCost, setExtractionCost] = useState<{ tokens: number; cost: number } | null>(null);
+  const [extractionWarnings, setExtractionWarnings] = useState<string[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleExtract = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Reset the input so the same file can be re-selected
+    e.target.value = "";
+
+    setExtracting(true);
+    setExtractionError("");
+    setExtractionWarnings([]);
+
+    try {
+      // Read file as base64 (chunked to avoid stack overflow on large files)
+      const buffer = await file.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      let binary = "";
+      for (let i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      const base64 = btoa(binary);
+
+      // Call extraction API
+      const res = await fetch(`/api/onboarding/${tenantId}/extract`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          documentBase64: base64,
+          mimeType: file.type || "application/pdf",
+          category: "guideline_manual",
+          program: programs[0] ?? "BankStatement12",
+          fileName: file.name,
+        }),
+      });
+
+      const result = await res.json();
+
+      if (!result.success) {
+        throw new Error(result.error ?? "Extraction failed");
+      }
+
+      // Map extracted rules to form fields with confidence
+      if (result.extractedRules) {
+        mapExtractionToForm(result.extractedRules, result.perFieldConfidence ?? {});
+      }
+
+      if (result.warnings && result.warnings.length > 0) {
+        setExtractionWarnings(result.warnings);
+      }
+
+      if (result.tokensUsed) {
+        setExtractionCost({
+          tokens: (result.tokensUsed.input ?? 0) + (result.tokensUsed.output ?? 0),
+          cost: result.cost ?? 0,
+        });
+      }
+    } catch (err) {
+      setExtractionError(err instanceof Error ? err.message : "Extraction failed");
+    } finally {
+      setExtracting(false);
+    }
+  };
+
+  const mapExtractionToForm = (
+    rules: Record<string, unknown>,
+    confidence: Record<string, number>,
+  ) => {
+    const toConfidence = (score: number | undefined): Confidence => {
+      if (score === undefined) return "gray";
+      if (score >= 0.8) return "green";
+      if (score >= 0.5) return "yellow";
+      return "red";
+    };
+
+    setGuidelines((prev) => {
+      const next = { ...prev };
+
+      // Credit — processor uses maxLatePayments30/60/90, form uses maxLate30d/60d/90d
+      const credit = rules.credit as Record<string, unknown> | undefined;
+      if (credit) {
+        if (credit.minFico !== undefined) {
+          next.credit = { ...next.credit, minFico: { value: Number(credit.minFico), confidence: toConfidence(confidence["credit.minFico"]) } };
+        }
+        if (credit.maxLatePayments30 !== undefined) {
+          next.credit = { ...next.credit, maxLate30d: { value: Number(credit.maxLatePayments30), confidence: toConfidence(confidence["credit.maxLatePayments30"]) } };
+        }
+        if (credit.maxLatePayments60 !== undefined) {
+          next.credit = { ...next.credit, maxLate60d: { value: Number(credit.maxLatePayments60), confidence: toConfidence(confidence["credit.maxLatePayments60"]) } };
+        }
+        if (credit.maxLatePayments90 !== undefined) {
+          next.credit = { ...next.credit, maxLate90d: { value: Number(credit.maxLatePayments90), confidence: toConfidence(confidence["credit.maxLatePayments90"]) } };
+        }
+      }
+
+      // Income — processor uses methods, form uses qualifyingMethods
+      const income = rules.income as Record<string, unknown> | undefined;
+      if (income) {
+        if (income.methods !== undefined && Array.isArray(income.methods)) {
+          // Map processor method names to form values where possible
+          const methodMap: Record<string, string> = {
+            BankStatementDeposits: "bank_statements",
+            "1099Gross": "1099",
+            PnLCPACertified: "pnl",
+            TraditionalDocs: "full_doc",
+            AssetDepletionMonths: "asset_depletion",
+            DSCRCoverage: "dscr",
+          };
+          const mapped = (income.methods as string[])
+            .map((m) => methodMap[m] ?? m)
+            .filter((m) => QUALIFYING_METHODS.some((qm) => qm.value === m));
+          if (mapped.length > 0) {
+            next.income = { ...next.income, qualifyingMethods: { value: mapped, confidence: toConfidence(confidence["income.methods"]) } };
+          }
+        }
+      }
+
+      // LTV
+      const ltv = rules.ltv as Record<string, unknown> | undefined;
+      if (ltv?.maxLtv !== undefined) {
+        next.ltv = { ...next.ltv, maxLtv: { value: Number(ltv.maxLtv), confidence: toConfidence(confidence["ltv.maxLtv"]) } };
+      }
+
+      // Reserves
+      const reserves = rules.reserves as Record<string, unknown> | undefined;
+      if (reserves?.minMonths !== undefined) {
+        next.reserves = { ...next.reserves, minMonths: { value: Number(reserves.minMonths), confidence: toConfidence(confidence["reserves.minMonths"]) } };
+      }
+
+      return next;
+    });
+  };
 
   const updateField = (
     section: keyof GuidelineData,
@@ -356,15 +497,51 @@ export function Step3ReviewRules({ programs, onNext, onBack }: Step3Props) {
         </div>
       </div>
 
-      {/* Extract with AI button */}
+      {/* Extract with AI */}
       <div className="mt-6">
+        {/* Hidden file input for document selection */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".pdf,.png,.jpg,.jpeg"
+          className="hidden"
+          onChange={handleFileSelected}
+        />
+
         <button
-          className="px-4 py-2 rounded-md text-sm font-medium bg-gray-100 text-gray-400 cursor-not-allowed"
-          disabled
-          title="Coming soon"
+          className={`px-4 py-2.5 rounded-md text-sm font-medium transition-colors ${
+            extracting
+              ? "bg-blue-100 text-blue-400 cursor-wait"
+              : "bg-blue-600 text-white hover:bg-blue-700 shadow-sm"
+          }`}
+          disabled={extracting}
+          onClick={handleExtract}
         >
-          Extract with AI (Coming soon)
+          {extracting ? "Extracting with Claude Vision..." : "Extract with AI"}
         </button>
+
+        {extractionError && (
+          <div className="mt-2 p-3 bg-red-50 border border-red-200 rounded-md text-sm text-red-700">
+            {extractionError}
+          </div>
+        )}
+
+        {extractionWarnings.length > 0 && (
+          <div className="mt-2 p-3 bg-yellow-50 border border-yellow-200 rounded-md text-sm text-yellow-800">
+            <p className="font-medium mb-1">Warnings:</p>
+            <ul className="list-disc list-inside space-y-0.5">
+              {extractionWarnings.map((w, i) => (
+                <li key={i}>{w}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {extractionCost && (
+          <div className="mt-2 p-2 bg-blue-50 border border-blue-100 rounded-md text-xs text-blue-600">
+            Extraction used {extractionCost.tokens.toLocaleString()} tokens (~${extractionCost.cost.toFixed(2)})
+          </div>
+        )}
       </div>
 
       {/* Navigation */}
