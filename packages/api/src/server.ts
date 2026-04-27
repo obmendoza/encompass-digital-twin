@@ -48,6 +48,7 @@ export function buildServer(opts: BuildOpts = {}): { app: FastifyInstance; store
     },
     requestIdHeader: "x-request-id",
     genReqId: () => randomUUID(),
+    bodyLimit: 50 * 1024 * 1024, // 50MB — needed for base64 document extraction
   });
   app.register(multipart, { limits: { fileSize: 20 * 1024 * 1024 } }); // 20MB max
   const store = createStore({ scenarios, now: opts.now });

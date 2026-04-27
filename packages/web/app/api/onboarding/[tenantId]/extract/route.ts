@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 
+// Allow large body for base64-encoded documents (up to ~35MB file = ~47MB base64)
+export const maxDuration = 120; // 2 min timeout for AI extraction
+
 const apiUrl = process.env.API_URL ?? process.env.TWIN_API_URL ?? "http://127.0.0.1:4000";
 
 export async function POST(

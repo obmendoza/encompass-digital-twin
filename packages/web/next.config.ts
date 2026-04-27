@@ -1,6 +1,11 @@
 import type { NextConfig } from "next";
 const config: NextConfig = {
-  experimental: { externalDir: true },
+  experimental: {
+    externalDir: true,
+    serverActions: {
+      bodySizeLimit: "50mb",
+    },
+  },
   transpilePackages: ["@twin/core"],
   typescript: {
     // Type checking verified locally before each deploy.
