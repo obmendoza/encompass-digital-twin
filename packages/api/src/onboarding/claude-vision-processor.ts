@@ -203,7 +203,7 @@ class ClaudeVisionProcessor implements DocumentProcessor {
       }
 
       // Use raw fetch to Anthropic API to avoid SDK encoding issues
-      const apiKey = process.env.ANTHROPIC_API_KEY;
+      const apiKey = (process.env.ANTHROPIC_API_KEY ?? "").trim();
       if (!apiKey) {
         return { success: false, error: "ANTHROPIC_API_KEY not set" };
       }
