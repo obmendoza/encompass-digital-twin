@@ -3,6 +3,7 @@
 import { useState, useCallback } from "react";
 import { ProgressStepper } from "./ProgressStepper";
 import { Step1CreateTenant, type Step1Data } from "./Step1CreateTenant";
+import { Step2UploadDocuments, type UploadedDoc } from "./Step2UploadDocuments";
 import { Step4ConfigureSettings, type Step4Data } from "./Step4ConfigureSettings";
 
 interface OnboardingSession {
@@ -169,6 +170,15 @@ export function OnboardingWizard({ session, tenant }: OnboardingWizardProps) {
           <Step1CreateTenant
             initialData={step1Initial}
             onNext={(data) => goNext({ step1: data })}
+          />
+        );
+      case 2:
+        return (
+          <Step2UploadDocuments
+            programs={tenant.settings?.programs as string[] ?? []}
+            initialDocs={(session.stepData?.step2 as { documents?: UploadedDoc[] })?.documents}
+            onNext={(data) => goNext({ step2: data })}
+            onBack={goBack}
           />
         );
       case 4:
