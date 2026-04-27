@@ -5,6 +5,11 @@ import { ProgressStepper } from "./ProgressStepper";
 import { Step1CreateTenant, type Step1Data } from "./Step1CreateTenant";
 import { Step2UploadDocuments, type UploadedDoc } from "./Step2UploadDocuments";
 import { Step4ConfigureSettings, type Step4Data } from "./Step4ConfigureSettings";
+import { Step3ReviewRules } from "./Step3ReviewRules";
+import { Step5SetupIngestion } from "./Step5SetupIngestion";
+import { Step6CreateUsers } from "./Step6CreateUsers";
+import { Step7GoLiveChecklist } from "./Step7GoLiveChecklist";
+import { Step8Activate } from "./Step8Activate";
 
 interface OnboardingSession {
   id: string;
@@ -181,12 +186,53 @@ export function OnboardingWizard({ session, tenant }: OnboardingWizardProps) {
             onBack={goBack}
           />
         );
+      case 3:
+        return (
+          <Step3ReviewRules
+            programs={tenant.settings?.programs as string[] ?? []}
+            onNext={(data) => goNext({ step3: data })}
+            onBack={goBack}
+          />
+        );
       case 4:
         return (
           <Step4ConfigureSettings
             lenderType={tenant.settings?.lenderType}
             initialData={step4Initial}
             onNext={(data) => goNext({ step4: data })}
+            onBack={goBack}
+          />
+        );
+      case 5:
+        return (
+          <Step5SetupIngestion
+            onNext={(data) => goNext({ step5: data })}
+            onBack={goBack}
+          />
+        );
+      case 6:
+        return (
+          <Step6CreateUsers
+            contactEmail={tenant.settings?.contact?.email}
+            onNext={(data) => goNext({ step6: data })}
+            onBack={goBack}
+          />
+        );
+      case 7:
+        return (
+          <Step7GoLiveChecklist
+            stepData={session.stepData}
+            onNext={(data) => goNext({ step7: data })}
+            onBack={goBack}
+          />
+        );
+      case 8:
+        return (
+          <Step8Activate
+            tenantName={tenant.name}
+            tenantId={session.tenantId}
+            stepData={session.stepData}
+            onNext={(data) => goNext({ step8: data })}
             onBack={goBack}
           />
         );
