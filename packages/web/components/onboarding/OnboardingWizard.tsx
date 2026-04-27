@@ -237,6 +237,7 @@ export function OnboardingWizard({ session, tenant }: OnboardingWizardProps) {
           <Step8Activate
             tenantName={tenant.name}
             tenantId={session.tenantId}
+            tenantSlug={tenant.slug}
             stepData={allStepData}
             onNext={(data) => goNext({ step8: data })}
             onBack={goBack}

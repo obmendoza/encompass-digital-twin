@@ -9,6 +9,7 @@ export interface Step8Data {
 interface Step8Props {
   tenantName: string;
   tenantId: string;
+  tenantSlug: string;
   stepData: Record<string, unknown>;
   onNext: (data: Step8Data) => void;
   onBack: () => void;
@@ -29,7 +30,7 @@ function getSlaStatus(stepData: Record<string, unknown>): boolean {
   return step4?.slaConfirmed === true;
 }
 
-export function Step8Activate({ tenantName, tenantId, stepData, onNext, onBack }: Step8Props) {
+export function Step8Activate({ tenantName, tenantId, tenantSlug, stepData, onNext, onBack }: Step8Props) {
   const [activating, setActivating] = useState(false);
   const [activated, setActivated] = useState(false);
 
@@ -69,7 +70,7 @@ export function Step8Activate({ tenantName, tenantId, stepData, onNext, onBack }
           </p>
           <div className="flex flex-col items-center gap-3">
             <a
-              href={`/t/${encodeURIComponent(tenantName.toLowerCase().replace(/[^a-z0-9]+/g, "-"))}`}
+              href={`/t/${tenantSlug}/admin/settings`}
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-md text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 shadow-sm transition-colors"
             >
               Go to Tenant Dashboard
