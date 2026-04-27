@@ -186,23 +186,19 @@ class ClaudeVisionProcessor implements DocumentProcessor {
         }
       }
 
-      // Get base64 data — either from data URL or by fetching
+      // Get base64 data from metadata (passed directly) or by fetching URL
       let base64: string;
-      if (input.fileUrl.startsWith("data:")) {
-        // Data URL: extract base64 portion after the comma
-        const commaIdx = input.fileUrl.indexOf(",");
-        base64 = commaIdx >= 0 ? input.fileUrl.slice(commaIdx + 1) : input.fileUrl;
-      } else {
-        // Regular URL: fetch and convert
+      if (input.metadata?.base64 && typeof input.metadata.base64 === "string") {
+        base64 = input.metadata.base64;
+      } else if (input.fileUrl && !input.fileUrl.startsWith("data:")) {
         const fileResponse = await fetch(input.fileUrl);
         if (!fileResponse.ok) {
-          return {
-            success: false,
-            error: `Failed to fetch document: ${fileResponse.status} ${fileResponse.statusText}`,
-          };
+          return { success: false, error: `Failed to fetch document: ${fileResponse.status}` };
         }
         const buffer = await fileResponse.arrayBuffer();
         base64 = Buffer.from(buffer).toString("base64");
+      } else {
+        return { success: false, error: "No document data provided" };
       }
 
       const anthropic = getClient();

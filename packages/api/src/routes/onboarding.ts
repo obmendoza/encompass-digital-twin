@@ -248,18 +248,16 @@ export function registerOnboardingRoutes(app: FastifyInstance): void {
       return reply.code(500).send({ error: "Claude Vision processor not available" });
     }
 
-    // Build fileUrl: use provided URL or construct a data URL from base64
-    const fileUrl = body.documentUrl
-      ? body.documentUrl
-      : `data:${body.mimeType};base64,${body.documentBase64}`;
-
     const result = await processor.process({
-      fileUrl,
+      fileUrl: body.documentUrl ?? "",
       fileName: body.fileName ?? "upload.pdf",
       mimeType: body.mimeType,
       category: body.category,
       program: body.program,
       tenantId,
+      metadata: {
+        base64: body.documentBase64,  // pass raw base64 directly
+      },
     });
 
     return reply.code(result.success ? 200 : 422).send(result);
