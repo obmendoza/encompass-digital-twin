@@ -98,6 +98,8 @@ export function OnboardingWizard({ session, tenant }: OnboardingWizardProps) {
   const [version, setVersion] = useState(session.version);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  // Local accumulator of all step data — starts from server, updated as user progresses
+  const [allStepData, setAllStepData] = useState<Record<string, unknown>>(session.stepData ?? {});
 
   const saveStep = useCallback(
     async (step: number, stepData?: Record<string, unknown>) => {
@@ -124,6 +126,10 @@ export function OnboardingWizard({ session, tenant }: OnboardingWizardProps) {
         const result = await res.json();
         setVersion(result.version);
         setCurrentStep(step);
+        // Update local step data accumulator
+        if (stepData) {
+          setAllStepData((prev) => ({ ...prev, ...stepData }));
+        }
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to save");
       } finally {
@@ -181,7 +187,7 @@ export function OnboardingWizard({ session, tenant }: OnboardingWizardProps) {
         return (
           <Step2UploadDocuments
             programs={tenant.settings?.programs as string[] ?? []}
-            initialDocs={(session.stepData?.step2 as { documents?: UploadedDoc[] })?.documents}
+            initialDocs={(allStepData?.step2 as { documents?: UploadedDoc[] })?.documents}
             onNext={(data) => goNext({ step2: data })}
             onBack={goBack}
           />
@@ -221,7 +227,7 @@ export function OnboardingWizard({ session, tenant }: OnboardingWizardProps) {
       case 7:
         return (
           <Step7GoLiveChecklist
-            stepData={session.stepData}
+            stepData={allStepData}
             onNext={(data) => goNext({ step7: data })}
             onBack={goBack}
           />
@@ -231,7 +237,7 @@ export function OnboardingWizard({ session, tenant }: OnboardingWizardProps) {
           <Step8Activate
             tenantName={tenant.name}
             tenantId={session.tenantId}
-            stepData={session.stepData}
+            stepData={allStepData}
             onNext={(data) => goNext({ step8: data })}
             onBack={goBack}
           />
