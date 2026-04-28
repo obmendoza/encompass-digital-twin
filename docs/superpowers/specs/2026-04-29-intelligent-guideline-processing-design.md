@@ -63,8 +63,10 @@ async def with_tenant_tx(tenant_id: str, fn):
     try:
         async with conn.transaction():
             # Set tenant context — same pattern as Node API
+            # Uses set_config() with parameterized query (not string-formatted SET LOCAL)
             await conn.execute(
-                f"SET LOCAL app.current_tenant = '{tenant_id.replace(chr(39), chr(39)+chr(39))}'"
+                "SELECT set_config('app.current_tenant', $1, true)",
+                tenant_id
             )
             return await fn(conn)
     finally:
@@ -899,7 +901,7 @@ CREATE INDEX idx_chat_loan ON chatbot_conversations(tenant_id, loan_id)
 
 **Client-provided history ignored.** Request includes `conversation_id` only. Server fetches prior messages from DB. This prevents history tampering (e.g., injecting fake assistant messages to manipulate follow-up responses).
 
-**Conversation TTL:** Conversations auto-expire after 24 hours of inactivity. Expired conversations retained for analytics but not resumable.
+**Conversation TTL:** Configurable per tenant via `tenant_config.chatbot_conversation_ttl_hours` (default: 168 hours / 7 days). Mortgage UW workflows span days to weeks — a 24h TTL would lose context over weekends. Expired conversations retained for analytics but not resumable.
 
 ### 7.3 Chat Endpoint
 
@@ -1336,15 +1338,17 @@ Before a tenant's KB can be activated, the eval framework runs:
 - 10 questions auto-generated from narrative chunks: extract key assertions from high-confidence chunks, formulate as questions
 - Operator can add custom questions + expected answers
 
-**Metrics calculated:**
-| Metric | Target | Description |
-|--------|--------|-------------|
-| Retrieval recall@5 | ≥ 0.8 | Was the correct chunk/tier in top 5 results? |
-| Citation accuracy | ≥ 0.9 | Does the cited page/section match the actual source? |
-| Answer correctness (matrix) | 1.0 | Matrix-derived answers must exactly match stored tiers |
-| Answer correctness (narrative) | ≥ 0.7 | Judged by operator against known answers |
-| Groundedness score avg | ≥ 0.8 | Average across all eval questions |
-| Abstention rate | ≤ 0.2 | Not too many "I don't know" on answerable questions |
+**Metrics calculated (broken down by question source):**
+
+| Metric | Matrix-Derived Target | Narrative-Derived Target | Operator-Custom Target |
+|--------|----------------------|-------------------------|----------------------|
+| Retrieval recall@5 | ≥ 0.95 | ≥ 0.7 | ≥ 0.7 |
+| Citation accuracy | ≥ 0.95 | ≥ 0.8 | ≥ 0.8 |
+| Answer correctness | 1.0 (must exactly match stored tiers) | ≥ 0.7 (judged by operator) | ≥ 0.7 |
+| Groundedness score avg | ≥ 0.95 | ≥ 0.75 | ≥ 0.75 |
+| Abstention rate | ≤ 0.05 | ≤ 0.25 | ≤ 0.25 |
+
+Metrics reported per source category so operators see *where* the KB is weak, not just aggregate scores. Matrix-derived questions are deterministic — near-perfect results expected. Narrative-derived questions test the real retrieval quality.
 
 **Gate:** Eval must pass before compliance review is enabled. If eval fails, operator can: fix chunks/tiers, re-ingest, or adjust and re-run.
 
