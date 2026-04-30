@@ -79,20 +79,25 @@ export default function ChatPanel({
         throw new Error(data?.detail ?? data?.error ?? `Request failed (${resp.status})`);
       }
 
-      if (data.conversation_id && !conversationId) {
-        setConversationId(data.conversation_id);
+      // API returns { conversationId, result: { answer, sources, ... } }
+      const result = data.result ?? data;
+      const convId = data.conversationId ?? data.conversation_id;
+
+      if (convId && !conversationId) {
+        setConversationId(convId);
       }
 
       const assistantMsg: Message = {
         role: "assistant",
-        content: data.answer ?? data.message ?? "No response received.",
-        sources: data.sources ?? [],
-        groundednessScore: data.groundedness_score,
+        content: result.answer ?? data.answer ?? "No response received.",
+        sources: result.sources ?? data.sources ?? [],
+        groundednessScore: result.groundedness_score ?? result.groundednessScore,
       };
       setMessages((prev) => [...prev, assistantMsg]);
 
-      if (Array.isArray(data.follow_up_suggestions) && data.follow_up_suggestions.length > 0) {
-        setSuggestions(data.follow_up_suggestions);
+      const followUps = result.followUpSuggestions ?? result.follow_up_suggestions ?? [];
+      if (Array.isArray(followUps) && followUps.length > 0) {
+        setSuggestions(followUps);
       }
     } catch (err) {
       const errorMsg: Message = {
