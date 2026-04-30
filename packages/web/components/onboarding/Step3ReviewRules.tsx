@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
+import Step3KBReview from "./Step3KBReview";
 
 const DISPUTE_POLICIES = [
   { value: "exclude_all", label: "Exclude All Disputes" },
@@ -165,6 +166,7 @@ function defaultGuidelines(): GuidelineData {
 }
 
 export function Step3ReviewRules({ programs, tenantId, onNext, onBack }: Step3Props) {
+  const [mode, setMode] = useState<"json" | "kb">("json");
   const [guidelines, setGuidelines] = useState<GuidelineData>(defaultGuidelines);
   const [extracting, setExtracting] = useState(false);
   const [extractionError, setExtractionError] = useState("");
@@ -438,15 +440,44 @@ export function Step3ReviewRules({ programs, tenantId, onNext, onBack }: Step3Pr
 
   return (
     <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-8">
-      <h2 className="text-xl font-bold text-gray-900 mb-1">Review Extracted Rules</h2>
+      <div className="flex items-center justify-between mb-1">
+        <h2 className="text-xl font-bold text-gray-900">Review Extracted Rules</h2>
+        <div className="flex bg-gray-100 rounded-lg p-0.5">
+          <button
+            onClick={() => setMode("json")}
+            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+              mode === "json" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            JSON Fields
+          </button>
+          <button
+            onClick={() => setMode("kb")}
+            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+              mode === "kb" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            Knowledge Base
+          </button>
+        </div>
+      </div>
       <p className="text-sm text-gray-500 mb-6">
-        Review and adjust guideline parameters for{" "}
-        {programs.length > 0
-          ? programs.join(", ")
-          : "your programs"}
-        . Confidence dots indicate AI extraction accuracy.
+        {mode === "json"
+          ? `Review and adjust guideline parameters for ${programs.length > 0 ? programs.join(", ") : "your programs"}. Confidence dots indicate AI extraction accuracy.`
+          : "Ingest guideline PDFs into the knowledge base for RAG-powered search and chatbot."
+        }
       </p>
 
+      {mode === "kb" ? (
+        <Step3KBReview
+          tenantId={tenantId}
+          programs={programs}
+          onApprove={(kbVersion) => {
+            onNext({ guidelines, status: "approved" });
+          }}
+        />
+      ) : (
+      <>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Left side: Document Preview */}
         <div className="bg-gray-50 border border-gray-300 rounded-lg min-h-[500px] flex flex-col">
@@ -1069,6 +1100,8 @@ export function Step3ReviewRules({ programs, tenantId, onNext, onBack }: Step3Pr
           </div>
         )}
       </div>
+      </>
+      )}
 
       {/* Navigation */}
       <div className="flex justify-between mt-8">
