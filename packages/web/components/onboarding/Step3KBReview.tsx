@@ -94,7 +94,12 @@ export default function Step3KBReview({ tenantId, programs, onApprove }: Step3KB
         method: "POST",
         body: formData,
       });
-      const data = await resp.json();
+      const text = await resp.text();
+      if (!text) {
+        console.error("Empty response from matrix ingestion — likely timed out");
+        return;
+      }
+      const data = JSON.parse(text);
       if (resp.ok) {
         setIngestResults((prev) => [...prev, {
           documentType: "rate_sheet",
