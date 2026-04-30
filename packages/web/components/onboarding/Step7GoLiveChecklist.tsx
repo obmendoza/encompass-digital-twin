@@ -63,6 +63,10 @@ function evaluateChecks(stepData: Record<string, unknown>): {
   const step5 = stepData.step5 as { apiKeyGenerated?: boolean; skipped?: boolean } | undefined;
   const apiKeyGenerated = step5?.apiKeyGenerated === true;
 
+  // Check Step 3 KB mode — if KB was used, it's an additional check
+  const step3Kb = stepData.step3kb as { kbVersion?: number } | undefined;
+  const kbIngested = !!step3Kb?.kbVersion;
+
   return {
     required: [
       { label: "At least 1 program has approved guidelines", passed: guidelinesApproved, required: true },
@@ -72,6 +76,7 @@ function evaluateChecks(stepData: Record<string, unknown>): {
     ],
     optional: [
       { label: "API key generated for ingestion", passed: apiKeyGenerated, required: false },
+      { label: "Knowledge base ingested and approved", passed: kbIngested, required: false },
       { label: "Test loan suite passed", passed: false, required: false },
     ],
   };
