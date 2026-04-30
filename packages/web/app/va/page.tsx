@@ -5,6 +5,7 @@ import { TitleBar } from "@/components/encompass/TitleBar";
 import { MenuBar } from "@/components/encompass/MenuBar";
 import { Toolbar } from "@/components/encompass/Toolbar";
 import { VADashboard } from "@/components/encompass/VADashboard";
+import ChatPanelWrapper from "@/components/chatbot/ChatPanelWrapper";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +33,7 @@ export default async function VAPage() {
       <div className="bg-white p-3">
         <VADashboard loans={fullLoans} currentUser={user} />
       </div>
+      <ChatPanelWrapper />
     </div>
   );
 }

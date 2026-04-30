@@ -5,6 +5,7 @@ import { TitleBar } from "@/components/encompass/TitleBar";
 import { MenuBar } from "@/components/encompass/MenuBar";
 import { Toolbar } from "@/components/encompass/Toolbar";
 import { UWDashboard } from "@/components/encompass/UWDashboard";
+import ChatPanelWrapper from "@/components/chatbot/ChatPanelWrapper";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +34,7 @@ export default async function TenantUWPage({
       <div className="bg-white p-3">
         <UWDashboard loans={fullLoans} currentUser={user} />
       </div>
+      <ChatPanelWrapper />
     </div>
   );
 }

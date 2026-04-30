@@ -4,6 +4,7 @@ import { MenuBar } from "@/components/encompass/MenuBar";
 import { Toolbar } from "@/components/encompass/Toolbar";
 import { LoanHeader } from "@/components/encompass/LoanHeader";
 import { NavTree } from "@/components/encompass/NavTree";
+import LoanChatPanel from "@/components/chatbot/LoanChatPanel";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import type { Loan } from "@twin/core";
@@ -38,6 +39,16 @@ export default async function LoanLayout({
         <NavTree loanId={loanId} />
         <div className="bg-white p-1">{children}</div>
       </div>
+      {user?.tenantId && (
+        <LoanChatPanel
+          tenantId={user.tenantId}
+          loanId={loanId}
+          program={loan.nqmProgram}
+          fico={loan.credit?.repScore}
+          ltv={loan.transaction?.ltv}
+          occupancy={loan.occupancy}
+        />
+      )}
     </div>
   );
 }
