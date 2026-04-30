@@ -76,7 +76,7 @@ export default function ChatPanel({
       const data = await resp.json();
 
       if (!resp.ok) {
-        throw new Error(data?.error ?? `Request failed (${resp.status})`);
+        throw new Error(data?.detail ?? data?.error ?? `Request failed (${resp.status})`);
       }
 
       if (data.conversation_id && !conversationId) {
