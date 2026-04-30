@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import KBIngestProgress from "./KBIngestProgress";
-import TabProgramMatrix from "./TabProgramMatrix";
+import { KBIngestProgress } from "./KBIngestProgress";
+import { TabProgramMatrix } from "./TabProgramMatrix";
 
 interface IngestResult {
   documentType: string;
