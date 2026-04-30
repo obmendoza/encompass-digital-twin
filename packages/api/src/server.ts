@@ -212,12 +212,24 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       // Decision records (both demo and production)
       if (action.type === "AcceptRecommendation" || action.type === "OverrideDecision" || action.type === "SetDecision") {
         if (loan) {
-          writeDecisionRecord({
-            tenantId,
-            loanId: (action as { loanId: string }).loanId,
-            loan,
-            action,
-          }).catch((e) => console.error("[decision-writer] FAILED:", e));
+          // Fetch active KB version at decision time (non-blocking)
+          const kbVersionPromise = withTenantTx(tenantId, async (client: import("pg").PoolClient) => {
+            const { rows } = await client.query(
+              "SELECT version FROM kb_versions WHERE tenant_id = $1 AND status = 'active' LIMIT 1",
+              [tenantId]
+            );
+            return rows[0]?.version ?? null;
+          }).catch(() => null);
+
+          kbVersionPromise.then((kbVersion: number | null) => {
+            writeDecisionRecord({
+              tenantId,
+              loanId: (action as { loanId: string }).loanId,
+              loan,
+              action,
+              kbVersion,
+            }).catch((e) => console.error("[decision-writer] FAILED:", e));
+          });
         }
       }
 

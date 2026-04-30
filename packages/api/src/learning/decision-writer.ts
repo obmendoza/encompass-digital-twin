@@ -8,10 +8,12 @@ interface DecisionWriteParams {
   loanId: string;
   loan: Loan;
   action: Action;
+  kbVersion?: number | null;
+  chatbotConsultationId?: string | null;
 }
 
 export async function writeDecisionRecord(params: DecisionWriteParams): Promise<string | null> {
-  const { tenantId, loanId, loan, action } = params;
+  const { tenantId, loanId, loan, action, kbVersion, chatbotConsultationId } = params;
 
   let decisionType: DecisionType;
   let agentRecommendation: string | null = null;
@@ -59,12 +61,13 @@ export async function writeDecisionRecord(params: DecisionWriteParams): Promise<
           agent_recommendation, agent_confidence, final_decision,
           override_reason, rationale, guideline_version_id,
           agent_version, prompt_version, model_id,
-          ingested_at, recorded_by
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+          ingested_at, recorded_by, kb_version, chatbot_consultation_id
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
         [id, tenantId, loanId, loan.nqmProgram, decisionType,
          agentRecommendation, agentConfidence, finalDecision,
          overrideReason, rationale, guidelineVersionId,
-         agentVersion, promptVersion, modelId, ingestedAt, recordedBy]
+         agentVersion, promptVersion, modelId, ingestedAt, recordedBy,
+         kbVersion ?? null, chatbotConsultationId ?? null]
       );
     });
     return id;
