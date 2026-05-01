@@ -2,12 +2,15 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import type { Loan } from "@twin/core";
 import type { AuthUser } from "@/lib/auth";
 import { actionOverrideDecision, actionSendBackToVA } from "@/app/loan/[loanId]/actions";
 import { money, pct } from "@/lib/format";
 import { OverrideReasonSelect } from "./OverrideReasonSelect";
+
+const SpecialistFindings = dynamic(() => import("./SpecialistFindings"), { ssr: false });
 
 const DECISION_COLORS: Record<string, { bg: string; text: string; border: string }> = {
   approved:   { bg: "bg-[#d7ecd0]", text: "text-[#1b5e20]", border: "border-[#1b5e20]" },
@@ -144,6 +147,30 @@ function SendBackModal({ loan, onClose, onSubmit, pending }: SendBackModalProps)
   );
 }
 
+function extractFindings(loan: Loan): Record<string, unknown> | null {
+  const rec = loan.pendingRecommendation;
+  if (!rec?.trace) return null;
+
+  const findings: Record<string, unknown> = {};
+  const agentKeys = ['doc_review', 'income_analysis', 'credit_assessment', 'compliance', 'risk_synthesis'];
+
+  for (const step of rec.trace) {
+    if (step.phase === 'tool_result' && step.content) {
+      try {
+        const parsed = JSON.parse(step.content);
+        if (parsed.agent && agentKeys.includes(parsed.agent)) {
+          findings[parsed.agent] = parsed;
+        }
+      } catch {}
+    }
+  }
+
+  // Also check if findings were stored directly on the response
+  // (the multi-agent endpoint returns findings in the response body)
+
+  return Object.keys(findings).length > 0 ? findings : null;
+}
+
 interface LoanCardProps {
   loan: Loan;
   onOverride: (loan: Loan) => void;
@@ -157,6 +184,8 @@ function LoanCard({ loan, onOverride, onSendBack, onAccept, pending }: LoanCardP
   const decColors = DECISION_COLORS[loan.decision] ?? DECISION_COLORS["pending"] ?? { bg: "bg-[#e0dfdb]", text: "text-[#404040]", border: "border-[#6b7a8f]" };
   const recColors = rec ? (DECISION_COLORS[rec.recommendation] ?? DECISION_COLORS.pending) : null;
   const flags = rec?.conditions ?? [];
+  const [showFindings, setShowFindings] = useState(false);
+  const findings = extractFindings(loan);
 
   return (
     <div className="border border-[#c8c4b5] bg-white mb-3 hover:border-[#1f4478] transition-colors">
@@ -218,6 +247,24 @@ function LoanCard({ loan, onOverride, onSendBack, onAccept, pending }: LoanCardP
           </div>
         )}
       </div>
+
+      {/* Multi-agent findings toggle */}
+      {findings && (
+        <div className="border-t border-[#c8c4b5]">
+          <button
+            onClick={() => setShowFindings(!showFindings)}
+            className="w-full px-3 py-1.5 text-[10px] font-medium text-[#1f4478] hover:bg-[#f0efe8] flex items-center gap-1 transition-colors"
+          >
+            <span>{showFindings ? "▾" : "▸"}</span>
+            <span>Agent Analysis ({Object.keys(findings).length} specialists)</span>
+          </button>
+          {showFindings && (
+            <div className="px-3 pb-3">
+              <SpecialistFindings findings={findings} />
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Card actions */}
       <div className="flex items-center gap-2 px-3 py-2 border-t border-[#c8c4b5] bg-[#fafaf5]">
