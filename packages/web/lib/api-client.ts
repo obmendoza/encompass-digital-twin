@@ -65,6 +65,12 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  getTenantIdBySlug: async (slug: string): Promise<string | null> => {
+    try {
+      const tenant = await req<{ id: string }>(`/tenants/${slug}`);
+      return tenant.id;
+    } catch { return null; }
+  },
   listScenarios: () => req<Array<{ id: string; name: string; description: string }>>("/scenarios"),
   loadScenario: (scenarioId: string) =>
     req<{ scenarioId: string | null }>("/world/load-scenario", {
@@ -75,9 +81,9 @@ export const api = {
       method: "POST", body: JSON.stringify({ loanId }),
     }),
   reset: () => req<{ scenarioId: null }>("/world/reset", { method: "POST", body: JSON.stringify({}) }),
-  getLoan: (loanId: string) => req<Loan>(`/loans/${loanId}`),
-  listLoans: () => req<Array<{ id: string; borrower: string; program: string;
-    loanAmount: number; ltv: number; decision: string; openConditions: number }>>("/loans"),
+  getLoan: (loanId: string, init?: RequestInit) => req<Loan>(`/loans/${loanId}`, init),
+  listLoans: (init?: RequestInit) => req<Array<{ id: string; borrower: string; program: string;
+    loanAmount: number; ltv: number; decision: string; openConditions: number }>>("/loans", init),
   getConditions: (loanId: string) => req<Condition[]>(`/loans/${loanId}/conditions`),
   getAudit: (loanId: string) => req<LoggedAction[]>(`/loans/${loanId}/audit`),
   setDecision: (loanId: string, decision: UwDecision, rationale: string, actor: Actor) =>

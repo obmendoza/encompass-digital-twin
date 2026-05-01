@@ -288,14 +288,14 @@ export function UWDashboard({ loans, currentUser }: Props) {
   );
 
   const decidedToday = decidedLoans.filter((l) => {
-    const ms = l.milestones.filter((m) => m.name.startsWith("Decision:"));
+    const ms = l.milestones.filter((m) => (m.name ?? m.label ?? "").startsWith("Decision:"));
     if (!ms.length) return false;
     const last = ms[ms.length - 1]!;
     return last.at.startsWith(new Date().toISOString().slice(0, 10));
   });
 
   const overrideCount = validLoans.reduce((n, l) => {
-    return n + l.milestones.filter((m) => m.name.includes("override from")).length;
+    return n + l.milestones.filter((m) => (m.name ?? m.label ?? "").includes("override from")).length;
   }, 0);
 
   const tabLoans: Record<Tab, Loan[]> = {
