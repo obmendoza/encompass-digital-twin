@@ -39,7 +39,7 @@ export default async function TenantUWPage({
       <MenuBar showPlatform />
       <Toolbar userRole={effectiveUser.role} />
       <div className="bg-white p-3">
-        <UWDashboard loans={fullLoans} currentUser={effectiveUser} />
+        <UWDashboard loans={fullLoans} currentUser={effectiveUser} tenantId={tenantId ?? undefined} />
       </div>
       <ChatPanelWrapper />
     </div>

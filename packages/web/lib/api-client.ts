@@ -86,9 +86,9 @@ export const api = {
     loanAmount: number; ltv: number; decision: string; openConditions: number }>>("/loans", init),
   getConditions: (loanId: string) => req<Condition[]>(`/loans/${loanId}/conditions`),
   getAudit: (loanId: string) => req<LoggedAction[]>(`/loans/${loanId}/audit`),
-  setDecision: (loanId: string, decision: UwDecision, rationale: string, actor: Actor) =>
+  setDecision: (loanId: string, decision: UwDecision, rationale: string, actor: Actor, init?: RequestInit) =>
     req<Loan>(`/loans/${loanId}/decision`, {
-      method: "POST", body: JSON.stringify({ decision, rationale, actor }),
+      method: "POST", body: JSON.stringify({ decision, rationale, actor }), ...init,
     }),
   recalcIncome: (loanId: string, worksheet: QualifyingIncomeWorksheet, actor: Actor) =>
     req<Loan>(`/loans/${loanId}/qualifying-income`, {
@@ -127,9 +127,9 @@ export const api = {
     req<Loan>(`/loans/${loanId}/recommendation`, {
       method: "POST", body: JSON.stringify({ recommendation: rec, actor }),
     }),
-  acceptRecommendation: (loanId: string, actor: Actor) =>
+  acceptRecommendation: (loanId: string, actor: Actor, init?: RequestInit) =>
     req<Loan>(`/loans/${loanId}/recommendation/accept`, {
-      method: "POST", body: JSON.stringify({ actor }),
+      method: "POST", body: JSON.stringify({ actor }), ...init,
     }),
   clearRecommendation: (loanId: string, actor: Actor) =>
     req<Loan>(`/loans/${loanId}/recommendation`, {
@@ -149,13 +149,13 @@ export const api = {
     }),
   getAssignments: (userId: string) =>
     req<Array<{ id: string; borrower: string; program: string; loanAmount: number; status: string; priority: string; assignedAt: string; decision: string }>>(`/assignments/${userId}`),
-  overrideDecision: (loanId: string, originalRecommendation: UwDecision, overrideDecision: UwDecision, overrideReason: string, rationale: string, actor: Actor) =>
+  overrideDecision: (loanId: string, originalRecommendation: UwDecision, overrideDecision: UwDecision, overrideReason: string, rationale: string, actor: Actor, init?: RequestInit) =>
     req<Loan>(`/loans/${loanId}/override`, {
-      method: "POST", body: JSON.stringify({ originalRecommendation, overrideDecision, overrideReason, rationale, actor }),
+      method: "POST", body: JSON.stringify({ originalRecommendation, overrideDecision, overrideReason, rationale, actor }), ...init,
     }),
-  sendBackToVA: (loanId: string, notes: string, actor: Actor) =>
+  sendBackToVA: (loanId: string, notes: string, actor: Actor, init?: RequestInit) =>
     req<Loan>(`/loans/${loanId}/send-back`, {
-      method: "POST", body: JSON.stringify({ notes, actor }),
+      method: "POST", body: JSON.stringify({ notes, actor }), ...init,
     }),
   getMetrics: () => req<{
     totalLoans: number;

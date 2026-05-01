@@ -260,9 +260,10 @@ type Tab = "pending" | "in_progress" | "decided";
 interface Props {
   loans: (Loan | null)[];
   currentUser: AuthUser;
+  tenantId?: string;
 }
 
-export function UWDashboard({ loans, currentUser }: Props) {
+export function UWDashboard({ loans, currentUser, tenantId }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>("pending");
   const [overrideLoan, setOverrideLoan] = useState<Loan | null>(null);
   const [sendBackLoan, setSendBackLoan] = useState<Loan | null>(null);
@@ -308,7 +309,7 @@ export function UWDashboard({ loans, currentUser }: Props) {
     setError(null);
     startTransition(async () => {
       const { actionAcceptRecommendation } = await import("@/app/loan/[loanId]/actions");
-      const result = await actionAcceptRecommendation(loanId);
+      const result = await actionAcceptRecommendation(loanId, tenantId);
       if (!result.ok) setError(`Accept failed: ${result.error?.message}`);
       else router.refresh();
     });
@@ -317,7 +318,7 @@ export function UWDashboard({ loans, currentUser }: Props) {
   const handleOverride = (loanId: string, original: string, override: string, overrideReason: string, rationale: string) => {
     setError(null);
     startTransition(async () => {
-      const result = await actionOverrideDecision(loanId, original, override, overrideReason, rationale);
+      const result = await actionOverrideDecision(loanId, original, override, overrideReason, rationale, tenantId);
       if (!result.ok) setError(`Override failed: ${result.error?.message}`);
       else {
         setOverrideLoan(null);
@@ -329,7 +330,7 @@ export function UWDashboard({ loans, currentUser }: Props) {
   const handleSendBack = (loanId: string, notes: string) => {
     setError(null);
     startTransition(async () => {
-      const result = await actionSendBackToVA(loanId, notes);
+      const result = await actionSendBackToVA(loanId, notes, tenantId);
       if (!result.ok) setError(`Send back failed: ${result.error?.message}`);
       else {
         setSendBackLoan(null);

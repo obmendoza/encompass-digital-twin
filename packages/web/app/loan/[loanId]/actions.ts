@@ -18,10 +18,11 @@ export interface ActionResult {
   error?: { code: string; message: string };
 }
 
-async function run(loanId: string, fn: (actor: Actor) => Promise<unknown>): Promise<ActionResult> {
+async function run(loanId: string, fn: (actor: Actor, init?: RequestInit) => Promise<unknown>, tenantId?: string): Promise<ActionResult> {
   const actor = await getActor();
+  const init = tenantId ? { headers: { "x-tenant-id": tenantId } } : undefined;
   try {
-    await fn(actor);
+    await fn(actor, init);
     revalidatePath(`/loan/${loanId}`, "layout");
     return { ok: true };
   } catch (e) {
@@ -43,8 +44,8 @@ export async function actionLoadScenario(scenarioId: string): Promise<ActionResu
   }
 }
 
-export async function actionSetDecision(loanId: string, decision: UwDecision, rationale: string) {
-  return run(loanId, (actor) => api.setDecision(loanId, decision, rationale, actor));
+export async function actionSetDecision(loanId: string, decision: UwDecision, rationale: string, tenantId?: string) {
+  return run(loanId, (actor, init) => api.setDecision(loanId, decision, rationale, actor, init), tenantId);
 }
 
 export async function actionAddCondition(loanId: string, condition: NewCondition) {
@@ -123,22 +124,22 @@ export async function actionRunAgent(loanId: string): Promise<ActionResult> {
   }
 }
 
-export async function actionAcceptRecommendation(loanId: string) {
-  return run(loanId, (actor) => api.acceptRecommendation(loanId, actor));
+export async function actionAcceptRecommendation(loanId: string, tenantId?: string) {
+  return run(loanId, (actor, init) => api.acceptRecommendation(loanId, actor, init), tenantId);
 }
 
 export async function actionClearRecommendation(loanId: string) {
   return run(loanId, (actor) => api.clearRecommendation(loanId, actor));
 }
 
-export async function actionOverrideDecision(loanId: string, original: string, override: string, overrideReason: string, rationale: string) {
-  return run(loanId, (actor) =>
-    api.overrideDecision(loanId, original as UwDecision, override as UwDecision, overrideReason, rationale, actor)
+export async function actionOverrideDecision(loanId: string, original: string, override: string, overrideReason: string, rationale: string, tenantId?: string) {
+  return run(loanId, (actor, init) =>
+    api.overrideDecision(loanId, original as UwDecision, override as UwDecision, overrideReason, rationale, actor, init), tenantId
   );
 }
 
-export async function actionSendBackToVA(loanId: string, notes: string) {
-  return run(loanId, (actor) => api.sendBackToVA(loanId, notes, actor));
+export async function actionSendBackToVA(loanId: string, notes: string, tenantId?: string) {
+  return run(loanId, (actor, init) => api.sendBackToVA(loanId, notes, actor, init), tenantId);
 }
 
 export async function actionGenerateDocs(loanId: string): Promise<ActionResult & { count?: number }> {
