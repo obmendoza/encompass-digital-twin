@@ -110,7 +110,8 @@ function StepContent({
 
   // ── tool_call ──────────────────────────────────────────────────
   if (phase === "tool_call") {
-    const toolName = metadata?.tool ?? "unknown_tool";
+    // Tool name may be in metadata.tool or parsed from content like "tool_name({...})"
+    const toolName = metadata?.tool ?? content.split("(")[0] ?? "unknown_tool";
     const args = metadata?.args;
     return (
       <div>
@@ -230,8 +231,8 @@ export default function AgentTraceTimeline({ trace, loanId: _loanId }: AgentTrac
   const toolCount = new Set(
     trace
       .filter((s) => s.phase === "tool_call")
-      .map((s) => s.metadata?.tool)
-      .filter((t): t is string => Boolean(t))
+      .map((s) => s.metadata?.tool ?? s.content.split("(")[0] ?? "")
+      .filter((t) => t.length > 0)
   ).size;
 
   return (
