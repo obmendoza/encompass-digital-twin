@@ -85,7 +85,7 @@ export const api = {
   listLoans: (init?: RequestInit) => req<Array<{ id: string; borrower: string; program: string;
     loanAmount: number; ltv: number; decision: string; openConditions: number }>>("/loans", init),
   getConditions: (loanId: string) => req<Condition[]>(`/loans/${loanId}/conditions`),
-  getAudit: (loanId: string) => req<LoggedAction[]>(`/loans/${loanId}/audit`),
+  getAudit: (loanId: string, init?: RequestInit) => req<LoggedAction[]>(`/loans/${loanId}/audit`, init),
   setDecision: (loanId: string, decision: UwDecision, rationale: string, actor: Actor, init?: RequestInit) =>
     req<Loan>(`/loans/${loanId}/decision`, {
       method: "POST", body: JSON.stringify({ decision, rationale, actor }), ...init,
