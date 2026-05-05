@@ -607,53 +607,113 @@ function RiskSynthesisCard({
 // ─── Main Component ────────────────────────────────────────────────────────
 
 function PipelineCostBar({ usage }: { usage: PipelineUsage }) {
-  const agentNames: Record<string, string> = {
-    doc_review: "Doc Review",
-    income_analysis: "Income",
-    credit_assessment: "Credit",
-    compliance: "Compliance",
-    risk_synthesis: "Risk Synthesis",
+  const agentMeta: Record<string, { name: string; icon: string }> = {
+    doc_review:        { name: "Doc Review",      icon: "📄" },
+    income_analysis:   { name: "Income Analysis", icon: "💰" },
+    credit_assessment: { name: "Credit Assessment", icon: "📊" },
+    compliance:        { name: "Compliance",      icon: "⚖️" },
+    risk_synthesis:    { name: "Risk Synthesis",  icon: "🎯" },
   };
 
+  const maxTokens = Math.max(
+    ...Object.values(usage.per_agent).map((a) => a.input_tokens + a.output_tokens),
+    1,
+  );
+
   return (
-    <div className="border border-gray-200 rounded-lg p-3 bg-gray-50 mb-3">
-      <div className="flex items-center justify-between mb-2">
-        <div className="text-[11px] font-bold text-gray-700 uppercase tracking-wider">
+    <div className="border border-gray-200 rounded-lg overflow-hidden mb-3">
+      {/* Header */}
+      <div className="bg-gradient-to-r from-[#1f4478] to-[#2a5a9e] px-4 py-2.5 flex items-center justify-between">
+        <div className="text-[11px] font-bold text-white uppercase tracking-wider">
           AI Pipeline Cost
         </div>
-        <div className="flex items-center gap-4 text-[11px]">
-          <span className="text-gray-500">
-            Tokens: <span className="font-bold text-gray-800">{usage.total_tokens.toLocaleString()}</span>
+        <div className="flex items-center gap-5 text-[11px] text-blue-100">
+          <span>
+            Tokens: <span className="font-bold text-white">{usage.total_tokens.toLocaleString()}</span>
           </span>
-          <span className="text-gray-500">
-            Cost: <span className="font-bold text-gray-800">${usage.total_cost_usd.toFixed(4)}</span>
+          <span>
+            Cost: <span className="font-bold text-white">${usage.total_cost_usd.toFixed(4)}</span>
+          </span>
+          <span>
+            Input: <span className="font-bold text-white">{usage.total_input_tokens.toLocaleString()}</span>
+          </span>
+          <span>
+            Output: <span className="font-bold text-white">{usage.total_output_tokens.toLocaleString()}</span>
           </span>
         </div>
       </div>
-      <div className="flex gap-1">
+
+      {/* Per-agent rows */}
+      <div className="divide-y divide-gray-100">
         {Object.entries(usage.per_agent).map(([key, agent]) => {
-          const pct = usage.total_cost_usd > 0
+          const meta = agentMeta[key] ?? { name: key, icon: "•" };
+          const totalTokens = agent.input_tokens + agent.output_tokens;
+          const barPct = (totalTokens / maxTokens) * 100;
+          const costPct = usage.total_cost_usd > 0
             ? (agent.cost_usd / usage.total_cost_usd) * 100
             : 0;
           const isOpus = agent.model.includes("opus");
+
           return (
-            <div
-              key={key}
-              className={`h-2 rounded-full ${isOpus ? "bg-blue-600" : "bg-blue-300"}`}
-              style={{ width: `${Math.max(pct, 2)}%` }}
-              title={`${agentNames[key] ?? key}: ${agent.input_tokens + agent.output_tokens} tokens ($${agent.cost_usd.toFixed(4)}) — ${agent.model}`}
-            />
+            <div key={key} className="px-4 py-2 hover:bg-gray-50 transition-colors">
+              <div className="flex items-center gap-3">
+                {/* Agent name */}
+                <div className="w-[140px] flex items-center gap-1.5 flex-shrink-0">
+                  <span className="text-[12px]">{meta.icon}</span>
+                  <span className="text-[11px] font-medium text-gray-700">{meta.name}</span>
+                </div>
+
+                {/* Visual bar */}
+                <div className="flex-1 h-5 bg-gray-100 rounded-full overflow-hidden relative">
+                  <div
+                    className={`h-full rounded-full transition-all ${
+                      isOpus
+                        ? "bg-gradient-to-r from-blue-600 to-blue-800"
+                        : "bg-gradient-to-r from-blue-300 to-blue-400"
+                    }`}
+                    style={{ width: `${Math.max(barPct, 3)}%` }}
+                  />
+                  <div className="absolute inset-0 flex items-center px-2">
+                    <span className={`text-[9px] font-bold ${barPct > 30 ? "text-white" : "text-gray-600"}`}>
+                      {totalTokens.toLocaleString()} tokens
+                    </span>
+                  </div>
+                </div>
+
+                {/* Cost + model */}
+                <div className="w-[90px] text-right flex-shrink-0">
+                  <div className="text-[11px] font-bold text-gray-800">
+                    ${agent.cost_usd.toFixed(4)}
+                  </div>
+                  <div className="text-[9px] text-gray-400">
+                    {Math.round(costPct)}% of total
+                  </div>
+                </div>
+
+                {/* Model badge */}
+                <div className="w-[60px] flex-shrink-0">
+                  <span className={`inline-block px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider ${
+                    isOpus
+                      ? "bg-blue-100 text-blue-800 border border-blue-200"
+                      : "bg-gray-100 text-gray-600 border border-gray-200"
+                  }`}>
+                    {isOpus ? "Opus" : "Sonnet"}
+                  </span>
+                </div>
+              </div>
+
+              {/* Token detail row */}
+              <div className="flex items-center gap-3 mt-0.5 ml-[152px]">
+                <span className="text-[9px] text-gray-400">
+                  In: {agent.input_tokens.toLocaleString()}
+                </span>
+                <span className="text-[9px] text-gray-400">
+                  Out: {agent.output_tokens.toLocaleString()}
+                </span>
+              </div>
+            </div>
           );
         })}
-      </div>
-      <div className="flex flex-wrap gap-x-4 gap-y-0.5 mt-2">
-        {Object.entries(usage.per_agent).map(([key, agent]) => (
-          <div key={key} className="text-[9px] text-gray-500">
-            <span className="font-medium text-gray-600">{agentNames[key] ?? key}:</span>{" "}
-            {(agent.input_tokens + agent.output_tokens).toLocaleString()} tok · ${agent.cost_usd.toFixed(4)}
-            {agent.model.includes("opus") && <span className="ml-1 text-blue-600">(Opus)</span>}
-          </div>
-        ))}
       </div>
     </div>
   );
