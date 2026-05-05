@@ -152,14 +152,21 @@ function extractFindings(loan: Loan): Record<string, unknown> | null {
   if (!rec?.trace) return null;
 
   const findings: Record<string, unknown> = {};
-  const agentKeys = ['doc_review', 'income_analysis', 'credit_assessment', 'compliance', 'risk_synthesis'];
+  const agentKeys = ['doc_review', 'income_analysis', 'credit_assessment', 'compliance', 'risk_synthesis', '_pipeline_usage'];
 
   for (const step of rec.trace) {
     if (step.phase === 'tool_result' && step.content) {
       try {
         const parsed = JSON.parse(step.content);
         if (parsed.agent && agentKeys.includes(parsed.agent)) {
-          findings[parsed.agent] = parsed;
+          const key = parsed.agent;
+          if (key === '_pipeline_usage') {
+            // Store usage data under _pipeline_usage (strip 'agent' key)
+            const { agent: _, ...usage } = parsed;
+            findings['_pipeline_usage'] = usage;
+          } else {
+            findings[key] = parsed;
+          }
         }
       } catch {}
     }
