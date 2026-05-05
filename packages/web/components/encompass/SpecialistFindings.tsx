@@ -4,8 +4,22 @@ import { useState } from "react";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
+interface PipelineUsage {
+  total_input_tokens: number;
+  total_output_tokens: number;
+  total_tokens: number;
+  total_cost_usd: number;
+  per_agent: Record<string, {
+    input_tokens: number;
+    output_tokens: number;
+    model: string;
+    cost_usd: number;
+  }>;
+}
+
 interface SpecialistFindingsProps {
   findings: {
+    _pipeline_usage?: PipelineUsage;
     doc_review?: {
       recommendation: string;
       summary: string;
@@ -592,8 +606,61 @@ function RiskSynthesisCard({
 
 // ─── Main Component ────────────────────────────────────────────────────────
 
+function PipelineCostBar({ usage }: { usage: PipelineUsage }) {
+  const agentNames: Record<string, string> = {
+    doc_review: "Doc Review",
+    income_analysis: "Income",
+    credit_assessment: "Credit",
+    compliance: "Compliance",
+    risk_synthesis: "Risk Synthesis",
+  };
+
+  return (
+    <div className="border border-gray-200 rounded-lg p-3 bg-gray-50 mb-3">
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-[11px] font-bold text-gray-700 uppercase tracking-wider">
+          AI Pipeline Cost
+        </div>
+        <div className="flex items-center gap-4 text-[11px]">
+          <span className="text-gray-500">
+            Tokens: <span className="font-bold text-gray-800">{usage.total_tokens.toLocaleString()}</span>
+          </span>
+          <span className="text-gray-500">
+            Cost: <span className="font-bold text-gray-800">${usage.total_cost_usd.toFixed(4)}</span>
+          </span>
+        </div>
+      </div>
+      <div className="flex gap-1">
+        {Object.entries(usage.per_agent).map(([key, agent]) => {
+          const pct = usage.total_cost_usd > 0
+            ? (agent.cost_usd / usage.total_cost_usd) * 100
+            : 0;
+          const isOpus = agent.model.includes("opus");
+          return (
+            <div
+              key={key}
+              className={`h-2 rounded-full ${isOpus ? "bg-blue-600" : "bg-blue-300"}`}
+              style={{ width: `${Math.max(pct, 2)}%` }}
+              title={`${agentNames[key] ?? key}: ${agent.input_tokens + agent.output_tokens} tokens ($${agent.cost_usd.toFixed(4)}) — ${agent.model}`}
+            />
+          );
+        })}
+      </div>
+      <div className="flex flex-wrap gap-x-4 gap-y-0.5 mt-2">
+        {Object.entries(usage.per_agent).map(([key, agent]) => (
+          <div key={key} className="text-[9px] text-gray-500">
+            <span className="font-medium text-gray-600">{agentNames[key] ?? key}:</span>{" "}
+            {(agent.input_tokens + agent.output_tokens).toLocaleString()} tok · ${agent.cost_usd.toFixed(4)}
+            {agent.model.includes("opus") && <span className="ml-1 text-blue-600">(Opus)</span>}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function SpecialistFindings({ findings }: SpecialistFindingsProps) {
-  const { doc_review, income_analysis, credit_assessment, compliance, risk_synthesis } = findings;
+  const { doc_review, income_analysis, credit_assessment, compliance, risk_synthesis, _pipeline_usage } = findings;
 
   const hasAnySpecialist = doc_review || income_analysis || credit_assessment || compliance;
   const hasRiskSynthesis = !!risk_synthesis;
@@ -608,6 +675,7 @@ export default function SpecialistFindings({ findings }: SpecialistFindingsProps
 
   return (
     <div className="space-y-3">
+      {_pipeline_usage && <PipelineCostBar usage={_pipeline_usage} />}
       {doc_review && <DocReviewCard data={doc_review} />}
       {income_analysis && <IncomeAnalysisCard data={income_analysis} />}
       {credit_assessment && <CreditAssessmentCard data={credit_assessment} />}
