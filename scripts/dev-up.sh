@@ -26,7 +26,7 @@ done
 
 api_cmd="cd '$REPO_ROOT' && pnpm --filter @twin/api dev"
 web_cmd="cd '$REPO_ROOT' && pnpm --filter @twin/web dev"
-agent_cmd="cd '$AGENT_DIR' && (test -d .venv && source .venv/bin/activate; uvicorn main:app --reload --port 8000)"
+agent_cmd="cd '$AGENT_DIR' && (test -d .venv && source .venv/bin/activate; uvicorn backend.main:app --reload --port 8000)"
 
 if [ ! -d "$AGENT_DIR" ]; then
   echo "warn: AGENT_DIR not found at $AGENT_DIR — agent pane will exit. Set AGENT_DIR=... to override." >&2
