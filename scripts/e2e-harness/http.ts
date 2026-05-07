@@ -23,7 +23,8 @@ async function request<T>(
   body?: unknown,
 ): Promise<T> {
   const url = `${opts.baseUrl}${path}`;
-  const headers: Record<string, string> = { "content-type": "application/json" };
+  const headers: Record<string, string> = {};
+  if (body !== undefined) headers["content-type"] = "application/json";
   if (opts.tenantId) headers["x-tenant-id"] = opts.tenantId;
   const init: RequestInit = {
     method,
