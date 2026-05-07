@@ -33,13 +33,16 @@ export const W3: WorkflowDef = {
     assertions.push({ name: "assignment_back_to_in_progress", expected: "in_progress", actual: after.assignment?.status ?? null, ok: after.assignment?.status === "in_progress" });
     assertions.push({ name: "rec_cleared", expected: null, actual: after.pendingRecommendation ?? null, ok: !after.pendingRecommendation });
 
-    type Audit = { entries?: Array<{ type: string }> };
-    const auditRaw = await http.get<Audit | Array<{ type: string }>>(apiOpts, `/loans/${fixture.loanId}/audit`).catch(() => ({} as Audit));
-    // Audit endpoint returns top-level array, not { entries: [] }; handle both shapes defensively (per W1 finding).
-    const auditEntries: Array<{ type: string }> = Array.isArray(auditRaw)
+    // Audit log entries are LoggedAction shape: { seq, at, action: { type, ... } }.
+    // Per packages/core/src/types.ts:325 and packages/core/src/store.ts:29.
+    // Endpoint returns a top-level array (not { entries: [] }); handle both shapes defensively.
+    type LoggedAction = { type?: string; action?: { type?: string } };
+    type Audit = { entries?: LoggedAction[] };
+    const auditRaw = await http.get<Audit | LoggedAction[]>(apiOpts, `/loans/${fixture.loanId}/audit`).catch(() => ({} as Audit));
+    const auditEntries: LoggedAction[] = Array.isArray(auditRaw)
       ? auditRaw
       : Array.isArray((auditRaw as Audit).entries) ? (auditRaw as Audit).entries! : [];
-    const sentBackEntry = auditEntries.find((e) => e.type === "SendBackToVA");
+    const sentBackEntry = auditEntries.find((e) => e.action?.type === "SendBackToVA" || e.type === "SendBackToVA");
     assertions.push({ name: "audit_log_has_sendback", expected: "SendBackToVA entry", actual: sentBackEntry ?? null, ok: !!sentBackEntry });
 
     const allOk = assertions.every((a) => a.ok);
