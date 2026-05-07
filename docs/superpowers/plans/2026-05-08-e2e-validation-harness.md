@@ -18,6 +18,49 @@
 2. **Programmatic KB ingest for W6?** — W6 inlines its HTTP calls using `http.ts`. No shared kb-ingest module. The bash script `scripts/test-guideline-pipeline.sh` is the reference for which calls to make in which order.
 3. **Keep `POST /system/behavioral-test`?** — Yes, both stay. Behavioral-test is a fast reducer smoke (~5s); the harness is broad coverage. Documented in `scripts/e2e-harness/README.md`.
 
+## Sprint 0 schema setup
+
+Before Wave 1 begins, run a small migration so `--purge-test-data <run_id>` can clean up. Verified at design time: `decision_records.agent_context` exists (migration 012), `tenants.metadata` exists (migration 001), but `pattern_suggestions` and `learning_outcomes` lack a generic JSONB metadata column.
+
+### Task 0: Add `metadata JSONB` columns for purge-cleanup
+
+**Files:**
+- Create: `packages/api/src/db/migrations/013-e2e-harness-metadata.sql`
+
+- [ ] **Step 1: Write the migration**
+
+```sql
+-- 013-e2e-harness-metadata.sql
+-- Add a generic metadata JSONB column to tables the E2E harness writes to
+-- so its --purge-test-data <run_id> can identify and remove harness records.
+
+ALTER TABLE pattern_suggestions ADD COLUMN IF NOT EXISTS metadata JSONB;
+ALTER TABLE learning_outcomes   ADD COLUMN IF NOT EXISTS metadata JSONB;
+
+CREATE INDEX IF NOT EXISTS idx_pattern_suggestions_harness_run
+  ON pattern_suggestions ((metadata->>'harness_run_id'))
+  WHERE metadata ? 'harness_run_id';
+CREATE INDEX IF NOT EXISTS idx_learning_outcomes_harness_run
+  ON learning_outcomes ((metadata->>'harness_run_id'))
+  WHERE metadata ? 'harness_run_id';
+```
+
+- [ ] **Step 2: Run migration locally and verify**
+
+Restart API (auto-runs migrations on boot via `runMigrations()` in `packages/api/src/db/migrations.ts`).
+
+Run: `psql "$DATABASE_URL" -c "\d pattern_suggestions" | grep metadata`
+Expected: a `metadata | jsonb` column line.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add packages/api/src/db/migrations/013-e2e-harness-metadata.sql
+git commit -m "feat(db): metadata JSONB on pattern_suggestions and learning_outcomes for harness purge"
+```
+
+The harness writes `harness_run_id` to whichever JSONB column is already conventional per table: `decision_records.agent_context.harness_run_id`, `pattern_suggestions.metadata.harness_run_id`, `learning_outcomes.metadata.harness_run_id`, `tenants.metadata.harness_run_id`. If migration 013 isn't applied, the workflows still run; only `--purge-test-data` is incomplete (operator cleans up ephemeral tenants manually).
+
 ## File structure
 
 | File | Responsibility | Wave |
@@ -397,16 +440,18 @@ interface Args {
   workflow: string | null;
   fixture: string | null;
   repeat: number;
+  skipCanary: boolean;
 }
 
 function parseArgs(argv: string[]): Args {
-  const out: Args = { outDir: defaultOutDir(), workflow: null, fixture: null, repeat: 2 };
+  const out: Args = { outDir: defaultOutDir(), workflow: null, fixture: null, repeat: 2, skipCanary: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--out" && argv[i + 1]) { out.outDir = argv[++i]!; continue; }
     if (a === "--workflow" && argv[i + 1]) { out.workflow = argv[++i]!; continue; }
     if (a === "--fixture" && argv[i + 1]) { out.fixture = argv[++i]!; continue; }
     if (a === "--repeat" && argv[i + 1]) { out.repeat = Math.max(1, parseInt(argv[++i]!, 10) || 1); continue; }
+    if (a === "--skip-canary") { out.skipCanary = true; continue; }
   }
   return out;
 }
@@ -520,8 +565,11 @@ async function main() {
 
   // --- Preflight: canary cell (W1 against bankstmt-12mo-clean) ---
   // Skip canary if user explicitly invoked a non-W1 single-cell run, since they're already debugging that cell.
+  // Also skip if --skip-canary was passed (early-stage envs where some integration isn't shipped yet).
   const isExplicitSingleCell = args.workflow !== null && args.fixture !== null;
-  if (!isExplicitSingleCell) {
+  if (args.skipCanary) {
+    console.log("Canary skipped (--skip-canary). Operator-acknowledged risk: infrastructure issues won't surface until first real cell.");
+  } else if (!isExplicitSingleCell) {
     const canaryFixture = listFixtures().find((f) => f.id === CANARY_FIXTURE_ID);
     if (!canaryFixture) {
       console.error(`Canary fixture ${CANARY_FIXTURE_ID} not found.`);
@@ -1827,9 +1875,20 @@ Severity rubric: see spec `docs/superpowers/specs/2026-05-08-e2e-validation-harn
 
 ## Cleanup of persistent records
 
-Every record this harness writes to persistent stores carries `metadata.harness_run_id`.
-To purge after a run: `pnpm tsx scripts/e2e-harness/purge.ts <run_id>` (TODO: wire purge.ts when
-needed; not part of the initial build per YAGNI).
+Every record this harness writes to persistent stores carries `harness_run_id` in whatever JSONB column the table conventionally provides (`decision_records.agent_context`, `pattern_suggestions.metadata`, `learning_outcomes.metadata`, `tenants.metadata`). Migration 013 added the missing JSONB columns during Sprint 0 setup.
+
+To purge after a run: `pnpm tsx scripts/e2e-harness/purge.ts <run_id>` (TODO: wire purge.ts when needed; not part of the initial build per YAGNI).
+
+## Wave 2.5 success checklist (per spec §9)
+
+When reviewing each Wave 2 agent's output, the coordinator confirms each workflow file:
+
+1. Passes `pnpm tsc --noEmit` against the project's tsconfig.
+2. Exports a `WorkflowDef`-shaped object with non-empty `id`, `name`, `specRefs`, `appliesTo`, `run`.
+3. Runs successfully against the canary fixture (`nqm-bankstmt-12mo-clean` for non-global workflows; `_global` for W6/W7) and produces a `CellResult` that passes `CellResultSchema.parse()`.
+4. The cell's `assertions` array is non-empty.
+
+Any agent whose first attempt fails this checklist gets a single follow-up dispatch to resolve. Empirically 1–2 of 8 need this; budget ~15 min for Wave 2.5.
 
 ## Relationship to other test surfaces
 

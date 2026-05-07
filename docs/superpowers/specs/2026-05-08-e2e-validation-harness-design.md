@@ -196,7 +196,20 @@ The metric the operator should look at is **`total_assertions_run`**, not cell c
 1. **Process pings** — `/system/health` (API) and `agent /health` (each < 2s).
 2. **Canary cell** — one full execution of `W1_uw_accept` against `nqm-bankstmt-12mo-clean`. This verifies DB connectivity, Anthropic auth, ChromaDB, agent ↔ API round-trip, and migration version in one shot. If the canary fails, the harness aborts with the canary's error as the abort reason. Cost: ~5 seconds; payoff: catches infrastructure issues before sinking 8–15 min into a doomed run.
 
-**Persistent-state cleanup:** All harness records carry `metadata.harness_run_id`. `--purge-test-data <run_id>` deletes records with the matching tag from `decision_records`, `pattern_suggestions`, `learning_outcomes`, and any `e2e-test-*` tenants. Workflow-specific:
+**`--skip-canary` opt-out:** on a freshly deployed environment where some integration (e.g., KB tools) isn't yet expected to exist, the canary will fail by design. `--skip-canary` lets the operator run the matrix anyway and accept the risk that infrastructure issues won't surface until the first real cell. Default behavior remains canary-on; the flag exists as an explicit operator acknowledgement, not a default.
+
+**Persistent-state cleanup:** All harness records carry `harness_run_id` in whatever JSONB column the table already provides; `--purge-test-data <run_id>` deletes matching records.
+
+**Schema cooperation (Sprint 0 setup):** the harness writes `harness_run_id` into the existing JSONB column on each target table. Current state of relevant tables (verified at design time):
+- `decision_records.agent_context` (added in migration 012) — write to `agent_context.harness_run_id`.
+- `pattern_suggestions` — has `redaction_manifest`, `metrics_snapshot`, `status_history` JSONB columns but no general-purpose metadata column. **Sprint 0 task:** add `ALTER TABLE pattern_suggestions ADD COLUMN IF NOT EXISTS metadata JSONB` migration.
+- `learning_outcomes` — has `metrics_snapshot` but no metadata column. **Sprint 0 task:** add a `metadata JSONB` column.
+- `tenants.metadata` already exists; `e2e-test-*` tenants set it directly.
+- `tenant_guidelines` — multiple JSONB columns; harness uses an ephemeral test tenant in W6 and relies on cascade delete rather than per-row tagging.
+
+The implementation plan (Sprint 0) writes the migration before Wave 4 runs. If the migration is skipped, `--purge-test-data` is incomplete; the user must purge ephemeral tenants manually instead.
+
+Workflow-specific:
 - **W6** ingests into an ephemeral `e2e-test-kb-<run_id>` tenant; deleting the tenant cascades to its `tenant_guidelines`, `kb_cost_events`, and ChromaDB collection.
 - **W8** creates and deletes its own `e2e-test-rls-a-*` and `e2e-test-rls-b-*` tenants; preflight purges leftover `e2e-test-*` tenants from prior crashed runs before assertions run.
 
@@ -235,7 +248,13 @@ Writes `types.ts` (with Zod schemas), `fixtures.ts`, `http.ts`, `run.ts` skeleto
 No merge conflicts — each agent writes one isolated file.
 
 **Wave 2.5 — Merge & fix** (~15 min):
-Coordinator reviews each Wave 2 output. For agents whose first attempt missed contract details (URL paths, payload shape, etc.), dispatches a single follow-up agent to resolve. Empirically 1–2 of 8 need this; budget the time rather than treat it as exception.
+Coordinator reviews each Wave 2 output against an explicit checklist. Each workflow file must:
+1. Pass `tsc --noEmit` with no errors against the project's tsconfig.
+2. Export a `WorkflowDef`-shaped object with non-empty `id`, `name`, `specRefs`, `appliesTo`, `run`.
+3. Run successfully against the canary fixture (`nqm-bankstmt-12mo-clean` for non-global workflows; `_global` for W6/W7) and produce a `CellResult` that passes `CellResultSchema.parse()`.
+4. The cell's `assertions` array must be non-empty.
+
+Any agent whose first attempt fails this checklist gets a single follow-up dispatch to resolve. Empirically 1–2 of 8 need this; budget the time rather than treat it as exception. The checklist is also recorded in `scripts/e2e-harness/README.md` so re-execution months later applies the same bar.
 
 **Wave 3 — Aggregator polish + smoke** (1 agent, ~10 min):
 Fills in `aggregate.ts`: severity-sorted punch list with **error-fingerprint grouping** + **regression diff** against `reports/<previous-run>/matrix.json` if present; summary.md with by-workflow table, total LLM cost, and **spec-coverage** section listing which spec sections have at least one assertion testing them; **`audit-validation.md`** mapping each audit claim to CONFIRMED/CONTRADICTED/INCONCLUSIVE based on the cells tagged with `auditClaim`. Runs the smoke test from §8.
