@@ -1197,21 +1197,26 @@ export const W5: WorkflowDef = {
 
     const condition = { category: "PTD" as const, source: "UW" as const, description: "e2e-test condition unique-marker-W5" };
 
-    // Add.
-    type AddResp = { condition?: { id: string } };
-    const addResp = await http.post<AddResp>(apiOpts, `/loans/${fixture.loanId}/conditions`, { ...condition, actor: ACTORS.human });
-    const addedId = addResp.condition?.id ?? null;
+    // Add. NOTE: API expects { condition: {...}, actor } (NewConditionSchema), and returns the full loan.
+    const baselineIds = new Set((before.conditions ?? []).map((c) => c.id));
+    await http.post<Loan>(apiOpts, `/loans/${fixture.loanId}/conditions`, { condition, actor: ACTORS.human });
+    const afterAdd = await http.get<Loan>(apiOpts, `/loans/${fixture.loanId}`);
+    const addedCondition = (afterAdd.conditions ?? []).find((c) => !baselineIds.has(c.id) && c.description === condition.description);
+    const addedId = addedCondition?.id ?? null;
     assertions.push({ name: "condition_added", expected: "non-null id", actual: addedId, ok: !!addedId });
     if (!addedId) return cell(fixture, start, "fail", "P0", assertions);
 
-    // Dedup: try adding the same condition again.
-    const afterDup = await http.post<{ condition?: { id: string } } | { error?: string }>(apiOpts, `/loans/${fixture.loanId}/conditions`, { ...condition, actor: ACTORS.human }).catch(() => ({} as { error?: string }));
+    // Dedup: try adding the same condition again. The reducer no-ops duplicates silently
+    // (matched by normalized first-30-char description) — second POST returns 200 with no growth.
+    await http.post(apiOpts, `/loans/${fixture.loanId}/conditions`, { condition, actor: ACTORS.human }).catch(() => undefined);
     const loanAfterDup = await http.get<Loan>(apiOpts, `/loans/${fixture.loanId}`);
     const matchingCount = (loanAfterDup.conditions ?? []).filter((c) => c.description === condition.description).length;
     assertions.push({ name: "dedup_blocks_duplicate", expected: 1, actual: matchingCount, ok: matchingCount === 1 });
 
-    // Clear.
-    await http.put(apiOpts, `/loans/${fixture.loanId}/conditions/${addedId}/clear`, { notes: "e2e: cleared", actor: ACTORS.human });
+    // Clear. The clear endpoint is POST (not PUT) per packages/api/src/routes/conditions.ts; keep PUT fallback for safety.
+    await http.put(apiOpts, `/loans/${fixture.loanId}/conditions/${addedId}/clear`, { notes: "e2e: cleared", actor: ACTORS.human }).catch(async () => {
+      await http.post(apiOpts, `/loans/${fixture.loanId}/conditions/${addedId}/clear`, { notes: "e2e: cleared", actor: ACTORS.human });
+    });
 
     const final = await http.get<Loan>(apiOpts, `/loans/${fixture.loanId}`);
     const cleared = (final.conditions ?? []).find((c) => c.id === addedId);
