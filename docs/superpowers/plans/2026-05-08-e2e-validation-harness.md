@@ -315,7 +315,7 @@ export async function pingHealth(apiUrl: string, agentUrl: string): Promise<{ ap
     details.push(`API unhealthy: ${e instanceof Error ? e.message : String(e)}`);
   }
   try {
-    await request<unknown>({ baseUrl: agentUrl, timeoutMs: 2000 }, "GET", "/health");
+    await request<unknown>({ baseUrl: agentUrl, timeoutMs: 2000 }, "GET", "/api/health");
     agentOk = true;
   } catch (e) {
     details.push(`Agent unhealthy: ${e instanceof Error ? e.message : String(e)}`);

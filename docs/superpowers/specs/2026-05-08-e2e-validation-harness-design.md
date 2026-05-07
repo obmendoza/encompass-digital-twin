@@ -193,7 +193,7 @@ The metric the operator should look at is **`total_assertions_run`**, not cell c
 **Flake detection via `--repeat N` (default 2):** the harness runs the full matrix N times and compares CellResults across passes. A cell whose `status` differs across passes is recorded as `flake` (severity inferred from the underlying P-class of the unstable assertion — P0 flake on a P0-class assertion, etc.). The default of 2 doubles wall-clock but buys real flake signal on the first run; `--repeat 1` disables it.
 
 **Pre-flight checks at startup, in order — abort if any fails:**
-1. **Process pings** — `/system/health` (API) and `agent /health` (each < 2s).
+1. **Process pings** — `/system/health` (API) and `agent /api/health` (each < 2s).
 2. **Canary cell** — one full execution of `W1_uw_accept` against `nqm-bankstmt-12mo-clean`. This verifies DB connectivity, Anthropic auth, ChromaDB, agent ↔ API round-trip, and migration version in one shot. If the canary fails, the harness aborts with the canary's error as the abort reason. Cost: ~5 seconds; payoff: catches infrastructure issues before sinking 8–15 min into a doomed run.
 
 **`--skip-canary` opt-out:** on a freshly deployed environment where some integration (e.g., KB tools) isn't yet expected to exist, the canary will fail by design. `--skip-canary` lets the operator run the matrix anyway and accept the risk that infrastructure issues won't surface until the first real cell. Default behavior remains canary-on; the flag exists as an explicit operator acknowledgement, not a default.
