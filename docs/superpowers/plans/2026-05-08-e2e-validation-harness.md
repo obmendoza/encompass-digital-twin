@@ -914,10 +914,12 @@ import { ACTORS, http, type HttpOptions } from "../http.js";
 import { APPLIES_TO_ALL } from "../fixtures.js";
 import type { AssertionResult, CellResult, FixtureMeta, WorkflowDef } from "../types.js";
 
+// Canonical taxonomy from packages/core/src/learning-types.ts:5-13.
+// Lowercase snake_case; the API's Zod schema rejects anything else.
 const VALID_REASONS = new Set([
-  "DTI_RATIO_EXCEPTION", "RESERVES_EXCEPTION", "CREDIT_EVENT_EXCEPTION", "INCOME_DOCUMENTATION",
-  "PROPERTY_CONDITION", "COMPENSATING_FACTORS", "INVESTOR_OVERLAY_DEVIATION", "MISSING_DOCUMENTATION",
-  "OTHER",
+  "dti_exception", "income_adjustment", "credit_reassessment", "doc_sufficiency",
+  "compliance_exception", "guideline_exception", "risk_tolerance", "data_error",
+  "other",
 ]);
 
 export const W2: WorkflowDef = {
@@ -942,7 +944,7 @@ export const W2: WorkflowDef = {
     if (!original) return cell(fixture, start, "fail", "P0", assertions, {}, "NO_RECOMMENDATION", "no rec to override");
 
     const overrideTo = original === "approved" ? "suspended" : "approved";
-    const reason = "DTI_RATIO_EXCEPTION";
+    const reason = "dti_exception";
     const rationale = `e2e-test override: ${original}→${overrideTo}`;
 
     await http.post(apiOpts, `/loans/${fixture.loanId}/override`, {
@@ -1411,7 +1413,7 @@ export const W7: WorkflowDef = {
       await http.post(apiOpts, `/loans/2501000101/override`, {
         originalRecommendation: original,
         overrideDecision: overrideTo,
-        overrideReason: "DTI_RATIO_EXCEPTION",
+        overrideReason: "dti_exception",
         rationale: `e2e-pattern-seed-${i}`,
         actor: ACTORS.human,
       });
