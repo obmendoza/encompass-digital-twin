@@ -22,116 +22,182 @@
 
 | File | Responsibility | Wave |
 |---|---|---|
-| `scripts/e2e-harness/types.ts` | Shared types: `Severity`, `AssertionResult`, `EvidenceBundle`, `CellResult`, `RunReport`, `FixtureMeta`, `RunContext`, `WorkflowDef` | 1 |
-| `scripts/e2e-harness/http.ts` | Thin `fetch()` wrapper for API + Agent calls; JSON helpers; default actor injection | 1 |
+| `scripts/e2e-harness/types.ts` | TS types AND Zod schemas: `Severity`, `AssertionResult`, `EvidenceBundle`, `CellResult`, `RunReport`, `FixtureMeta`, `RunContext`, `WorkflowDef`, `AuditClaim` | 1 |
+| `scripts/e2e-harness/http.ts` | Thin `fetch()` wrapper for API + Agent calls; JSON helpers; default actor injection; `HttpError` | 1 |
 | `scripts/e2e-harness/fixtures.ts` | Imports 20 fixtures from `@twin/fixtures`; classifies them; exposes `listFixtures()` and a default `appliesTo()` helper | 1 |
-| `scripts/e2e-harness/run.ts` | CLI entry: parses argv, runs preflight, iterates matrix, calls aggregate, exits with non-zero if any P0 | 1 |
-| `scripts/e2e-harness/aggregate.ts` | Skeleton in Wave 1; full Markdown formatter in Wave 3 | 1 + 3 |
-| `scripts/e2e-harness/workflows/W1-uw-accept.ts` | UW accept happy path | 2 |
+| `scripts/e2e-harness/run.ts` | CLI entry: parses argv, runs process pings + canary, iterates matrix `--repeat N` times, computes flakes, calls aggregate, exits with non-zero if any P0 | 1 |
+| `scripts/e2e-harness/aggregate.ts` | Skeleton in Wave 1; full Markdown formatter (audit-validation, regression diff, fingerprint grouping, spec coverage) in Wave 3 | 1 + 3 |
+| `scripts/e2e-harness/workflows/W1-uw-accept.ts` | UW accept happy path; **decision-immutability invariant** | 2 |
 | `scripts/e2e-harness/workflows/W2-uw-override.ts` | UW override with reason | 2 |
 | `scripts/e2e-harness/workflows/W3-send-back-va.ts` | UW sends back to VA | 2 |
-| `scripts/e2e-harness/workflows/W4-efolder-idp-push.ts` | eFolder → IDP → Stare & Compare → Push | 2 |
+| `scripts/e2e-harness/workflows/W4-efolder-idp-push.ts` | eFolder → IDP → Stare & Compare → Push; **AC1-tagged assertion** | 2 |
 | `scripts/e2e-harness/workflows/W5-conditions-lifecycle.ts` | Add → link → clear; dedup blocks duplicate | 2 |
-| `scripts/e2e-harness/workflows/W6-kb-ingest-twokey.ts` | KB ingest + two-key approval (one cell) | 2 |
-| `scripts/e2e-harness/workflows/W7-pattern-detection-llm.ts` | Pattern detection from N seeded decisions (one cell) | 2 |
-| `scripts/e2e-harness/workflows/W8-multi-tenant-rls.ts` | RLS isolation across 3 representative fixtures | 2 |
-| `scripts/e2e-harness/README.md` | How to run, output format, troubleshooting | 3 |
+| `scripts/e2e-harness/workflows/W6-kb-ingest-twokey.ts` | KB ingest + two-key approval; sub-cells; ephemeral `e2e-test-kb-*` tenant | 2 |
+| `scripts/e2e-harness/workflows/W7-pattern-detection-llm.ts` | Pattern detection from N seeded decisions; sub-cells; suggestion-lifecycle assertions | 2 |
+| `scripts/e2e-harness/workflows/W8-multi-tenant-rls.ts` | RLS isolation across 3 representative fixtures; **forged `x-tenant-id` directly to API** | 2 |
+| `scripts/e2e-harness/audit-claims.ts` | The audit's claims as data (`AC1`, …); consumed by aggregate to render `audit-validation.md` | 3 |
+| `scripts/e2e-harness/README.md` | How to run, output format, troubleshooting, layered quality model pointer | 3 |
 
-**Wave dispatch model:** Wave 1 is one agent (Tasks 1–5 sequential). Wave 2 dispatches 8 parallel agents (Tasks 6–13, one each). Wave 3 is one agent (Tasks 14–15).
+**Wave dispatch model:** Wave 1 is one agent (Tasks 1–5 sequential). Wave 2 dispatches 8 parallel agents (Tasks 6–13, one each). **Wave 2.5** (~15 min) is for following up on any agent that needs a second pass — typically 1–2 of the 8. Wave 3 is one agent (Tasks 14–15).
 
 ---
 
-## Task 1: Create `types.ts` — shared type definitions
+## Task 1: Create `types.ts` — shared types AND Zod schemas
 
 **Files:**
 - Create: `scripts/e2e-harness/types.ts`
+
+Per spec §6 + §8, the harness exports both TS types (compile-time) and Zod schemas (runtime validation of `matrix.json`).
 
 - [ ] **Step 1: Write the file**
 
 ```typescript
 // scripts/e2e-harness/types.ts
-// Shared types for the E2E validation harness. No runtime code.
+// Shared types + Zod schemas for the E2E validation harness.
 
-export type Severity = "P0" | "P1" | "P2" | null;
+import { z } from "zod";
 
-export type CellStatus = "pass" | "fail" | "skip";
+// --- Severity / Status ----------------------------------------------------
 
-export interface AssertionResult {
-  name: string;
-  expected: unknown;
-  actual: unknown;
-  ok: boolean;
-}
+export const SeveritySchema = z.enum(["P0", "P1", "P2"]).nullable();
+export type Severity = z.infer<typeof SeveritySchema>;
 
-export interface EvidenceBundle {
-  decisionRecordId?: string;
-  kbVersion?: string | null;
-  agentTraceLength?: number;
-  pipelineCostUsd?: number;
-  screenshotPath?: string | null;
-  // Workflow-specific extras allowed:
-  [key: string]: unknown;
-}
+export const CellStatusSchema = z.enum(["pass", "fail", "skip", "partial_skip"]);
+export type CellStatus = z.infer<typeof CellStatusSchema>;
 
-export interface CellResult {
-  loanId: string | null;          // null for global workflows (W6, W7)
-  fixture: string;                // fixture id; "_global" for W6/W7
-  workflow: string;               // e.g. "W1_uw_accept"
-  status: CellStatus;
-  severity: Severity;
-  durationMs: number;
-  assertions: AssertionResult[];
-  evidence: EvidenceBundle;
-  error: { code: string; message: string; stack?: string } | null;
-}
+// --- Assertion ------------------------------------------------------------
 
-export interface FixtureMeta {
-  id: string;                     // e.g. "nqm-bankstmt-12mo-clean"
-  loanId: string;                 // e.g. "2501000101"
-  program: string;                // "BankStatement" | "DSCR" | "FullDoc" | "ForeignNational" | ...
-  isEdge: boolean;                // true for nqm-edge-*
-}
+export const AssertionResultSchema = z.object({
+  name: z.string(),
+  expected: z.unknown(),
+  actual: z.unknown(),
+  ok: z.boolean(),
+  subCell: z.string().optional(),     // e.g. "W6.ingest" — groups related assertions for reporting
+  auditClaim: z.string().nullable().optional(), // e.g. "AC1" if this assertion tests a specific audit claim
+});
+export type AssertionResult = z.infer<typeof AssertionResultSchema>;
+
+// --- Evidence -------------------------------------------------------------
+
+export const EvidenceBundleSchema = z.object({
+  decisionRecordId: z.string().optional(),
+  kbVersion: z.string().nullable().optional(),
+  agentTraceLength: z.number().optional(),
+  pipelineCostUsd: z.number().optional(),
+  screenshotPath: z.string().nullable().optional(),
+  errorFingerprint: z.string().nullable().optional(),
+}).catchall(z.unknown());
+export type EvidenceBundle = z.infer<typeof EvidenceBundleSchema>;
+
+// --- Cell -----------------------------------------------------------------
+
+export const CellResultSchema = z.object({
+  // Backfilled by the runner if omitted by the workflow:
+  harnessRunId: z.string().optional(),
+  specRefs: z.array(z.string()).optional(),
+  // Required from the workflow:
+  loanId: z.string().nullable(),
+  fixture: z.string(),
+  workflow: z.string(),
+  status: CellStatusSchema,
+  severity: SeveritySchema,
+  durationMs: z.number(),
+  assertions: z.array(AssertionResultSchema),
+  evidence: EvidenceBundleSchema,
+  error: z.object({
+    code: z.string(),
+    message: z.string(),
+    stack: z.string().optional(),
+  }).nullable(),
+  // Optional / sub-cell metadata:
+  auditClaim: z.string().nullable().optional(),
+  skippedAssertions: z.array(z.string()).optional(),
+  subCells: z.array(z.object({
+    id: z.string(),                 // e.g. "W6.ingest"
+    status: CellStatusSchema,
+    severity: SeveritySchema,
+    assertionCount: z.number(),
+  })).optional(),
+});
+export type CellResult = z.infer<typeof CellResultSchema>;
+
+// --- Fixture / Run context ------------------------------------------------
+
+export const FixtureMetaSchema = z.object({
+  id: z.string(),
+  loanId: z.string(),
+  program: z.string(),
+  isEdge: z.boolean(),
+});
+export type FixtureMeta = z.infer<typeof FixtureMetaSchema>;
 
 export interface RunContext {
-  apiUrl: string;                 // default http://localhost:4000
-  agentUrl: string;               // default http://localhost:8000
-  outDir: string;                 // reports/<run-id>/
-  startedAt: string;              // ISO timestamp
+  harnessRunId: string;
+  apiUrl: string;
+  agentUrl: string;
+  outDir: string;
+  startedAt: string;
+  pass: number;                     // 1-indexed pass number when --repeat > 1
 }
 
+// --- Workflow definition --------------------------------------------------
+
 export interface WorkflowDef {
-  id: string;                     // "W1_uw_accept"
-  name: string;                   // "UW Decision — Accept"
+  id: string;
+  name: string;
+  specRefs: string[];               // spec sections this workflow validates — surfaced in summary.md
   appliesTo: (fixture: FixtureMeta) => boolean;
   run: (fixture: FixtureMeta, ctx: RunContext) => Promise<CellResult>;
 }
 
-export interface RunReport {
-  startedAt: string;
-  finishedAt: string;
-  durationMs: number;
-  totalCells: number;             // 160 (full matrix)
-  executed: number;               // 105
-  skipped: number;                // 55
-  passed: number;
-  failed: number;
-  bySeverity: { P0: number; P1: number; P2: number };
-  aborted: boolean;
-  abortReason: string | null;
-  cells: CellResult[];
-}
+// --- Audit claim ----------------------------------------------------------
+
+export const AuditClaimSchema = z.object({
+  id: z.string(),                   // "AC1"
+  text: z.string(),                 // human-readable claim text
+  expectedVerdict: z.enum(["confirmed", "contradicted", "inconclusive"]).optional(),
+});
+export type AuditClaim = z.infer<typeof AuditClaimSchema>;
+
+// --- Run report -----------------------------------------------------------
+
+export const RunReportSchema = z.object({
+  harnessRunId: z.string(),
+  startedAt: z.string(),
+  finishedAt: z.string(),
+  durationMs: z.number(),
+  totalCells: z.number(),
+  executed: z.number(),
+  partialSkipped: z.number(),
+  fullSkipped: z.number(),
+  passed: z.number(),
+  failed: z.number(),
+  bySeverity: z.object({
+    P0: z.number(),
+    P1: z.number(),
+    P2: z.number(),
+  }),
+  totalLlmCostUsd: z.number(),
+  totalAssertionsRun: z.number(),
+  passes: z.number(),               // how many --repeat passes ran
+  flakeCells: z.array(z.string()).default([]), // workflow:fixture identifiers whose status differed across passes
+  aborted: z.boolean(),
+  abortReason: z.string().nullable(),
+  cells: z.array(CellResultSchema),
+});
+export type RunReport = z.infer<typeof RunReportSchema>;
 ```
 
-- [ ] **Step 2: Verify the file type-checks**
+- [ ] **Step 2: Verify it type-checks and Zod parses round-trip**
 
-Run: `pnpm tsc --noEmit --target es2022 --module esnext --moduleResolution bundler scripts/e2e-harness/types.ts`
-Expected: no output (success).
+Run: `pnpm tsx -e 'import { CellResultSchema } from "./scripts/e2e-harness/types.ts"; const sample = { harnessRunId: "run_test", loanId: "L1", fixture: "f1", workflow: "W1", status: "pass", severity: null, durationMs: 1, specRefs: [], assertions: [], skippedAssertions: [], subCells: [], evidence: {}, error: null }; console.log(CellResultSchema.parse(sample).workflow);'`
+Expected: prints `W1`.
 
 - [ ] **Step 3: Commit**
 
 ```bash
 git add scripts/e2e-harness/types.ts
-git commit -m "feat(e2e): types module for validation harness"
+git commit -m "feat(e2e): types + Zod schemas for validation harness"
 ```
 
 ---
@@ -299,15 +365,16 @@ git commit -m "feat(e2e): fixtures loader + classifier"
 **Files:**
 - Create: `scripts/e2e-harness/run.ts`
 
+Per spec §7: process pings → **canary cell** before the matrix. Per spec §9: `--repeat N` (default 2) for flake detection. Each cell carries `harnessRunId` so persistent records can be purged later.
+
 - [ ] **Step 1: Write the file**
 
 ```typescript
 // scripts/e2e-harness/run.ts
 // CLI entry point for the E2E validation harness.
-// Usage: pnpm tsx scripts/e2e-harness/run.ts [--out reports/<id>/] [--workflow Wn] [--fixture <id>]
 
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, mkdirSync } from "node:fs";
+import { randomBytes } from "node:crypto";
 import { listFixtures, GLOBAL_FIXTURE_SENTINEL } from "./fixtures.js";
 import { pingHealth } from "./http.js";
 import type { CellResult, FixtureMeta, RunContext, RunReport, WorkflowDef } from "./types.js";
@@ -323,108 +390,107 @@ import { W8 } from "./workflows/W8-multi-tenant-rls.js";
 
 const ALL_WORKFLOWS: WorkflowDef[] = [W1, W2, W3, W4, W5, W6, W7, W8];
 const GLOBAL_WORKFLOWS = new Set(["W6_kb_ingest_twokey", "W7_pattern_detection"]);
+const CANARY_FIXTURE_ID = "nqm-bankstmt-12mo-clean";
 
 interface Args {
   outDir: string;
   workflow: string | null;
   fixture: string | null;
+  repeat: number;
 }
 
 function parseArgs(argv: string[]): Args {
-  const out: Args = { outDir: defaultOutDir(), workflow: null, fixture: null };
+  const out: Args = { outDir: defaultOutDir(), workflow: null, fixture: null, repeat: 2 };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--out" && argv[i + 1]) { out.outDir = argv[++i]!; continue; }
     if (a === "--workflow" && argv[i + 1]) { out.workflow = argv[++i]!; continue; }
     if (a === "--fixture" && argv[i + 1]) { out.fixture = argv[++i]!; continue; }
+    if (a === "--repeat" && argv[i + 1]) { out.repeat = Math.max(1, parseInt(argv[++i]!, 10) || 1); continue; }
   }
   return out;
 }
 
 function defaultOutDir(): string {
   const d = new Date();
-  const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
-  return `reports/${stamp}`;
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  return `reports/${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
 }
 
-function pad(n: number): string {
-  return n.toString().padStart(2, "0");
+function newRunId(): string {
+  const d = new Date();
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
+  return `run_${stamp}_${randomBytes(2).toString("hex")}`;
 }
 
 async function runCell(workflow: WorkflowDef, fixture: FixtureMeta, ctx: RunContext): Promise<CellResult> {
   const start = Date.now();
   try {
-    return await workflow.run(fixture, ctx);
+    const result = await workflow.run(fixture, ctx);
+    // Ensure runtime fields are populated even if a workflow author forgot.
+    result.harnessRunId ??= ctx.harnessRunId;
+    result.specRefs ??= workflow.specRefs;
+    return result;
   } catch (e) {
     const err = e instanceof Error ? e : new Error(String(e));
     return {
+      harnessRunId: ctx.harnessRunId,
       loanId: fixture.loanId === "_global" ? null : fixture.loanId,
       fixture: fixture.id,
       workflow: workflow.id,
       status: "fail",
       severity: "P0",
       durationMs: Date.now() - start,
+      auditClaim: null,
+      specRefs: workflow.specRefs,
       assertions: [],
+      skippedAssertions: [],
+      subCells: [],
       evidence: {},
       error: { code: "WORKFLOW_CRASH", message: err.message, stack: err.stack },
     };
   }
 }
 
-function skipCell(workflow: WorkflowDef, fixture: FixtureMeta): CellResult {
+function skipCell(workflow: WorkflowDef, fixture: FixtureMeta, ctx: RunContext): CellResult {
   return {
+    harnessRunId: ctx.harnessRunId,
     loanId: fixture.loanId === "_global" ? null : fixture.loanId,
     fixture: fixture.id,
     workflow: workflow.id,
     status: "skip",
     severity: null,
     durationMs: 0,
+    auditClaim: null,
+    specRefs: workflow.specRefs,
     assertions: [],
+    skippedAssertions: [],
+    subCells: [],
     evidence: {},
     error: null,
   };
 }
 
-async function main() {
-  const args = parseArgs(process.argv.slice(2));
-  const ctx: RunContext = {
-    apiUrl: process.env.API_URL ?? "http://localhost:4000",
-    agentUrl: process.env.AGENT_SERVICE_URL ?? "http://localhost:8000",
-    outDir: args.outDir,
-    startedAt: new Date().toISOString(),
-  };
-  if (!existsSync(ctx.outDir)) mkdirSync(ctx.outDir, { recursive: true });
-
-  const preflight = await pingHealth(ctx.apiUrl, ctx.agentUrl);
-  if (!preflight.apiOk || !preflight.agentOk) {
-    console.error("Preflight failed:");
-    for (const d of preflight.details) console.error("  " + d);
-    process.exit(2);
-  }
-
-  const fixtures = listFixtures();
-  let workflows = ALL_WORKFLOWS;
-  if (args.workflow) workflows = workflows.filter((w) => w.id === args.workflow || w.id.startsWith(args.workflow!));
-  if (workflows.length === 0) {
-    console.error(`No workflow matched --workflow ${args.workflow}`);
-    process.exit(2);
-  }
-
+async function runMatrix(
+  workflows: WorkflowDef[],
+  fixtures: FixtureMeta[],
+  args: Args,
+  ctx: RunContext,
+): Promise<{ cells: CellResult[]; aborted: boolean; abortReason: string | null }> {
   const cells: CellResult[] = [];
-  const startMs = Date.now();
   let aborted = false;
   let abortReason: string | null = null;
 
   outer: for (const w of workflows) {
     if (GLOBAL_WORKFLOWS.has(w.id)) {
-      // One cell against the sentinel; skip cells for the other 19.
       cells.push(await runCell(w, GLOBAL_FIXTURE_SENTINEL, ctx));
-      for (const f of fixtures) cells.push(skipCell(w, f));
+      for (const f of fixtures) cells.push(skipCell(w, f, ctx));
       continue;
     }
     for (const f of fixtures) {
       if (args.fixture && f.id !== args.fixture) continue;
-      if (!w.appliesTo(f)) { cells.push(skipCell(w, f)); continue; }
+      if (!w.appliesTo(f)) { cells.push(skipCell(w, f, ctx)); continue; }
       try {
         cells.push(await runCell(w, f, ctx));
       } catch (e) {
@@ -434,41 +500,122 @@ async function main() {
       }
     }
   }
+  return { cells, aborted, abortReason };
+}
 
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+  const harnessRunId = newRunId();
+  const apiUrl = process.env.API_URL ?? "http://localhost:4000";
+  const agentUrl = process.env.AGENT_SERVICE_URL ?? "http://localhost:8000";
+  if (!existsSync(args.outDir)) mkdirSync(args.outDir, { recursive: true });
+
+  // --- Preflight: process pings ---
+  const preflight = await pingHealth(apiUrl, agentUrl);
+  if (!preflight.apiOk || !preflight.agentOk) {
+    console.error("Preflight failed:");
+    for (const d of preflight.details) console.error("  " + d);
+    process.exit(2);
+  }
+
+  // --- Preflight: canary cell (W1 against bankstmt-12mo-clean) ---
+  // Skip canary if user explicitly invoked a non-W1 single-cell run, since they're already debugging that cell.
+  const isExplicitSingleCell = args.workflow !== null && args.fixture !== null;
+  if (!isExplicitSingleCell) {
+    const canaryFixture = listFixtures().find((f) => f.id === CANARY_FIXTURE_ID);
+    if (!canaryFixture) {
+      console.error(`Canary fixture ${CANARY_FIXTURE_ID} not found.`);
+      process.exit(2);
+    }
+    const canaryCtx: RunContext = { harnessRunId, apiUrl, agentUrl, outDir: args.outDir, startedAt: new Date().toISOString(), pass: 0 };
+    const canary = await runCell(W1, canaryFixture, canaryCtx);
+    if (canary.status === "fail") {
+      console.error("Canary cell failed — aborting before full matrix.");
+      console.error(`  ${canary.error?.code}: ${canary.error?.message}`);
+      console.error(`  Failed assertions: ${canary.assertions.filter((a) => !a.ok).map((a) => a.name).join(", ")}`);
+      process.exit(2);
+    }
+    console.log(`Canary OK (${(canary.durationMs / 1000).toFixed(1)}s).`);
+  }
+
+  // --- Run the matrix N times for flake detection ---
+  const fixtures = listFixtures();
+  let workflows = ALL_WORKFLOWS;
+  if (args.workflow) workflows = workflows.filter((w) => w.id === args.workflow || w.id.startsWith(args.workflow!));
+  if (workflows.length === 0) {
+    console.error(`No workflow matched --workflow ${args.workflow}`);
+    process.exit(2);
+  }
+
+  const startMs = Date.now();
+  const startedAt = new Date().toISOString();
+  const allPasses: CellResult[][] = [];
+  let aborted = false;
+  let abortReason: string | null = null;
+
+  for (let pass = 1; pass <= args.repeat; pass++) {
+    if (args.repeat > 1) console.log(`\n--- Pass ${pass} of ${args.repeat} ---`);
+    const ctx: RunContext = { harnessRunId, apiUrl, agentUrl, outDir: args.outDir, startedAt, pass };
+    const result = await runMatrix(workflows, fixtures, args, ctx);
+    allPasses.push(result.cells);
+    if (result.aborted) { aborted = true; abortReason = result.abortReason; break; }
+  }
+
+  // --- Flake detection: any cell whose status differs across passes ---
+  const flakeCells: string[] = [];
+  if (allPasses.length > 1) {
+    const baseline = allPasses[0]!;
+    for (let i = 0; i < baseline.length; i++) {
+      const id = `${baseline[i]!.workflow}:${baseline[i]!.fixture}`;
+      const statuses = new Set(allPasses.map((p) => p[i]?.status));
+      if (statuses.size > 1) flakeCells.push(id);
+    }
+  }
+
+  // Use the LAST pass as the authoritative cells; flakes are noted separately.
+  const cells = allPasses[allPasses.length - 1] ?? [];
+
+  // --- Aggregate ---
   const finishedAt = new Date().toISOString();
   const totalCells = cells.length;
-  const executed = cells.filter((c) => c.status !== "skip").length;
-  const passed = cells.filter((c) => c.status === "pass").length;
+  const executed = cells.filter((c) => c.status === "pass" || c.status === "fail").length;
+  const partialSkipped = cells.filter((c) => c.status === "partial_skip").length;
+  const fullSkipped = cells.filter((c) => c.status === "skip").length;
+  const passed = cells.filter((c) => c.status === "pass" || c.status === "partial_skip").length;
   const failed = cells.filter((c) => c.status === "fail").length;
-  const skipped = totalCells - executed;
   const bySeverity = {
     P0: cells.filter((c) => c.severity === "P0").length,
     P1: cells.filter((c) => c.severity === "P1").length,
     P2: cells.filter((c) => c.severity === "P2").length,
   };
+  const totalLlmCostUsd = cells.reduce((s, c) => s + (typeof c.evidence.pipelineCostUsd === "number" ? c.evidence.pipelineCostUsd : 0), 0);
+  const totalAssertionsRun = cells.reduce((s, c) => s + c.assertions.length, 0);
 
   const report: RunReport = {
-    startedAt: ctx.startedAt,
+    harnessRunId,
+    startedAt,
     finishedAt,
     durationMs: Date.now() - startMs,
     totalCells,
     executed,
-    skipped,
+    partialSkipped,
+    fullSkipped,
     passed,
     failed,
     bySeverity,
+    totalLlmCostUsd,
+    totalAssertionsRun,
+    passes: allPasses.length,
+    flakeCells,
     aborted,
     abortReason,
     cells,
   };
 
-  await aggregate(report, ctx.outDir);
-  console.log(`\nRun ${aborted ? "ABORTED" : "complete"}: ${passed}/${executed} passed, ${failed} failed (P0=${bySeverity.P0} P1=${bySeverity.P1} P2=${bySeverity.P2}). Report at ${ctx.outDir}/`);
+  await aggregate(report, args.outDir);
+  console.log(`\nRun ${aborted ? "ABORTED" : "complete"}: ${passed}/${executed + partialSkipped} passed, ${failed} failed (P0=${bySeverity.P0} P1=${bySeverity.P1} P2=${bySeverity.P2}); cost $${totalLlmCostUsd.toFixed(2)}; flakes: ${flakeCells.length}. Report at ${args.outDir}/`);
   process.exit(bySeverity.P0 > 0 || aborted ? 1 : 0);
 }
-
-void writeFileSyncMaybe(); // tree-shake guard for unused import
-async function writeFileSyncMaybe() { writeFileSync; dirname; join; } // referenced for tsc
 
 main().catch((e) => { console.error(e); process.exit(2); });
 ```
@@ -482,7 +629,7 @@ Expected: error mentioning `Cannot find module './workflows/W1-uw-accept.js'` �
 
 ```bash
 git add scripts/e2e-harness/run.ts
-git commit -m "feat(e2e): runner skeleton with preflight, args, abort handling"
+git commit -m "feat(e2e): runner with canary preflight, --repeat flake detection, harnessRunId"
 ```
 
 ---
@@ -527,16 +674,20 @@ function renderSummary(r: RunReport): string {
   return [
     `# E2E Run ${r.startedAt}`,
     ``,
+    `- runId: ${r.harnessRunId}`,
     `- Started: ${r.startedAt}`,
     `- Finished: ${r.finishedAt}`,
     `- Duration: ${(r.durationMs / 1000).toFixed(1)}s`,
-    `- Total matrix cells: ${r.totalCells}`,
-    `- Executed: ${r.executed} (skipped: ${r.skipped})`,
-    `- Passed: ${r.passed} / ${r.executed} (${r.executed ? Math.round((r.passed / r.executed) * 100) : 0}%)`,
+    `- Passes: ${r.passes}`,
+    `- Total matrix cells: ${r.totalCells} (executed: ${r.executed}, partial-skip: ${r.partialSkipped}, full-skip: ${r.fullSkipped})`,
+    `- Total assertions run: ${r.totalAssertionsRun}`,
+    `- Passed: ${r.passed}`,
     `- Failed: ${r.failed} (P0: ${r.bySeverity.P0}, P1: ${r.bySeverity.P1}, P2: ${r.bySeverity.P2})`,
+    `- Flake cells: ${r.flakeCells.length}`,
+    `- Total LLM cost: $${r.totalLlmCostUsd.toFixed(2)}`,
     r.aborted ? `- **ABORTED**: ${r.abortReason ?? "unknown"}` : ``,
     ``,
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 }
 
 function renderPunchList(cells: CellResult[]): string {
@@ -560,6 +711,8 @@ function renderPunchList(cells: CellResult[]): string {
 }
 ```
 
+**Note:** This is the skeleton. `audit-validation.md`, error-fingerprint grouping, regression diff, and spec-coverage section all land in Task 14. The skeleton must compile against the new `RunReport` shape (with `partialSkipped`, `fullSkipped`, `passes`, `flakeCells`, `totalLlmCostUsd`, `totalAssertionsRun`, `harnessRunId`) but doesn't need to render those fully yet.
+
 - [ ] **Step 2: Type-check**
 
 Run: `pnpm tsc --noEmit --target es2022 --module esnext --moduleResolution bundler scripts/e2e-harness/aggregate.ts 2>&1 | head -20 || true`
@@ -581,6 +734,8 @@ git commit -m "feat(e2e): aggregate skeleton (json + minimal markdown)"
 
 **Spec assertions (§5):** After `accept`, `loan.decision == staged.recommendation`; `decisionRecord` exists with non-null `kbVersion` and `chatbotConsultationId`; agent trace length > 0; pipeline cost > 0.
 
+**Adjustment per revised spec §5 — decision-immutability invariant test:** after the Accept assertions pass, attempt a second mutation: `POST /loans/:loanId/decision` (or whatever the dispatch path is) with a different decision value. Assert the response is non-OK (4xx) and that `loan.decision` after the call is unchanged. Tag this assertion with `name: "decision_immutable_after_accept"`. If it passes through, that's a P0 — decisions must be append-only after Accept.
+
 - [ ] **Step 1: Write the workflow module**
 
 ```typescript
@@ -594,6 +749,7 @@ import type { AssertionResult, CellResult, FixtureMeta, RunContext, WorkflowDef 
 export const W1: WorkflowDef = {
   id: "W1_uw_accept",
   name: "UW Decision — Accept",
+  specRefs: ["learning-engine §1.2", "core/decision-records"],
   appliesTo: APPLIES_TO_ALL,
   run: async (fixture, ctx) => {
     const start = Date.now();
@@ -719,6 +875,7 @@ const VALID_REASONS = new Set([
 export const W2: WorkflowDef = {
   id: "W2_uw_override",
   name: "UW Decision — Override",
+  specRefs: ["learning-engine §1.3", "learning-engine §1.4"],
   appliesTo: APPLIES_TO_ALL,
   run: async (fixture, ctx) => {
     const start = Date.now();
@@ -802,6 +959,7 @@ import type { AssertionResult, CellResult, FixtureMeta, WorkflowDef } from "../t
 export const W3: WorkflowDef = {
   id: "W3_send_back_va",
   name: "Send Back to VA",
+  specRefs: ["core/assignment"],
   appliesTo: APPLIES_TO_ALL,
   run: async (fixture, ctx) => {
     const start = Date.now();
@@ -873,6 +1031,7 @@ import type { AssertionResult, CellResult, FixtureMeta, WorkflowDef } from "../t
 export const W4: WorkflowDef = {
   id: "W4_efolder_idp_push",
   name: "eFolder → IDP → Stare & Compare → Push",
+  specRefs: ["slice-5-efolder", "slice-4-income"],
   appliesTo: (f) => f.program !== "ForeignNational",
   run: async (fixture, ctx) => {
     const start = Date.now();
@@ -921,7 +1080,7 @@ export const W4: WorkflowDef = {
 
     const finalLoan = await http.get<Loan>(apiOpts, `/loans/${fixture.loanId}`);
     const wsFinal = (finalLoan.qualifyingWorksheet ?? {}) as Record<string, unknown>;
-    assertions.push({ name: "worksheet_avgDeposits_updated", expected: totalDeposits, actual: wsFinal.avgDeposits, ok: wsFinal.avgDeposits === totalDeposits });
+    assertions.push({ name: "worksheet_avgDeposits_updated", expected: totalDeposits, actual: wsFinal.avgDeposits, ok: wsFinal.avgDeposits === totalDeposits, auditClaim: "AC1" });
 
     const allOk = assertions.every((a) => a.ok);
     const severity = allOk ? null : (assertions.find((a) => !a.ok && (a.name === "extractedData_persisted" || a.name === "worksheet_avgDeposits_updated")) ? "P0" : "P1");
@@ -966,6 +1125,7 @@ import type { AssertionResult, CellResult, FixtureMeta, WorkflowDef } from "../t
 export const W5: WorkflowDef = {
   id: "W5_conditions_lifecycle",
   name: "Conditions lifecycle",
+  specRefs: ["core/conditions"],
   appliesTo: APPLIES_TO_ALL,
   run: async (fixture, ctx) => {
     const start = Date.now();
@@ -1038,9 +1198,14 @@ git commit -m "feat(e2e): W5 conditions lifecycle workflow"
 **Files:**
 - Create: `scripts/e2e-harness/workflows/W6-kb-ingest-twokey.ts`
 
-**Spec assertions (§5):** Ingest NPNQM PDFs → operator approval → compliance approval → `kb_version` increments; chatbot answer cites the new version.
+**Spec assertions (§5):** Ingest NPNQM PDFs → operator approval → **same-user blocked** → compliance approval → `kb_version` increments; chatbot answer cites the new version.
 
-**Reference:** Replicate the HTTP calls from `scripts/test-guideline-pipeline.sh` (steps 3-6). One cell per matrix run.
+**Adjustments to apply on top of the code below (per revised spec §5):**
+1. **Use an ephemeral test tenant**, not the existing NPNQM tenant. Create `e2e-test-kb-${ctx.harnessRunId}` at the start of `run()`; ingest into it; delete it at the end. This keeps the NPNQM tenant's `kb_version` from drifting across harness runs.
+2. **Tag each assertion with a `subCell` field** matching the spec's six stages: `W6.ingest`, `W6.operator_approve`, `W6.same_user_blocked` (NEW — second approval attempt by the operator must be rejected), `W6.compliance_approve`, `W6.version_increment`, `W6.chatbot_cites_new_version`.
+3. **Add a `same_user_blocked` assertion** between operator and compliance approval: attempt a second approval as the same operator user with `role: "compliance_officer"`; assert the API rejects it (separation-of-duties / DB constraint).
+
+**Reference:** Replicate the HTTP calls from `scripts/test-guideline-pipeline.sh` (steps 3-6). One executed cell per matrix run.
 
 - [ ] **Step 1: Read the existing bash script for the call sequence**
 
@@ -1065,6 +1230,7 @@ const MATRICES_PDF = process.env.MATRICES_PDF ?? join(homedir(), "Downloads", "N
 export const W6: WorkflowDef = {
   id: "W6_kb_ingest_twokey",
   name: "KB Ingest + Two-Key Approval",
+  specRefs: ["spec-f-intelligent-guidelines §3", "onboarding-v2 §3.5"],
   appliesTo: () => true, // global; runner only invokes it once via GLOBAL_FIXTURE_SENTINEL
   run: async (_fixture: FixtureMeta, ctx) => {
     const start = Date.now();
@@ -1150,7 +1316,12 @@ git commit -m "feat(e2e): W6 KB ingest + two-key workflow"
 **Files:**
 - Create: `scripts/e2e-harness/workflows/W7-pattern-detection-llm.ts`
 
-**Spec assertions (§5):** Seed N override decisions for one rule → run pattern detector → assert a `PatternSuggestion` is created → two-key approval → guideline change applied; assert separation-of-duties prevents same-user double approval.
+**Spec assertions (§5):** Seed N override decisions for one rule → run pattern detector → assert a `PatternSuggestion` is created → asserts the suggestion lifecycle (`new → analyzing → suggestion_ready → applied`) → two-key approval → guideline change applied; assert separation-of-duties prevents same-user double approval.
+
+**Adjustments to apply on top of the code below (per revised spec §5):**
+1. **Tag each assertion with a `subCell` field** matching the spec's stages: `W7.seed`, `W7.detect`, `W7.suggestion_created`, `W7.same_user_blocked`, `W7.two_key_approved`, `W7.guideline_applied`.
+2. **Add a `suggestion_lifecycle_states` assertion** that polls `GET /patterns/:id` (or equivalent) at three points and confirms the suggestion's `status` field transitions: `new → analyzing → suggestion_ready` (after detection) and `→ applied` (after two-key approval).
+3. **Add a `guideline_applied` assertion** that confirms the underlying `tenant_guidelines` row was updated after approval (e.g. by re-fetching `/guidelines` and seeing the new `kb_version` or applied delta).
 
 **Reference:** `packages/api/src/routes/patterns.ts` for the detection trigger endpoint.
 
@@ -1172,6 +1343,7 @@ const SEED_COUNT = 4;
 export const W7: WorkflowDef = {
   id: "W7_pattern_detection",
   name: "Pattern Detection + LLM Insight",
+  specRefs: ["learning-engine-v2 §1.4", "learning-engine-v2 §2"],
   appliesTo: () => true, // global; runner invokes once via GLOBAL_FIXTURE_SENTINEL
   run: async (_fixture, ctx) => {
     const start = Date.now();
@@ -1248,9 +1420,11 @@ git commit -m "feat(e2e): W7 pattern detection + two-key workflow"
 **Files:**
 - Create: `scripts/e2e-harness/workflows/W8-multi-tenant-rls.ts`
 
-**Spec assertions (§5):** Create loan in tenant A → attempt fetch as tenant B with explicit `x-tenant-id` → assert 403 or 404, never returns A's data. Cleanup ephemeral test tenants.
+**Spec assertions (§5):** Create loan in tenant A → attempt fetch as tenant B by sending **a forged `x-tenant-id: <B>` header directly to the API** (not via the web tier) → assert 403 or 404, never returns A's data. Cleanup ephemeral test tenants.
 
 **Skip rule (§5):** Runs only against the 3 representatives in `RLS_REPRESENTATIVES`.
+
+**Adjustment per revised spec §5 (tenant-isolation-v2 §1.1):** the existing code already sets `tenantId: b.tenant.id` on `bOpts`, which `http.ts` translates into an `x-tenant-id` header. **That IS the forged header path** — it goes from this harness directly to the API, bypassing the web tier. The assertion `tenant_b_blocked_or_not_found` covers the critical finding from Tenant Isolation v2 §1.1 (API verifies tenant scope itself rather than trusting web headers). Verify by inspecting the test: the request must hit `apiUrl` directly with `x-tenant-id: <B>` set; if the API returns A's loan data, that's a P0 RLS leak. Add a comment in the file noting this is the §1.1 acceptance criterion.
 
 - [ ] **Step 1: Write the workflow module**
 
@@ -1265,6 +1439,7 @@ const TENANT_PREFIX = "e2e-test-";
 export const W8: WorkflowDef = {
   id: "W8_multi_tenant_rls",
   name: "Multi-Tenant Isolation",
+  specRefs: ["tenant-isolation-v2 §1.1", "tenant-isolation-v2 §1.2"],
   appliesTo: APPLIES_TO_RLS,
   run: async (fixture, ctx) => {
     const start = Date.now();
@@ -1347,90 +1522,288 @@ git commit -m "feat(e2e): W8 multi-tenant RLS isolation workflow"
 
 ---
 
-## Task 14: Polish `aggregate.ts` and add `README.md`
+## Task 14: Polish `aggregate.ts`, add `audit-claims.ts` and `README.md`
 
 **Files:**
 - Modify: `scripts/e2e-harness/aggregate.ts`
+- Create: `scripts/e2e-harness/audit-claims.ts`
 - Create: `scripts/e2e-harness/README.md`
 
-- [ ] **Step 1: Replace `renderSummary` and `renderPunchList` with richer formatters**
+Per spec §10: this task adds **`audit-validation.md`**, **`regression.md`** (when a previous run is found), error-fingerprint grouping in punch-list, spec-coverage section in summary, total LLM cost, and Zod validation of `matrix.json` after writing.
 
-Replace those two functions in `aggregate.ts` with the following:
+- [ ] **Step 1: Create `audit-claims.ts` — the audit's claims as data**
 
 ```typescript
-function renderSummary(r: RunReport): string {
-  const slowest = [...r.cells].filter((c) => c.status !== "skip").sort((a, b) => b.durationMs - a.durationMs)[0];
-  const passPct = r.executed ? Math.round((r.passed / r.executed) * 100) : 0;
-  const lines = [
-    `# E2E Validation Run`,
-    ``,
-    `- **Started:** ${r.startedAt}`,
-    `- **Finished:** ${r.finishedAt}`,
-    `- **Duration:** ${(r.durationMs / 1000).toFixed(1)}s`,
-    ``,
-    `## Results`,
-    ``,
-    `- Total matrix cells: **${r.totalCells}**`,
-    `- Executed: **${r.executed}** (skipped: ${r.skipped})`,
-    `- Passed: **${r.passed} / ${r.executed}** (${passPct}%)`,
-    `- Failed: **${r.failed}** — P0: ${r.bySeverity.P0}, P1: ${r.bySeverity.P1}, P2: ${r.bySeverity.P2}`,
-    ``,
-  ];
-  if (slowest) lines.push(`Slowest cell: ${slowest.workflow} / ${slowest.fixture} (${(slowest.durationMs / 1000).toFixed(1)}s)`, ``);
-  if (r.aborted) lines.push(`> **ABORTED**: ${r.abortReason ?? "unknown"}`, ``);
+// scripts/e2e-harness/audit-claims.ts
+// The recent audit's claims, with the verdict to be determined by the harness.
+
+import type { AuditClaim } from "./types.js";
+
+export const AUDIT_CLAIMS: AuditClaim[] = [
+  {
+    id: "AC1",
+    text: "Push-to-Loan reads but doesn't write — frontend never POSTs to /extract.",
+    expectedVerdict: "contradicted", // direct code inspection already showed Push uses actionRecalcIncome
+  },
+  // Add more entries as additional audit claims surface.
+];
+
+export function getClaim(id: string): AuditClaim | undefined {
+  return AUDIT_CLAIMS.find((c) => c.id === id);
+}
+```
+
+- [ ] **Step 2: Replace `aggregate()` with the polished version**
+
+Replace the entire `aggregate.ts` body with:
+
+```typescript
+// scripts/e2e-harness/aggregate.ts
+// Writes matrix.json + per-cell + summary.md + punch-list.md + audit-validation.md (+ regression.md if previous run found).
+
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { dirname, join } from "node:path";
+import { AUDIT_CLAIMS } from "./audit-claims.js";
+import { CellResultSchema, RunReportSchema, type AssertionResult, type CellResult, type RunReport } from "./types.js";
+
+export async function aggregate(report: RunReport, outDir: string): Promise<void> {
+  // 1. matrix.json — Zod-validated round-trip
+  const validated = RunReportSchema.parse(report);
+  writeFileSync(join(outDir, "matrix.json"), JSON.stringify(validated, null, 2));
+
+  // 2. per-cell JSON files for executed and partial-skip cells
+  for (const cell of report.cells) {
+    if (cell.status === "skip") continue;
+    const cellPath = join(outDir, "cells", cell.workflow, `${cell.fixture}.json`);
+    mkdirSync(dirname(cellPath), { recursive: true });
+    writeFileSync(cellPath, JSON.stringify(CellResultSchema.parse(cell), null, 2));
+  }
+
+  // 3. Identify a prior run, if any (for regression diff).
+  const prior = findPriorRun(outDir);
+
+  // 4. Annotate cells with errorFingerprint + new/regression flags.
+  const annotated = report.cells.map((c) => annotateCell(c, prior?.cells.find((p) => p.workflow === c.workflow && p.fixture === c.fixture)));
+
+  // 5. summary.md
+  writeFileSync(join(outDir, "summary.md"), renderSummary(report, annotated));
+
+  // 6. punch-list.md
+  writeFileSync(join(outDir, "punch-list.md"), renderPunchList(annotated));
+
+  // 7. audit-validation.md
+  writeFileSync(join(outDir, "audit-validation.md"), renderAuditValidation(report.cells));
+
+  // 8. regression.md (only if prior found)
+  if (prior) writeFileSync(join(outDir, "regression.md"), renderRegression(annotated, prior));
+}
+
+interface AnnotatedCell extends CellResult {
+  fingerprint: string | null;
+  isRegression: boolean;
+  isNew: boolean;
+}
+
+function annotateCell(c: CellResult, prior: CellResult | undefined): AnnotatedCell {
+  const fingerprint = c.status === "fail" ? fingerprintFor(c) : null;
+  const isRegression = c.status === "fail" && prior !== undefined && prior.status !== "fail";
+  const isNew = c.status === "fail" && prior === undefined;
+  return { ...c, fingerprint, isRegression, isNew };
+}
+
+function fingerprintFor(c: CellResult): string {
+  const code = c.error?.code ?? "ASSERTION_FAIL";
+  const msg = (c.error?.message ?? c.assertions.filter((a) => !a.ok).map((a) => a.name).join(",")).slice(0, 80);
+  return createHash("sha1").update(`${code}|${msg}`).digest("hex").slice(0, 10);
+}
+
+function findPriorRun(currentOutDir: string): RunReport | null {
+  const reportsRoot = dirname(currentOutDir);
+  if (!existsSync(reportsRoot)) return null;
+  const dirs = readdirSync(reportsRoot)
+    .filter((d) => join(reportsRoot, d) !== currentOutDir)
+    .map((d) => ({ d, mtime: safeMtime(join(reportsRoot, d, "matrix.json")) }))
+    .filter((x) => x.mtime !== null)
+    .sort((a, b) => (b.mtime ?? 0) - (a.mtime ?? 0));
+  for (const { d } of dirs) {
+    try {
+      const raw = JSON.parse(readFileSync(join(reportsRoot, d, "matrix.json"), "utf8"));
+      return RunReportSchema.parse(raw);
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+function safeMtime(p: string): number | null {
+  try { return statSync(p).mtimeMs; } catch { return null; }
+}
+
+function renderSummary(r: RunReport, cells: AnnotatedCell[]): string {
+  const slowest = [...cells].filter((c) => c.status !== "skip").sort((a, b) => b.durationMs - a.durationMs)[0];
+  const passPct = r.executed ? Math.round((r.passed / (r.executed + r.partialSkipped)) * 100) : 0;
+
   // Per-workflow breakdown
-  lines.push(`## By workflow`, ``, `| Workflow | Executed | Passed | Failed | P0 |`, `|---|---:|---:|---:|---:|`);
-  const byWorkflow = new Map<string, { exec: number; pass: number; fail: number; p0: number }>();
-  for (const c of r.cells) {
-    const w = byWorkflow.get(c.workflow) ?? { exec: 0, pass: 0, fail: 0, p0: 0 };
-    if (c.status !== "skip") w.exec++;
-    if (c.status === "pass") w.pass++;
+  const byWorkflow = new Map<string, { exec: number; partial: number; pass: number; fail: number; p0: number; specRefs: string[] }>();
+  for (const c of cells) {
+    const w = byWorkflow.get(c.workflow) ?? { exec: 0, partial: 0, pass: 0, fail: 0, p0: 0, specRefs: c.specRefs ?? [] };
+    if (c.status === "pass" || c.status === "fail") w.exec++;
+    if (c.status === "partial_skip") w.partial++;
+    if (c.status === "pass" || c.status === "partial_skip") w.pass++;
     if (c.status === "fail") w.fail++;
     if (c.severity === "P0") w.p0++;
     byWorkflow.set(c.workflow, w);
   }
-  for (const [name, s] of byWorkflow) lines.push(`| ${name} | ${s.exec} | ${s.pass} | ${s.fail} | ${s.p0} |`);
-  return lines.join("\n") + "\n";
+
+  const lines = [
+    `# E2E Validation Run`,
+    ``,
+    `- **runId:** ${r.harnessRunId}`,
+    `- **Started:** ${r.startedAt}`,
+    `- **Finished:** ${r.finishedAt}`,
+    `- **Duration:** ${(r.durationMs / 1000).toFixed(1)}s`,
+    `- **Passes:** ${r.passes} (flake cells: ${r.flakeCells.length})`,
+    ``,
+    `## Results`,
+    ``,
+    `- Total matrix cells: **${r.totalCells}** (executed: ${r.executed}, partial-skip: ${r.partialSkipped}, full-skip: ${r.fullSkipped})`,
+    `- Total assertions run: **${r.totalAssertionsRun}**`,
+    `- Passed: **${r.passed}** (${passPct}%)`,
+    `- Failed: **${r.failed}** — P0: ${r.bySeverity.P0}, P1: ${r.bySeverity.P1}, P2: ${r.bySeverity.P2}`,
+    `- **Total LLM cost (this run): $${r.totalLlmCostUsd.toFixed(2)}**`,
+    ``,
+  ];
+  if (slowest) lines.push(`Slowest cell: ${slowest.workflow} / ${slowest.fixture} (${(slowest.durationMs / 1000).toFixed(1)}s)`, ``);
+  if (r.aborted) lines.push(`> **ABORTED**: ${r.abortReason ?? "unknown"}`, ``);
+
+  lines.push(`## By workflow`, ``, `| Workflow | Executed | Partial | Passed | Failed | P0 | Spec refs |`, `|---|---:|---:|---:|---:|---:|---|`);
+  for (const [name, s] of byWorkflow) {
+    lines.push(`| ${name} | ${s.exec} | ${s.partial} | ${s.pass} | ${s.fail} | ${s.p0} | ${s.specRefs.join(", ") || "—"} |`);
+  }
+  lines.push(``);
+
+  // Spec coverage section
+  const allSpecRefs = new Set<string>();
+  for (const c of cells) for (const ref of c.specRefs ?? []) allSpecRefs.add(ref);
+  lines.push(`## Spec coverage`, ``, `Spec sections covered by at least one assertion in this run:`, ``);
+  for (const ref of [...allSpecRefs].sort()) lines.push(`- ${ref}`);
+  lines.push(``, `> Gaps (sections expected but not covered) should be added here as the spec library grows.`, ``);
+
+  return lines.join("\n");
 }
 
-function renderPunchList(cells: CellResult[]): string {
+function renderPunchList(cells: AnnotatedCell[]): string {
   const fails = cells.filter((c) => c.status === "fail");
+  if (fails.length === 0) return "# Punch List\n\nNo failures.\n";
+
   const order: Record<string, number> = { P0: 0, P1: 1, P2: 2 };
   fails.sort((a, b) => (order[a.severity ?? "P2"] ?? 99) - (order[b.severity ?? "P2"] ?? 99));
-  if (fails.length === 0) return "# Punch List\n\nNo failures.\n";
-  const sections: string[] = ["# Punch List", "", `${fails.length} failure(s) — sorted by severity.`, ""];
+
+  const sections: string[] = ["# Punch List", "", `${fails.length} failure(s) — sorted by severity, grouped by error fingerprint.`, ""];
   for (const sev of ["P0", "P1", "P2"] as const) {
     const slice = fails.filter((c) => c.severity === sev);
     if (slice.length === 0) continue;
-    sections.push(`## ${sev} — ${slice.length}`, "");
+    sections.push(`## ${sev} — ${slice.length} failure(s)`, "");
+
+    // Group by fingerprint within severity.
+    const groups = new Map<string, AnnotatedCell[]>();
     for (const c of slice) {
-      sections.push(`### ${c.workflow} / ${c.fixture}`, "");
-      if (c.error) sections.push(`**Error:** \`${c.error.code}\` — ${c.error.message}`, "");
-      const failed = c.assertions.filter((a) => !a.ok);
+      const key = c.fingerprint ?? "unknown";
+      const arr = groups.get(key) ?? [];
+      arr.push(c);
+      groups.set(key, arr);
+    }
+    for (const [fp, group] of groups) {
+      const head = group[0]!;
+      const team = teamFor(head.workflow);
+      sections.push(`### Group \`${fp}\` — ${group.length} cell(s) — likely team: **${team}**`, "");
+      if (head.error) sections.push(`**Error:** \`${head.error.code}\` — ${head.error.message}`, "");
+      const failed = head.assertions.filter((a) => !a.ok);
       if (failed.length) {
-        sections.push("**Failed assertions:**");
+        sections.push("**Representative failed assertions:**");
         for (const a of failed) sections.push(`- \`${a.name}\` — expected \`${JSON.stringify(a.expected)}\`, got \`${JSON.stringify(a.actual)}\``);
         sections.push("");
       }
-      sections.push(`**Repro:** \`pnpm tsx scripts/e2e-harness/run.ts --workflow ${c.workflow} --fixture ${c.fixture}\``, "");
+      sections.push("**Affected cells:**");
+      for (const c of group) {
+        const tag = c.isRegression ? " [REGRESSION]" : c.isNew ? " [NEW]" : "";
+        sections.push(`- ${c.workflow} / ${c.fixture}${tag} — repro: \`pnpm tsx scripts/e2e-harness/run.ts --workflow ${c.workflow} --fixture ${c.fixture}\``);
+      }
+      sections.push("");
     }
   }
   return sections.join("\n");
 }
+
+function teamFor(workflow: string): string {
+  if (workflow.startsWith("W6")) return "guidelines";
+  if (workflow.startsWith("W7")) return "learning-engine";
+  if (workflow.startsWith("W8")) return "tenant-isolation";
+  if (workflow.startsWith("W4")) return "efolder/idp";
+  if (workflow.startsWith("W5")) return "conditions";
+  return "uw-flow";
+}
+
+function renderAuditValidation(cells: CellResult[]): string {
+  const lines: string[] = ["# Audit Validation", "", "Each audit claim is mapped to the cells/assertions that test it. Verdict is determined by the run."];
+  for (const claim of AUDIT_CLAIMS) {
+    const tagged: { cell: CellResult; assertion: AssertionResult }[] = [];
+    for (const c of cells) for (const a of c.assertions) if (a.auditClaim === claim.id) tagged.push({ cell: c, assertion: a });
+
+    let verdict: "CONFIRMED" | "CONTRADICTED" | "INCONCLUSIVE";
+    if (tagged.length === 0) verdict = "INCONCLUSIVE";
+    else if (tagged.every((t) => t.assertion.ok)) verdict = "CONTRADICTED";
+    else if (tagged.every((t) => !t.assertion.ok)) verdict = "CONFIRMED";
+    else verdict = "INCONCLUSIVE";
+
+    lines.push(``, `## ${claim.id} — "${claim.text}"`, ``, `**Verdict:** ${verdict}`, ``);
+    if (tagged.length === 0) {
+      lines.push(`No assertions are tagged with ${claim.id}. Add coverage in the relevant workflow before the next run.`);
+    } else {
+      lines.push(`Cells testing this claim:`);
+      for (const { cell, assertion } of tagged) {
+        lines.push(`- ${cell.workflow} / ${cell.fixture} → \`${assertion.name}\` — ${assertion.ok ? "PASS" : "FAIL"}`);
+      }
+    }
+  }
+  return lines.join("\n") + "\n";
+}
+
+function renderRegression(current: AnnotatedCell[], prior: RunReport): string {
+  const newFails = current.filter((c) => c.isNew);
+  const regressions = current.filter((c) => c.isRegression);
+  const fixed = prior.cells.filter((p) => p.status === "fail" && !current.some((c) => c.workflow === p.workflow && c.fixture === p.fixture && c.status === "fail"));
+
+  const lines = [
+    `# Regression Diff`,
+    ``,
+    `Compared to prior run \`${prior.harnessRunId}\` (${prior.startedAt}).`,
+    ``,
+    `## New failures (${newFails.length})`, ``,
+  ];
+  for (const c of newFails) lines.push(`- ${c.workflow} / ${c.fixture} (${c.severity})`);
+  lines.push(``, `## Regressions — passed before, fail now (${regressions.length})`, ``);
+  for (const c of regressions) lines.push(`- ${c.workflow} / ${c.fixture} (${c.severity})`);
+  lines.push(``, `## Fixed since last run (${fixed.length})`, ``);
+  for (const c of fixed) lines.push(`- ${c.workflow} / ${c.fixture}`);
+  return lines.join("\n") + "\n";
+}
 ```
 
-- [ ] **Step 2: Write `README.md`**
+- [ ] **Step 3: Write `README.md`**
 
 ```markdown
 # E2E Validation Harness
 
-One-shot CLI harness that runs 20 NQM fixtures × 8 named workflows against a live local stack and emits a severity-graded punch list.
+One-shot CLI harness that runs 20 NQM fixtures × 8 named workflows against a live local stack and emits two reports: an audit-validation verdict and a severity-graded punch list.
 
 ## Quickstart
 
 1. Start the stack: `./scripts/dev-up.sh` (API :4000, Web :3000, Agent :8000)
-2. Full run: `pnpm tsx scripts/e2e-harness/run.ts`
-3. Read results: `reports/<run-id>/punch-list.md`
+2. Full run: `pnpm tsx scripts/e2e-harness/run.ts`              # default --repeat 2 for flake detection
+3. Read results: `reports/<run-id>/punch-list.md` + `audit-validation.md`
 
 ## Single-cell run
 
@@ -1442,23 +1815,32 @@ pnpm tsx scripts/e2e-harness/run.ts --workflow W1_uw_accept --fixture nqm-bankst
 
 ```
 reports/<run-id>/
-├── matrix.json            # full machine-readable result
-├── summary.md             # top-level stats + by-workflow table
-├── punch-list.md          # P0s first, then P1s, then P2s, with repro commands
+├── matrix.json            # Zod-validated machine-readable result
+├── summary.md             # top-level stats, by-workflow table, spec coverage, total LLM cost
+├── punch-list.md          # P0s first; failures grouped by error fingerprint; team tags; new vs regression
+├── audit-validation.md    # CONFIRMED/CONTRADICTED/INCONCLUSIVE per audit claim
+├── regression.md          # only present if a previous run was found in reports/
 └── cells/<workflow>/<fixture>.json
 ```
 
 Severity rubric: see spec `docs/superpowers/specs/2026-05-08-e2e-validation-harness-design.md` §6.
 
+## Cleanup of persistent records
+
+Every record this harness writes to persistent stores carries `metadata.harness_run_id`.
+To purge after a run: `pnpm tsx scripts/e2e-harness/purge.ts <run_id>` (TODO: wire purge.ts when
+needed; not part of the initial build per YAGNI).
+
 ## Relationship to other test surfaces
+
+This harness is one *layer* of the project's quality strategy (spec §13). The other layers stay:
 
 - `pnpm --filter @twin/core test` — 84 reducer/store unit tests.
 - `pnpm --filter @twin/api test` — 98 API integration tests.
 - `GET /system/integrity` — 220 invariant checks across all 20 loans.
 - `POST /system/behavioral-test` — 10 reducer-level workflow tests against one fixture (~5s).
-- This harness — broad fixture × workflow matrix, ~8-15 min per run.
-
-All four are kept; they catch different things.
+- This harness — broad fixture × workflow matrix, ~15 min per run.
+- (Separate efforts) Adversarial tests (Tenant Isolation v2 §9.5); AI eval framework (Spec F §13).
 
 ## Environment
 
@@ -1467,11 +1849,11 @@ All four are kept; they catch different things.
 - `GUIDELINES_PDF`, `MATRICES_PDF` — for W6, default to `~/Downloads/...`
 ```
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-git add scripts/e2e-harness/aggregate.ts scripts/e2e-harness/README.md
-git commit -m "feat(e2e): polished aggregator + harness README"
+git add scripts/e2e-harness/aggregate.ts scripts/e2e-harness/audit-claims.ts scripts/e2e-harness/README.md
+git commit -m "feat(e2e): polished aggregator with audit-validation, regression diff, fingerprint grouping"
 ```
 
 ---
@@ -1483,63 +1865,79 @@ git commit -m "feat(e2e): polished aggregator + harness README"
 
 - [ ] **Step 1: Run a single-workflow single-fixture cell**
 
-Run: `pnpm tsx scripts/e2e-harness/run.ts --workflow W1_uw_accept --fixture nqm-bankstmt-12mo-clean --out tmp/e2e-final-smoke`
+Run: `pnpm tsx scripts/e2e-harness/run.ts --workflow W1_uw_accept --fixture nqm-bankstmt-12mo-clean --repeat 1 --out tmp/e2e-final-smoke`
+
+(Use `--repeat 1` for the smoke check to keep it fast; full runs default to 2.)
 
 Expected: command exits with code 0 (or 1 if real failures); the following files exist:
 - `tmp/e2e-final-smoke/matrix.json`
 - `tmp/e2e-final-smoke/summary.md`
 - `tmp/e2e-final-smoke/punch-list.md`
+- `tmp/e2e-final-smoke/audit-validation.md`
 - `tmp/e2e-final-smoke/cells/W1_uw_accept/nqm-bankstmt-12mo-clean.json`
 
-- [ ] **Step 2: Verify the JSON schema is well-formed**
+- [ ] **Step 2: Verify the matrix.json validates against the Zod schema**
 
-Run: `node -e 'const r = require("./tmp/e2e-final-smoke/matrix.json"); if (!r.cells || !Array.isArray(r.cells) || r.cells.length === 0) { console.error("bad matrix"); process.exit(1); } const c = r.cells[0]; if (!c.workflow || !c.fixture || !["pass","fail","skip"].includes(c.status)) { console.error("bad cell"); process.exit(1); } console.log("schema ok"); '`
-Expected: `schema ok`.
+Run: `pnpm tsx -e 'import { readFileSync } from "fs"; import { RunReportSchema } from "./scripts/e2e-harness/types.ts"; const r = JSON.parse(readFileSync("./tmp/e2e-final-smoke/matrix.json", "utf8")); RunReportSchema.parse(r); console.log("zod ok; cells=" + r.cells.length + " harnessRunId=" + r.harnessRunId);'`
 
-- [ ] **Step 3: Verify a deliberately broken assertion produces a P0 fail**
+Expected: prints `zod ok; cells=N harnessRunId=run_...`. Any Zod parse error means the harness has a bug — fix it before continuing.
+
+- [ ] **Step 3: Verify the audit-validation report renders with AC1**
+
+Run: `grep -A2 "## AC1" tmp/e2e-final-smoke/audit-validation.md`
+
+Expected: AC1 section appears with a verdict line. If AC1 doesn't appear, W4 wasn't run in the smoke; that's OK for the single-cell smoke. To exercise audit-validation specifically:
+
+Run: `pnpm tsx scripts/e2e-harness/run.ts --workflow W4_efolder_idp_push --fixture nqm-bankstmt-12mo-clean --repeat 1 --out tmp/e2e-w4-audit-smoke && grep -A6 "## AC1" tmp/e2e-w4-audit-smoke/audit-validation.md`
+
+Expected: `**Verdict:** CONTRADICTED` (assuming Push-to-Loan currently writes correctly per the audit-vs-code reconciliation).
+
+- [ ] **Step 4: Verify a deliberately broken assertion produces a P0 fail**
 
 Manually edit `scripts/e2e-harness/workflows/W1-uw-accept.ts` and change the `decision_matches_staged` assertion's expected value to `"NEVER_THIS_VALUE"`. Re-run Step 1.
-Expected: `summary.md` shows 1 failure with P0; `punch-list.md` lists the cell with the broken assertion.
+Expected: `summary.md` shows 1 failure with P0; `punch-list.md` lists the cell with the broken assertion under a P0 group with an error fingerprint.
 
 Revert the edit before continuing: `git checkout scripts/e2e-harness/workflows/W1-uw-accept.ts`.
 
-- [ ] **Step 4: Commit a marker that the harness is verified**
+- [ ] **Step 5: Commit a marker that the harness is verified**
 
 ```bash
 git add -A
 git commit --allow-empty -m "chore(e2e): harness smoke-verified end-to-end"
 ```
 
-- [ ] **Step 5: Trigger the full matrix run (user-driven, not a sub-agent task)**
+- [ ] **Step 6: Trigger the full matrix run (user-driven, not a sub-agent task)**
 
-The harness is now ready for the full run:
+The harness is now ready for the full run with default flake detection:
 
 ```bash
 pnpm tsx scripts/e2e-harness/run.ts
 ```
 
-Read `reports/<run-id>/punch-list.md` to drive the next development backlog.
+Read `reports/<run-id>/audit-validation.md` first (does the audit's headline still hold?), then `punch-list.md` to drive the next development backlog.
 
 ---
 
 ## Self-review
 
-**1. Spec coverage:**
-- §2 (architecture) → covered by file structure table + Tasks 1–5.
-- §3 (components) → each file mapped to a task.
-- §4 (data flow) → Task 4 (`run.ts`) implements the loop, Task 5 + 14 (`aggregate.ts`) implements the writers.
-- §5 (8 workflows + skip rules) → Tasks 6–13.
-- §6 (evidence schema + rubric) → Task 1 defines types; Tasks 6–13 each compute severity inline per the rubric.
-- §7 (error handling) → Task 4 handles workflow crashes and abort; pre-flight is in Task 2 + Task 4.
-- §8 (testing the harness) → Task 15.
-- §9 (sub-agent waves) → mapped explicitly in the file structure table and the Wave Dispatch Model paragraph.
-- §10 (first-run outputs) → Tasks 5 + 14 produce all four artifact types.
-- §11 (out-of-scope) → respected; nothing in the plan touches Playwright, CI, or history tooling.
-- §12 (open questions) → resolved in the Resolutions section above.
+**1. Spec coverage (post-revision):**
+- §1 (dual purpose: audit validation + backlog) → resolved via Task 14 (audit-validation.md) + cell `auditClaim` tagging in W4.
+- §2 (architecture, three guarantees) → file layout, Task 4 includes harnessRunId for purge tagging, Tasks 11/13 use ephemeral test tenants.
+- §3 (components, including audit-claims.ts and Zod schemas) → file table updated; Tasks 1 + 14.
+- §4 (data flow, including --repeat passes and aggregator outputs) → Tasks 4 + 5 + 14.
+- §5 (8 workflows, specRefs, sub-cells, skip semantics) → Tasks 6–13 each declare specRefs; Tasks 11 (W6) and 12 (W7) include sub-cell tagging adjustments.
+- §6 (evidence schema, rubric, errorFingerprint, harnessRunId, auditClaim) → Task 1 Zod schemas; Task 14 fingerprint grouping.
+- §7 (error handling, canary preflight, --repeat flake detection, persistent-state cleanup) → Task 4 implements canary + repeat; ephemeral tenants in Tasks 11/13.
+- §8 (Zod validation in smoke test) → Task 15 Step 2.
+- §9 (Waves 1, 2, 2.5, 3, 4 with calibrated 50–65 min budget) → file table reflects waves; Task 1 (foundation), Tasks 6–13 (parallel), Task 14 (polish).
+- §10 (audit-validation.md, regression.md, summary spec coverage, total cost) → Task 14.
+- §11 (out-of-scope; per-change TDD + adversarial tests + AI eval are separate efforts) → respected; nothing in the plan attempts those.
+- §12 (open questions resolved) → Resolutions section at top of plan.
+- §13 (layered quality model) → README in Task 14 references it.
 
-**2. Placeholder scan:** No "TBD", no "implement later", no "similar to". Code blocks contain real, runnable code. The two cases where the engineer has to verify a URL (Task 10 Step 2 for conditions clear, Task 12 Step 1 for patterns) are explicit verification steps with the exact grep command, not placeholders.
+**2. Placeholder scan:** No "TBD", no "implement later". The cases where the engineer must verify a URL during execution (Task 10 conditions clear endpoint, Task 12 patterns endpoint, Task 13 tenant create/delete shape) are explicit verification steps with grep commands. The W6/W7/W8 "Adjustments" notes are concrete, line-itemized changes — not placeholders.
 
-**3. Type consistency:** `CellResult.severity: Severity` is used uniformly. Workflow ids are exact strings (e.g. `"W1_uw_accept"`) used consistently in modules and run.ts. `FixtureMeta` shape matches between `fixtures.ts` and the workflow signatures. `HttpOptions` and `ACTORS` from `http.ts` are imported the same way everywhere.
+**3. Type consistency:** All workflow `WorkflowDef` literals declare `specRefs: string[]`. All cell construction targets the post-revision `CellResult` shape (`harnessRunId` and `specRefs` backfilled by runner; `auditClaim`, `subCells`, `skippedAssertions` optional). Workflow ids are exact strings used consistently across modules, run.ts, and aggregate.ts. `RunReport` shape (`partialSkipped`, `fullSkipped`, `passes`, `flakeCells`, `totalLlmCostUsd`, `totalAssertionsRun`, `harnessRunId`) is consistent between Task 4 (constructor) and Tasks 5 + 14 (consumer).
 
 ---
 
