@@ -18,6 +18,16 @@
 2. **Programmatic KB ingest for W6?** — W6 inlines its HTTP calls using `http.ts`. No shared kb-ingest module. The bash script `scripts/test-guideline-pipeline.sh` is the reference for which calls to make in which order.
 3. **Keep `POST /system/behavioral-test`?** — Yes, both stay. Behavioral-test is a fast reducer smoke (~5s); the harness is broad coverage. Documented in `scripts/e2e-harness/README.md`.
 
+## Post-run hardening (2026-05-09, commit `f2f7d97`)
+
+The first full matrix run (`reports/2026-05-08-1910/`, run_id `run_2026-05-08-1910_10fb`) surfaced two real issues that became plan changes after-the-fact. Anyone re-executing the plan should apply these on top of the workflow code blocks below:
+
+1. **W1, W2, W3 — wrap the agent multi-agent POST in try/catch.** Undici's idle timeout (~5 min) fires before the agent finishes on slow fixtures. The agent then posts back to a loan that's been wiped by the next test cell, producing `fetch failed`. Record `agent_pipeline_completed: false` with the error message and return a P1 cell instead of crashing. (Affected cells in the first run: `W1/nqm-deny-candidate`, `W3/nqm-dscr-investor-purchase`.)
+
+2. **W4 — convert "no BankStatement document" branch from `fail/P1` to `skip`.** 8 of 19 fixtures (DSCR, 1099-only, pnl-only-cpa, full-doc-recent-bk, etc.) intentionally use different document types. Their absence is fixture-coverage correctness, not a workflow defect. Set `status: "skip"`, `severity: null`, populate `skippedAssertions: ["bank_doc_present", "idp_returned_extracted", "extractedData_persisted", "extracted_total_deposits_numeric", "worksheet_avgDeposits_updated"]`, and add `evidence.skipReason`. The 8 cells are no longer counted as failures.
+
+The current files in `scripts/e2e-harness/workflows/` (post-fix) are the source of truth; the code blocks below capture the original design intent.
+
 ## Sprint 0 schema setup
 
 Before Wave 1 begins, run a small migration so `--purge-test-data <run_id>` can clean up. Verified at design time: `decision_records.agent_context` exists (migration 012), `tenants.metadata` exists (migration 001), but `pattern_suggestions` and `learning_outcomes` lack a generic JSONB metadata column.
