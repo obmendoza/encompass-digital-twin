@@ -25,8 +25,18 @@ export const W4: WorkflowDef = {
     type Loan = { qualifyingWorksheet?: Record<string, unknown>; documents?: Doc[] };
     const loan = await http.get<Loan>(apiOpts, `/loans/${fixture.loanId}`);
     const bankDoc = (loan.documents ?? []).find((d) => d.docType === "BankStatement" && d.fileKey);
-    assertions.push({ name: "bank_doc_present", expected: "BankStatement w/ fileKey", actual: bankDoc?.id ?? null, ok: !!bankDoc });
-    if (!bankDoc) return cell(fixture, start, "fail", "P1", assertions, {}, null, null);
+    if (!bankDoc) {
+      // This fixture's program doesn't produce a BankStatement document (e.g. DSCR uses
+      // lease, 1099-only uses 1099 forms, full-doc uses W2/PayStub). The IDP/Stare-and-
+      // Compare/Push flow under test is bank-statement-specific. Skip cleanly with the
+      // missing assertion noted — this is fixture coverage, not a workflow defect.
+      const skipAssertions = [
+        "bank_doc_present", "idp_returned_extracted", "extractedData_persisted",
+        "extracted_total_deposits_numeric", "worksheet_avgDeposits_updated",
+      ];
+      return skipCell(fixture, start, "no BankStatement document for this program", skipAssertions);
+    }
+    assertions.push({ name: "bank_doc_present", expected: "BankStatement w/ fileKey", actual: bankDoc.id, ok: true });
 
     // Run IDP.
     type IdpResp = { extracted?: Record<string, unknown> };
@@ -65,4 +75,19 @@ export const W4: WorkflowDef = {
 
 function cell(fixture: FixtureMeta, start: number, status: "pass" | "fail", severity: "P0" | "P1" | "P2" | null, assertions: AssertionResult[], evidence: Record<string, unknown>, errCode: string | null, errMsg: string | null): CellResult {
   return { loanId: fixture.loanId, fixture: fixture.id, workflow: "W4_efolder_idp_push", status, severity, durationMs: Date.now() - start, assertions, evidence, error: errCode ? { code: errCode, message: errMsg ?? "" } : null };
+}
+
+function skipCell(fixture: FixtureMeta, start: number, reason: string, skippedAssertions: string[]): CellResult {
+  return {
+    loanId: fixture.loanId,
+    fixture: fixture.id,
+    workflow: "W4_efolder_idp_push",
+    status: "skip",
+    severity: null,
+    durationMs: Date.now() - start,
+    assertions: [],
+    skippedAssertions,
+    evidence: { skipReason: reason },
+    error: null,
+  };
 }

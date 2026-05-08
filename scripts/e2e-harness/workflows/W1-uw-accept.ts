@@ -20,7 +20,17 @@ export const W1: WorkflowDef = {
     await http.post(apiOpts, "/world/load-scenario", { scenarioId: fixture.id });
 
     // Run multi-agent pipeline (writes pendingRecommendation on the loan).
-    await http.post(agentOpts, `/api/twin/underwrite-multi/${fixture.loanId}`);
+    // Wrap in try/catch: undici has a ~5min idle timeout on connections, and the agent
+    // can take longer for some fixtures. A "fetch failed" here means the agent didn't
+    // complete cleanly — record it as a P1 finding rather than crashing the cell.
+    try {
+      await http.post(agentOpts, `/api/twin/underwrite-multi/${fixture.loanId}`);
+      assertions.push({ name: "agent_pipeline_completed", expected: "no-throw", actual: "ok", ok: true });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      assertions.push({ name: "agent_pipeline_completed", expected: "no-throw", actual: msg, ok: false });
+      return finalize(fixture, start, "fail", "P1", assertions, {}, "AGENT_PIPELINE_FAILED", msg);
+    }
 
     // Read loan after recommendation is staged.
     type Loan = { id: string; decision?: string; pendingRecommendation?: { recommendation: string } | null };

@@ -20,7 +20,18 @@ export const W3: WorkflowDef = {
     // Assign to a VA, mark report ready, stage recommendation.
     await http.post(apiOpts, `/loans/${fixture.loanId}/assign`, { assignedTo: "va@e2e.test", priority: "normal", actor: ACTORS.human });
     await http.post(apiOpts, `/loans/${fixture.loanId}/assignment-status`, { status: "report_ready", actor: ACTORS.human });
-    await http.post(agentOpts, `/api/twin/underwrite-multi/${fixture.loanId}`);
+
+    // Wrap agent call: a fetch-failed here usually means the agent's stage_recommendation
+    // callback fired after the loan was reset by the next test cell. Record as a P1
+    // finding rather than crashing the cell.
+    try {
+      await http.post(agentOpts, `/api/twin/underwrite-multi/${fixture.loanId}`);
+      assertions.push({ name: "agent_pipeline_completed", expected: "no-throw", actual: "ok", ok: true });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      assertions.push({ name: "agent_pipeline_completed", expected: "no-throw", actual: msg, ok: false });
+      return { loanId: fixture.loanId, fixture: fixture.id, workflow: "W3_send_back_va", status: "fail", severity: "P1", durationMs: Date.now() - start, assertions, evidence: {}, error: { code: "AGENT_PIPELINE_FAILED", message: msg } };
+    }
 
     type Loan = { assignment?: { status?: string }; pendingRecommendation?: unknown };
     const before = await http.get<Loan>(apiOpts, `/loans/${fixture.loanId}`);

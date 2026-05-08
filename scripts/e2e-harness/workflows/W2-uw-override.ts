@@ -25,7 +25,18 @@ export const W2: WorkflowDef = {
 
     await http.post(apiOpts, "/world/reset");
     await http.post(apiOpts, "/world/load-scenario", { scenarioId: fixture.id });
-    await http.post(agentOpts, `/api/twin/underwrite-multi/${fixture.loanId}`);
+
+    // Wrap agent call: a fetch-failed here usually means the agent's stage_recommendation
+    // callback fired after the loan was reset by the next test cell. Record as a P1
+    // finding rather than crashing the cell.
+    try {
+      await http.post(agentOpts, `/api/twin/underwrite-multi/${fixture.loanId}`);
+      assertions.push({ name: "agent_pipeline_completed", expected: "no-throw", actual: "ok", ok: true });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      assertions.push({ name: "agent_pipeline_completed", expected: "no-throw", actual: msg, ok: false });
+      return cell(fixture, start, "fail", "P1", assertions, {}, "AGENT_PIPELINE_FAILED", msg);
+    }
 
     type Loan = { decision?: string; pendingRecommendation?: { recommendation: string } | null };
     const before = await http.get<Loan>(apiOpts, `/loans/${fixture.loanId}`);
