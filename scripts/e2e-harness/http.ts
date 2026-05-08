@@ -8,6 +8,10 @@ export interface HttpOptions {
   baseUrl: string;
   tenantId?: string;
   timeoutMs?: number;
+  /** When true, mark this request as super-admin (cross-tenant ops; tenant CRUD). Default false. */
+  superAdmin?: boolean;
+  /** Override the user identity header. Defaults to "e2e-harness". */
+  userId?: string;
 }
 
 export class HttpError extends Error {
@@ -25,7 +29,21 @@ async function request<T>(
   const url = `${opts.baseUrl}${path}`;
   const headers: Record<string, string> = {};
   if (body !== undefined) headers["content-type"] = "application/json";
-  if (opts.tenantId) headers["x-tenant-id"] = opts.tenantId;
+  // Auth: x-user-id is the API's accepted internal-service trust header
+  // (jwt-tenant-resolver.ts:35-41). Default identity gives the harness access
+  // to the demo tenant; tenantId override forges a different tenant for W8.
+  // Skip on agent calls — the agent has its own auth model.
+  if (!opts.baseUrl.includes(":8000")) {
+    headers["x-user-id"] = opts.userId ?? "e2e-harness";
+    if (opts.superAdmin) headers["x-super-admin"] = "true";
+    // Default tenant: env DEMO_TENANT_ID (the real Supabase demo tenant UUID).
+    // Without this, the API middleware defaults to DEFAULT_TENANT_ID (zeros)
+    // which won't match getDemoTenantId() and /world/* will return 403.
+    const tenantId = opts.tenantId ?? process.env.DEMO_TENANT_ID;
+    if (tenantId) headers["x-tenant-id"] = tenantId;
+  } else if (opts.tenantId) {
+    headers["x-tenant-id"] = opts.tenantId;
+  }
   const init: RequestInit = {
     method,
     headers,

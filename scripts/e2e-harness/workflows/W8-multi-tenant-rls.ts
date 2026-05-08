@@ -30,14 +30,19 @@ interface TenantRow {
   status?: string;
 }
 
-// Raw fetch helper for super_admin endpoints (http.ts has no super-admin flag).
+// Raw fetch helper for super_admin endpoints. Captures status + body for evidence.
+// Sends x-user-id (internal-service trust) + x-super-admin per the API's
+// jwt-tenant-resolver middleware (lines 35-41).
 async function superAdminFetch(
   apiUrl: string,
   method: string,
   path: string,
   body?: unknown,
 ): Promise<{ status: number; data: unknown }> {
-  const headers: Record<string, string> = { "x-super-admin": "true" };
+  const headers: Record<string, string> = {
+    "x-user-id": "e2e-harness-superadmin",
+    "x-super-admin": "true",
+  };
   if (body !== undefined) headers["content-type"] = "application/json";
   const res = await fetch(`${apiUrl}${path}`, {
     method,
