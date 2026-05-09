@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { Store } from "@twin/core";
 import { getLoansForTenant } from "./_helpers.js";
+import { getTenantId } from "../tenant-context.js";
 
 export function registerSystemCheckRoutes(app: FastifyInstance, store: Store) {
 
@@ -145,7 +146,7 @@ export function registerSystemCheckRoutes(app: FastifyInstance, store: Store) {
 
     // Reset to clean state
     store.dispatch({ type: "ResetWorld" });
-    store.dispatch({ type: "LoadScenario", scenarioId: "nqm-bankstmt-12mo-clean" });
+    store.dispatch({ type: "LoadScenario", scenarioId: "nqm-bankstmt-12mo-clean", tenantId: getTenantId() });
 
     const loanId = "2501000101";
 
@@ -201,7 +202,7 @@ export function registerSystemCheckRoutes(app: FastifyInstance, store: Store) {
 
     await runTest("Override decision", async () => {
       store.dispatch({ type: "ResetWorld" });
-      store.dispatch({ type: "LoadScenario", scenarioId: "nqm-bankstmt-12mo-clean" });
+      store.dispatch({ type: "LoadScenario", scenarioId: "nqm-bankstmt-12mo-clean", tenantId: getTenantId() });
       store.dispatch({ type: "StageRecommendation", loanId, recommendation: {
         recommendation: "approved", rationale: "test", confidence: 0.9, conditions: [], trace: []
       }, actor: agentActor });
@@ -214,7 +215,7 @@ export function registerSystemCheckRoutes(app: FastifyInstance, store: Store) {
 
     await runTest("Send back to VA", async () => {
       store.dispatch({ type: "ResetWorld" });
-      store.dispatch({ type: "LoadScenario", scenarioId: "nqm-bankstmt-12mo-clean" });
+      store.dispatch({ type: "LoadScenario", scenarioId: "nqm-bankstmt-12mo-clean", tenantId: getTenantId() });
       store.dispatch({ type: "AssignLoan", loanId, assignedTo: "va@test.com", priority: "normal", actor });
       store.dispatch({ type: "UpdateAssignmentStatus", loanId, status: "report_ready", actor });
       store.dispatch({ type: "StageRecommendation", loanId, recommendation: {
@@ -229,7 +230,7 @@ export function registerSystemCheckRoutes(app: FastifyInstance, store: Store) {
 
     await runTest("Recalculate income", async () => {
       store.dispatch({ type: "ResetWorld" });
-      store.dispatch({ type: "LoadScenario", scenarioId: "nqm-bankstmt-12mo-clean" });
+      store.dispatch({ type: "LoadScenario", scenarioId: "nqm-bankstmt-12mo-clean", tenantId: getTenantId() });
       store.dispatch({ type: "RecalculateQualifyingIncome", loanId, worksheet: {
         method: "BankStatementDeposits", monthsCovered: 12, avgDeposits: 20000, expenseFactor: 0.5, derivedMonthlyIncome: 10000
       }, actor });
@@ -242,7 +243,7 @@ export function registerSystemCheckRoutes(app: FastifyInstance, store: Store) {
     store.dispatch({ type: "ResetWorld" });
     const scenarios = store.listScenarios();
     for (const s of scenarios) {
-      store.dispatch({ type: "LoadScenario", scenarioId: s.id });
+      store.dispatch({ type: "LoadScenario", scenarioId: s.id, tenantId: getTenantId() });
     }
 
     const passed = results.filter(r => r.status === "pass").length;

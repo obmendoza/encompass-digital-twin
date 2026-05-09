@@ -32,7 +32,7 @@ export function registerWorldRoutes(app: FastifyInstance, store: Store) {
       return reply.status(403).send({ error: "Only demo tenant may load scenarios" });
     }
     const body = LoadScenarioSchema.parse(req.body);
-    store.dispatch({ type: "LoadScenario", scenarioId: body.scenarioId });
+    store.dispatch({ type: "LoadScenario", scenarioId: body.scenarioId, tenantId: getTenantId() });
     reply.send({ scenarioId: store.getState().scenarioId });
   });
 
@@ -46,7 +46,7 @@ export function registerWorldRoutes(app: FastifyInstance, store: Store) {
       throw new ActionError("LOAN_NOT_FOUND",
         `no scenario contains loan '${loanId}'`, { loanId });
     }
-    store.dispatch({ type: "LoadScenario", scenarioId: match.id });
+    store.dispatch({ type: "LoadScenario", scenarioId: match.id, tenantId: getTenantId() });
     reply.send({ scenarioId: match.id, loanId });
   });
 

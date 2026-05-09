@@ -127,30 +127,34 @@ export const W8: WorkflowDef = {
       });
     }
 
-    // --- Tenant A loads the fixture. -----------------------------------
-    const aOpts: HttpOptions = { baseUrl: ctx.apiUrl, tenantId: a.id };
-    await http.post(aOpts, "/world/reset").catch(() => undefined);
-    await http.post(aOpts, "/world/load-scenario", { scenarioId: fixture.id }).catch(() => undefined);
+    // --- Demo tenant loads the fixture (only demo can use /world/*). ----
+    // /world/reset and /world/load-scenario are restricted to the demo tenant
+    // (per packages/api/src/routes/world.ts requireDemoTenant). A and B are
+    // just stub tenants we use to test cross-tenant access; the loan we
+    // attack lives in the demo tenant's scope.
+    const demoOpts: HttpOptions = { baseUrl: ctx.apiUrl };  // default tenant = DEMO_TENANT_ID
+    await http.post(demoOpts, "/world/reset").catch(() => undefined);
+    await http.post(demoOpts, "/world/load-scenario", { scenarioId: fixture.id }).catch(() => undefined);
 
-    // --- Tenant A reads its own loan (sanity check). -------------------
+    // --- Demo can read its own loan (sanity). ---------------------------
     type Loan = { id: string };
-    let aRead: Loan | null = null;
-    let aErr: number | null = null;
+    let demoRead: Loan | null = null;
+    let demoErr: number | null = null;
     try {
-      aRead = await http.get<Loan>(aOpts, `/loans/${fixture.loanId}`);
+      demoRead = await http.get<Loan>(demoOpts, `/loans/${fixture.loanId}`);
     } catch (e) {
-      if (e instanceof HttpError) aErr = e.status;
+      if (e instanceof HttpError) demoErr = e.status;
       else throw e;
     }
-    evidence.tenantAReadStatus = aRead?.id ? 200 : aErr;
+    evidence.demoReadStatus = demoRead?.id ? 200 : demoErr;
     assertions.push({
-      name: "tenant_a_can_read_own_loan",
+      name: "demo_can_read_loaded_loan",
       expected: fixture.loanId,
-      actual: aRead?.id ?? `error_${aErr}`,
-      ok: aRead?.id === fixture.loanId,
+      actual: demoRead?.id ?? `error_${demoErr}`,
+      ok: demoRead?.id === fixture.loanId,
     });
 
-    // --- Forged-header attack: tenant B asks for A's loan. -------------
+    // --- Forged-header attack: tenant B asks for demo's loan. ----------
     // http.ts injects `x-tenant-id: <b.id>` from HttpOptions.tenantId.
     // If the API returns the loan, that is a P0 RLS leak (§1.1).
     const bOpts: HttpOptions = { baseUrl: ctx.apiUrl, tenantId: b.id };
@@ -170,11 +174,14 @@ export const W8: WorkflowDef = {
     }
     evidence.tenantBProbe = { status: bStatus, body: bRawBody, data: bData };
 
+    // 400 LOAN_NOT_FOUND, 403, and 404 are all valid "blocked" outcomes — the API
+    // is hiding the loan from B regardless of the specific status code. The leak
+    // would be 200 with A's data; anything that's not 200 with data is blocked.
     assertions.push({
       name: "tenant_b_blocked_or_not_found",
-      expected: "403 or 404",
+      expected: "400, 403, or 404",
       actual: bStatus ?? "no_response",
-      ok: bStatus === 403 || bStatus === 404,
+      ok: bStatus === 400 || bStatus === 403 || bStatus === 404,
     });
     assertions.push({
       name: "tenant_b_did_not_receive_data",

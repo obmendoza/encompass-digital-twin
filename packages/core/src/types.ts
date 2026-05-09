@@ -329,7 +329,7 @@ export interface LoggedAction {
 }
 
 export type Action =
-  | { type: "LoadScenario"; scenarioId: string }
+  | { type: "LoadScenario"; scenarioId: string; tenantId?: string }
   | { type: "ResetWorld" }
   | { type: "OpenLoan"; loanId: LoanId; actor: Actor }
   | { type: "SetDecision"; loanId: LoanId; decision: UwDecision; rationale: string; actor: Actor }

@@ -38,10 +38,20 @@ export function reduce(
         throw new ActionError("SCENARIO_NOT_FOUND",
           `scenario '${action.scenarioId}' not found`, { scenarioId: action.scenarioId });
       }
+      // Stamp tenantId on the loaded loan when the dispatcher provides one.
+      // Production callers (route handlers, behavioral-test, server boot) MUST pass
+      // tenantId to avoid the cross-tenant read leak — see _helpers.ts:getLoanForTenant
+      // which now rejects untenanted loans (Task 9 close-out).
+      // Reducer-only unit tests may dispatch without tenantId; in that case the loan
+      // is loaded as-is. The reader-side filter still prevents API leaks because
+      // untenanted loans are rejected by the helpers, regardless of who asks.
+      const loan = action.tenantId
+        ? { ...structuredClone(sc.loan), tenantId: action.tenantId }
+        : structuredClone(sc.loan);
       return log({
         ...state,
         scenarioId: sc.id,
-        loans: { ...state.loans, [sc.loan.id]: structuredClone(sc.loan) },
+        loans: { ...state.loans, [sc.loan.id]: loan },
       });
     }
 

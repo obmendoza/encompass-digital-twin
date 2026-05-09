@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import Fastify, { type FastifyInstance } from "fastify";
 import multipart from "@fastify/multipart";
-import { createStore, type Store } from "@twin/core";
+import { createStore, DEFAULT_TENANT_ID, type Store } from "@twin/core";
 import { scenarios } from "@twin/fixtures";
 import { registerErrorHandler } from "./errors.js";
 import { registerJwtTenantResolver } from "./middleware/jwt-tenant-resolver.js";
@@ -38,6 +38,9 @@ import { getDemoTenantId, getTenantType } from "./tenant-cache.js";
 export interface BuildOpts {
   now?: () => string;
   preloadScenarioId?: string;
+  /** Tenant id to stamp on preloaded scenario loans. Defaults to DEFAULT_TENANT_ID
+   *  (the all-zeros UUID), which matches the middleware's default-tenant path. */
+  preloadTenantId?: string;
   enableWebSocket?: boolean;
 }
 
@@ -53,12 +56,15 @@ export function buildServer(opts: BuildOpts = {}): { app: FastifyInstance; store
   app.register(multipart, { limits: { fileSize: 20 * 1024 * 1024 } }); // 20MB max
   const store = createStore({ scenarios, now: opts.now });
 
+  // Preload tenantId: production callers pass through; tests default to
+  // DEFAULT_TENANT_ID so the middleware's default-tenant path matches what's stamped.
+  const preloadTenantId = opts.preloadTenantId ?? DEFAULT_TENANT_ID;
   if (opts.preloadScenarioId === "*") {
     for (const id of Object.keys(scenarios)) {
-      store.dispatch({ type: "LoadScenario", scenarioId: id });
+      store.dispatch({ type: "LoadScenario", scenarioId: id, tenantId: preloadTenantId });
     }
   } else if (opts.preloadScenarioId) {
-    store.dispatch({ type: "LoadScenario", scenarioId: opts.preloadScenarioId });
+    store.dispatch({ type: "LoadScenario", scenarioId: opts.preloadScenarioId, tenantId: preloadTenantId });
   }
 
   registerErrorHandler(app);
