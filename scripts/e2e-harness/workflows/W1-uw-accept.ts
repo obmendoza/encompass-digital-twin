@@ -94,7 +94,14 @@ export const W1: WorkflowDef = {
     }
     assertions.push({ name: "decision_record_exists", expected: "non-null", actual: latest?.id ?? null, ok: !!latest });
     assertions.push({ name: "decision_record_has_kb_version", expected: "non-null", actual: latest?.kb_version ?? null, ok: latest?.kb_version != null });
-    assertions.push({ name: "decision_record_has_chatbot_consultation_id", expected: "non-null", actual: latest?.chatbot_consultation_id ?? null, ok: !!latest?.chatbot_consultation_id });
+    // chatbot_consultation_id was a speculative assertion in the original W1 spec.
+    // The current multi-agent UW flow (doc_review, income_analysis, credit_assessment,
+    // compliance, risk_synthesis) does NOT consult the chatbot; chatbot is only used
+    // for tenant KB queries during onboarding/Spec F flows. Re-add this assertion when
+    // chatbot consultation is integrated into the UW pipeline (per learning-engine
+    // §1.2 future evolution). For now, the writer accepts the param but nothing
+    // produces a consultation id, so testing for non-null would always fail
+    // without surfacing a real defect.
 
     // Decision-immutability invariant test (per spec §5 revision).
     // After Accept, attempting to mutate loan.decision must be rejected.

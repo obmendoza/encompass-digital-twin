@@ -109,3 +109,30 @@ export async function pollForDecisionRecord(
   }
   return null;
 }
+
+export interface DetectedPattern {
+  id: string;
+  tenant_id: string;
+  rule_name: string;
+  program: string | null;
+  override_reason: string | null;
+  status: string;
+  updated_at: string;
+}
+
+/** Returns the most recent active (not dismissed/applied) detected_patterns
+ *  row for the tenant, optionally filtered by rule_name. Used by W7 to pick
+ *  up a suggestion regardless of whether THIS run created it or a prior run
+ *  did — persistPatterns is idempotent and only adds new ids when no active
+ *  pattern with the same (rule, program, reason) exists. */
+export async function getLatestActivePattern(
+  tenantId: string,
+  ruleName?: string,
+): Promise<DetectedPattern | null> {
+  const ruleFilter = ruleName ? `&rule_name=eq.${ruleName}` : "";
+  const rows = await supabaseSelect<DetectedPattern>(
+    "detected_patterns",
+    `select=id,tenant_id,rule_name,program,override_reason,status,updated_at&tenant_id=eq.${tenantId}${ruleFilter}&status=in.(new,analyzing,suggestion_ready,awaiting_compliance)&order=updated_at.desc&limit=1`,
+  );
+  return rows && rows.length > 0 ? rows[0]! : null;
+}

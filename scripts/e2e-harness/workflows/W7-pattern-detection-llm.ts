@@ -3,10 +3,10 @@
 //            W7.same_user_blocked, W7.two_key_approved, W7.guideline_applied
 //
 // Endpoint reality (verified from packages/api/src/routes/patterns.ts):
-//   - There is NO HTTP endpoint to trigger pattern detection. Detection runs
-//     only via the background worker (learning-worker.ts) on a 6-hour interval
-//     under advisory lock 43. We probe `/patterns/detect` here so the gap is
-//     recorded as an assertion failure rather than a silent skip.
+//   - The 6-hour worker (learning-worker.ts, advisory lock 43) is the canonical
+//     production trigger. For tests, system-check.ts:run-pattern-detection
+//     synchronously calls detectPatterns + persistPatterns for the request's
+//     tenant — same code path as the worker, no waiting.
 //   - The two-key approval flow is folded into a single endpoint:
 //       POST /metrics/:tenantId/patterns/:patternId/apply
 //     First call (admin) returns { ok: true, status: "awaiting_compliance" }.
@@ -14,11 +14,16 @@
 //     Second call by a DIFFERENT user → applies the suggestion.
 
 import { ACTORS, http, type HttpOptions } from "../http.js";
+import { getLatestActivePattern } from "../supabase.js";
 import type { AssertionResult, CellResult, WorkflowDef } from "../types.js";
 
 const SEED_FIXTURE = "nqm-bankstmt-12mo-clean";
 const SEED_LOAN_ID = "2501000101";
-const SEED_COUNT = 4;
+// minSample for high_override_rate is 20 (packages/core/src/learning-types.ts:178);
+// 10 overrides combined with prior runs' decisions reliably cross that threshold.
+// The seed loop dispatches OverrideDecision via the API only — no agent calls,
+// so this remains zero LLM cost.
+const SEED_COUNT = 10;
 
 export const W7: WorkflowDef = {
   id: "W7_pattern_detection",
@@ -31,11 +36,21 @@ export const W7: WorkflowDef = {
     const agentOpts: HttpOptions = { baseUrl: ctx.agentUrl, timeoutMs: 600_000 };
     const assertions: AssertionResult[] = [];
 
-    // Resolve a tenant for the path-scoped pattern routes.
-    type TenantsResp = { tenants?: Array<{ id: string; slug: string }> };
-    const tenantsRes = await http.get<TenantsResp>(apiOpts, "/tenants").catch(() => ({} as TenantsResp));
-    const tenant = (tenantsRes.tenants ?? [])[0];
-    const tenantId = tenant?.id ?? null;
+    // Resolve a tenant for the path-scoped pattern routes. Prefer the demo
+    // tenant from env (the seeded overrides write to that tenant's
+    // decision_records), then fall back to the first tenant in /tenants.
+    // /tenants returns the array directly, NOT wrapped in {tenants: [...]}
+    // (verified earlier — the wrapper-shape assumption was a W8 finding).
+    type TenantRow = { id: string; slug: string };
+    let tenantId: string | null = process.env.DEMO_TENANT_ID ?? null;
+    if (!tenantId) {
+      const tenantsRes = await http.get<TenantRow[] | { tenants?: TenantRow[] }>(
+        { ...apiOpts, superAdmin: true },
+        "/tenants",
+      ).catch(() => [] as TenantRow[]);
+      const list = Array.isArray(tenantsRes) ? tenantsRes : (tenantsRes.tenants ?? []);
+      tenantId = list[0]?.id ?? null;
+    }
     const tenantOpts: HttpOptions = { baseUrl: ctx.apiUrl, tenantId: tenantId ?? undefined };
 
     // Reset + load once; the world/loan state persists across the seed loop.
@@ -66,28 +81,57 @@ export const W7: WorkflowDef = {
     }
     assertions.push({ name: "seeded_overrides", expected: SEED_COUNT, actual: seedSucceeded, ok: seedSucceeded === SEED_COUNT, subCell: "W7.seed" });
 
-    // Probe pattern detection. There is no HTTP trigger today; this records the gap.
-    type DetectResp = { patterns?: Array<{ id?: string; rule?: string; suggestion_id?: string }>; suggestions?: Array<{ id?: string }>; error?: string };
-    const detect = await http.post<DetectResp>(apiOpts, "/patterns/detect").catch((e) => ({ error: e instanceof Error ? e.message : String(e) } as DetectResp));
-    const patternsFound = (detect.patterns ?? []).length + (detect.suggestions ?? []).length;
+    // Trigger pattern detection synchronously via /system/run-pattern-detection
+    // (added to system-check.ts for harness use; the production worker runs on
+    // a 6h advisory lock and isn't suitable for tests).
+    type DetectResp = {
+      candidatesDetected?: number;
+      suggestionsPersisted?: number;
+      suggestionIds?: string[];
+      candidates?: Array<{ ruleName?: string; program?: string; overrideReason?: string }>;
+      error?: string;
+    };
+    const detect = await http.post<DetectResp>(apiOpts, "/system/run-pattern-detection")
+      .catch((e) => ({ error: e instanceof Error ? e.message : String(e) } as DetectResp));
+    const patternsFound = detect.candidatesDetected ?? 0;
     assertions.push({ name: "patterns_detected", expected: ">0", actual: patternsFound, ok: patternsFound > 0, subCell: "W7.detect" });
 
-    const suggestion = detect.suggestions?.[0] ?? (detect.patterns ?? []).find((p) => p.suggestion_id);
-    const suggestionId = (suggestion as { id?: string; suggestion_id?: string } | undefined)?.id
-      ?? (suggestion as { suggestion_id?: string } | undefined)?.suggestion_id
-      ?? null;
+    // suggestionsPersisted may be 0 if persistPatterns matched an existing
+    // active pattern (idempotent on rule/program/reason). Fall back to a
+    // direct query for the most recent active suggestion in detected_patterns.
+    let suggestionId: string | null = detect.suggestionIds?.[0] ?? null;
+    let suggestionStatus: string | null = null;
+    if (tenantId) {
+      const existing = await getLatestActivePattern(tenantId).catch(() => null);
+      if (!suggestionId) suggestionId = existing?.id ?? null;
+      suggestionStatus = existing?.status ?? null;
+    }
     assertions.push({ name: "suggestion_id_present", expected: "non-null", actual: suggestionId, ok: !!suggestionId, subCell: "W7.suggestion_created" });
 
     if (!suggestionId || !tenantId) {
-      // Record placeholder assertions for the approval/apply sub-cells so the
-      // cell surface still shows all six sub-cells even when the upstream gap
-      // (no HTTP detect, no DB-backed suggestion) prevents reaching them.
       const reason = !tenantId ? "no_tenant" : "no_suggestion_id";
       assertions.push({ name: "first_approval_ok", expected: true, actual: reason, ok: false, subCell: "W7.two_key_approved" });
       assertions.push({ name: "self_approval_blocked", expected: "blocked", actual: reason, ok: false, subCell: "W7.same_user_blocked" });
       assertions.push({ name: "second_approval_ok", expected: true, actual: reason, ok: false, subCell: "W7.two_key_approved" });
       assertions.push({ name: "guideline_kb_version_present_after_apply", expected: "non-null", actual: reason, ok: false, subCell: "W7.guideline_applied" });
       return cell(start, "fail", "P0", assertions);
+    }
+
+    // The /apply endpoint requires a pattern_suggestions row in 'pending' status,
+    // produced by the worker's processNewPatterns step (LLM insight generation).
+    // /system/run-pattern-detection runs detect+persist only; it doesn't run the
+    // analysis/insight step that would lift status from 'new'/'analyzing' to
+    // 'suggestion_ready' with a corresponding pattern_suggestions row. Skip the
+    // apply assertions cleanly with a descriptive reason rather than reporting
+    // unconditional fails. Re-add when /system/run-pattern-detection is extended
+    // to also call processNewPatterns (see learning-worker.ts:54).
+    if (suggestionStatus !== "suggestion_ready" && suggestionStatus !== "awaiting_compliance") {
+      const reason = `suggestion_not_ready_for_apply:${suggestionStatus}`;
+      assertions.push({ name: "first_approval_ok", expected: true, actual: reason, ok: false, subCell: "W7.two_key_approved", auditClaim: null });
+      assertions.push({ name: "self_approval_blocked", expected: "blocked", actual: reason, ok: false, subCell: "W7.same_user_blocked" });
+      assertions.push({ name: "second_approval_ok", expected: true, actual: reason, ok: false, subCell: "W7.two_key_approved" });
+      assertions.push({ name: "guideline_kb_version_present_after_apply", expected: "non-null", actual: reason, ok: false, subCell: "W7.guideline_applied" });
+      return cell(start, "fail", "P1", assertions);
     }
 
     // Two-key approval via /metrics/:tenantId/patterns/:patternId/apply.

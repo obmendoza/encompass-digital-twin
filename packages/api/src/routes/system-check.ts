@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import type { Store } from "@twin/core";
 import { getLoansForTenant } from "./_helpers.js";
 import { getTenantId } from "../tenant-context.js";
+import { detectPatterns, persistPatterns } from "../learning/pattern-detector.js";
 
 export function registerSystemCheckRoutes(app: FastifyInstance, store: Store) {
 
@@ -254,6 +255,35 @@ export function registerSystemCheckRoutes(app: FastifyInstance, store: Store) {
       failed: results.length - passed,
       totalDurationMs: results.reduce((s, r) => s + r.durationMs, 0),
       results,
+      timestamp: new Date().toISOString(),
+    };
+  });
+
+  // 4. Synchronous pattern-detection trigger (test-only) — runs the same
+  // detectPatterns + persistPatterns flow that the 6h advisory-lock worker
+  // (learning-worker.ts) executes, but on demand. Used by the E2E harness's
+  // W7 cell to verify pattern detection without waiting for the worker tick.
+  // Production traffic should use the worker; this endpoint exists so the
+  // harness can validate the suggestion lifecycle synchronously.
+  // /system/* bypasses the JWT tenant resolver, so we read x-tenant-id from
+  // the request headers directly here.
+  app.post("/system/run-pattern-detection", async (req, reply) => {
+    const tenantId = req.headers["x-tenant-id"] as string | undefined;
+    if (!tenantId) {
+      return reply.status(400).send({ code: "MISSING_TENANT", message: "x-tenant-id header required" });
+    }
+    const candidates = await detectPatterns(tenantId);
+    const newIds = candidates.length > 0 ? await persistPatterns(tenantId, candidates) : [];
+    return {
+      tenantId,
+      candidatesDetected: candidates.length,
+      suggestionsPersisted: newIds.length,
+      suggestionIds: newIds,
+      candidates: candidates.map((c) => ({
+        ruleName: c.ruleName,
+        program: c.program,
+        overrideReason: c.overrideReason,
+      })),
       timestamp: new Date().toISOString(),
     };
   });
