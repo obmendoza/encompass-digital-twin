@@ -1,6 +1,7 @@
 // scripts/e2e-harness/workflows/W2-uw-override.ts
 import { ACTORS, http, type HttpOptions } from "../http.js";
 import { APPLIES_TO_ALL } from "../fixtures.js";
+import { getLatestDecisionRecord } from "../supabase.js";
 import type { AssertionResult, CellResult, FixtureMeta, WorkflowDef } from "../types.js";
 
 // Note: spec's plan listed SCREAMING_SNAKE category names, but the live API enum
@@ -28,9 +29,11 @@ export const W2: WorkflowDef = {
 
     // Wrap agent call: a fetch-failed here usually means the agent's stage_recommendation
     // callback fired after the loan was reset by the next test cell. Record as a P1
-    // finding rather than crashing the cell.
+    // finding rather than crashing the cell. Pass tenant_id so the agent's calls
+    // back to the (now tenant-strict) API resolve correctly.
+    const tenantQ = process.env.DEMO_TENANT_ID ? `?tenant_id=${process.env.DEMO_TENANT_ID}` : "";
     try {
-      await http.post(agentOpts, `/api/twin/underwrite-multi/${fixture.loanId}`);
+      await http.post(agentOpts, `/api/twin/underwrite-multi/${fixture.loanId}${tenantQ}`);
       assertions.push({ name: "agent_pipeline_completed", expected: "no-throw", actual: "ok", ok: true });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -59,10 +62,19 @@ export const W2: WorkflowDef = {
     const after = await http.get<Loan>(apiOpts, `/loans/${fixture.loanId}`);
     assertions.push({ name: "decision_is_override", expected: overrideTo, actual: after.decision ?? null, ok: after.decision === overrideTo });
 
-    type DecisionsResp = { decisions?: Array<{ id: string; original_recommendation?: string; final_decision?: string; override_reason?: string; rationale?: string }> };
-    const dec = await http.get<DecisionsResp>(apiOpts, `/loans/${fixture.loanId}/decision`).catch(() => ({} as DecisionsResp));
-    const latest = dec.decisions?.[dec.decisions.length - 1];
-    assertions.push({ name: "decision_record_original", expected: original, actual: latest?.original_recommendation ?? null, ok: latest?.original_recommendation === original });
+    // Decision record: query Supabase decision_records directly. The API doesn't
+    // expose a GET endpoint; the writer (decision-writer.ts) inserts after
+    // OverrideDecision. The schema's `agent_recommendation` column holds the
+    // original (pre-override) value — it's not called `original_recommendation`.
+    let latest = null;
+    try {
+      latest = await getLatestDecisionRecord(fixture.loanId);
+    } catch (e) {
+      assertions.push({ name: "decision_record_query_ok", expected: "no-throw", actual: e instanceof Error ? e.message : String(e), ok: false });
+    }
+    assertions.push({ name: "decision_record_exists", expected: "non-null", actual: latest?.id ?? null, ok: !!latest });
+    assertions.push({ name: "decision_record_type", expected: "overridden", actual: latest?.decision_type ?? null, ok: latest?.decision_type === "overridden" });
+    assertions.push({ name: "decision_record_original", expected: original, actual: latest?.agent_recommendation ?? null, ok: latest?.agent_recommendation === original });
     assertions.push({ name: "decision_record_final", expected: overrideTo, actual: latest?.final_decision ?? null, ok: latest?.final_decision === overrideTo });
     assertions.push({ name: "override_reason_valid", expected: "in 9-category set", actual: latest?.override_reason ?? null, ok: !!latest?.override_reason && VALID_REASONS.has(latest.override_reason) });
     assertions.push({ name: "rationale_persisted", expected: rationale, actual: latest?.rationale ?? null, ok: latest?.rationale === rationale });

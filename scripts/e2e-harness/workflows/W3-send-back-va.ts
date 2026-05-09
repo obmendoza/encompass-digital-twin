@@ -23,9 +23,11 @@ export const W3: WorkflowDef = {
 
     // Wrap agent call: a fetch-failed here usually means the agent's stage_recommendation
     // callback fired after the loan was reset by the next test cell. Record as a P1
-    // finding rather than crashing the cell.
+    // finding rather than crashing the cell. Pass tenant_id so the agent's calls
+    // back to the (now tenant-strict) API resolve correctly.
+    const tenantQ = process.env.DEMO_TENANT_ID ? `?tenant_id=${process.env.DEMO_TENANT_ID}` : "";
     try {
-      await http.post(agentOpts, `/api/twin/underwrite-multi/${fixture.loanId}`);
+      await http.post(agentOpts, `/api/twin/underwrite-multi/${fixture.loanId}${tenantQ}`);
       assertions.push({ name: "agent_pipeline_completed", expected: "no-throw", actual: "ok", ok: true });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);

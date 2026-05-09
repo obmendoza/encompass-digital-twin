@@ -39,9 +39,10 @@ export const W7: WorkflowDef = {
     const tenantOpts: HttpOptions = { baseUrl: ctx.apiUrl, tenantId: tenantId ?? undefined };
 
     // Reset + load once; the world/loan state persists across the seed loop.
+    const tenantQ = process.env.DEMO_TENANT_ID ? `?tenant_id=${process.env.DEMO_TENANT_ID}` : "";
     await http.post(apiOpts, "/world/reset").catch(() => undefined);
     await http.post(apiOpts, "/world/load-scenario", { scenarioId: SEED_FIXTURE }).catch(() => undefined);
-    await http.post(agentOpts, `/api/twin/underwrite-multi/${SEED_LOAN_ID}`).catch(() => undefined);
+    await http.post(agentOpts, `/api/twin/underwrite-multi/${SEED_LOAN_ID}${tenantQ}`).catch(() => undefined);
 
     // Seed N overrides for the same reason against the same fixture/loan.
     let seedSucceeded = 0;

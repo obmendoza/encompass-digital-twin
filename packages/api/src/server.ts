@@ -6,7 +6,7 @@ import { scenarios } from "@twin/fixtures";
 import { registerErrorHandler } from "./errors.js";
 import { registerJwtTenantResolver } from "./middleware/jwt-tenant-resolver.js";
 import cookie from "@fastify/cookie";
-import { isDbEnabled, withDb } from "./db/pool.js";
+import { isDbEnabled, withDb, withTenantTx } from "./db/pool.js";
 import { runMigrations } from "./db/migrations.js";
 import { connectRedis, isRedisEnabled, getRedisPub } from "./redis.js";
 import { subscribeToRedisEvents, publishAction } from "./event-bus.js";

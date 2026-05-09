@@ -47,11 +47,20 @@ export async function writeDecisionRecord(params: DecisionWriteParams): Promise<
   }
 
   const id = randomUUID();
-  const guidelineVersionId = loan.guidelineVersionId ?? "default";
+  // Loans loaded via /world/load-scenario (test fixtures) don't carry a
+  // guidelineVersionId. The schema requires UUID NOT NULL, so fall back to
+  // the all-zeros UUID rather than the literal string "default" which fails
+  // pg's UUID type check and silently dropped every test-mode decision record.
+  const guidelineVersionId = loan.guidelineVersionId ?? "00000000-0000-0000-0000-000000000000";
   const agentVersion = "v1";
   const promptVersion = "v1";
   const modelId = "claude-sonnet-4-6";
   const ingestedAt = loan.milestones?.[0]?.at ?? new Date().toISOString();
+  // decided_at + decision_time_seconds are NOT NULL per migration 004's schema.
+  // The original INSERT statement omitted both — second latent bug uncovered
+  // after the UUID/"default" issue was fixed.
+  const decidedAt = new Date().toISOString();
+  const decisionTimeSeconds = Math.max(0, (Date.parse(decidedAt) - Date.parse(ingestedAt)) / 1000);
 
   try {
     await withTenantTx(tenantId, async (client) => {
@@ -61,13 +70,15 @@ export async function writeDecisionRecord(params: DecisionWriteParams): Promise<
           agent_recommendation, agent_confidence, final_decision,
           override_reason, rationale, guideline_version_id,
           agent_version, prompt_version, model_id,
-          ingested_at, recorded_by, kb_version, chatbot_consultation_id
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+          ingested_at, decided_at, decision_time_seconds,
+          recorded_by, kb_version, chatbot_consultation_id
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
         [id, tenantId, loanId, loan.nqmProgram, decisionType,
          agentRecommendation, agentConfidence, finalDecision,
          overrideReason, rationale, guidelineVersionId,
-         agentVersion, promptVersion, modelId, ingestedAt, recordedBy,
-         kbVersion ?? null, chatbotConsultationId ?? null]
+         agentVersion, promptVersion, modelId,
+         ingestedAt, decidedAt, decisionTimeSeconds,
+         recordedBy, kbVersion ?? null, chatbotConsultationId ?? null]
       );
     });
     return id;
