@@ -3,7 +3,7 @@
 
 import { ACTORS, http, type HttpOptions } from "../http.js";
 import { APPLIES_TO_ALL } from "../fixtures.js";
-import { getLatestDecisionRecord } from "../supabase.js";
+import { pollForDecisionRecord } from "../supabase.js";
 import type { AssertionResult, CellResult, FixtureMeta, RunContext, WorkflowDef } from "../types.js";
 
 export const W1: WorkflowDef = {
@@ -13,6 +13,7 @@ export const W1: WorkflowDef = {
   appliesTo: APPLIES_TO_ALL,
   run: async (fixture, ctx) => {
     const start = Date.now();
+    const cellStartedAt = new Date().toISOString(); // anchor for decision-record polling — only count records written during this cell
     const apiOpts: HttpOptions = { baseUrl: ctx.apiUrl };
     const agentOpts: HttpOptions = { baseUrl: ctx.agentUrl, timeoutMs: 600_000 };
     const assertions: AssertionResult[] = [];
@@ -87,7 +88,7 @@ export const W1: WorkflowDef = {
     // bypasses RLS so we can read across tenants for verification.
     let latest = null;
     try {
-      latest = await getLatestDecisionRecord(fixture.loanId);
+      latest = await pollForDecisionRecord(fixture.loanId, { decidedAfter: cellStartedAt });
     } catch (e) {
       assertions.push({ name: "decision_record_query_ok", expected: "no-throw", actual: e instanceof Error ? e.message : String(e), ok: false });
     }

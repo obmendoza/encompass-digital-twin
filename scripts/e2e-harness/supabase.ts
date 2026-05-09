@@ -78,12 +78,34 @@ export interface DecisionRecord {
 
 export async function getLatestDecisionRecord(
   loanId: string,
-  tenantId?: string,
+  opts: { tenantId?: string; decidedAfter?: string } = {},
 ): Promise<DecisionRecord | null> {
-  const tenantFilter = tenantId ? `&tenant_id=eq.${tenantId}` : "";
+  const tenantFilter = opts.tenantId ? `&tenant_id=eq.${opts.tenantId}` : "";
+  const afterFilter = opts.decidedAfter ? `&decided_at=gt.${encodeURIComponent(opts.decidedAfter)}` : "";
   const rows = await supabaseSelect<DecisionRecord>(
     "decision_records",
-    `select=id,loan_id,decision_type,agent_recommendation,final_decision,override_reason,rationale,kb_version,chatbot_consultation_id,decided_at&loan_id=eq.${loanId}${tenantFilter}&order=decided_at.desc&limit=1`,
+    `select=id,loan_id,decision_type,agent_recommendation,final_decision,override_reason,rationale,kb_version,chatbot_consultation_id,decided_at&loan_id=eq.${loanId}${tenantFilter}${afterFilter}&order=decided_at.desc&limit=1`,
   );
   return rows && rows.length > 0 ? rows[0]! : null;
+}
+
+/**
+ * Polls for a decision record decided AFTER the given timestamp. Use the
+ * workflow's own start time so prior runs' stale records aren't matched.
+ * The decision-writer is fire-and-forget (server.ts:224 launches but doesn't
+ * await writeDecisionRecord), so a query immediately after Accept / Override
+ * can race the write. Polls every 250ms up to ~10s.
+ */
+export async function pollForDecisionRecord(
+  loanId: string,
+  opts: { tenantId?: string; decidedAfter: string; attempts?: number; delayMs?: number },
+): Promise<DecisionRecord | null> {
+  const attempts = opts.attempts ?? 40;
+  const delayMs = opts.delayMs ?? 250;
+  for (let i = 0; i < attempts; i++) {
+    const rec = await getLatestDecisionRecord(loanId, { tenantId: opts.tenantId, decidedAfter: opts.decidedAfter });
+    if (rec) return rec;
+    await new Promise((r) => setTimeout(r, delayMs));
+  }
+  return null;
 }

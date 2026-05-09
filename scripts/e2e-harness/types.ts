@@ -27,7 +27,9 @@ export type AssertionResult = z.infer<typeof AssertionResultSchema>;
 
 export const EvidenceBundleSchema = z.object({
   decisionRecordId: z.string().optional(),
-  kbVersion: z.string().nullable().optional(),
+  // kb_version in decision_records is INT (migration 012); allow number or
+  // legacy string forms.
+  kbVersion: z.union([z.string(), z.number()]).nullable().optional(),
   agentTraceLength: z.number().optional(),
   pipelineCostUsd: z.number().optional(),
   screenshotPath: z.string().nullable().optional(),

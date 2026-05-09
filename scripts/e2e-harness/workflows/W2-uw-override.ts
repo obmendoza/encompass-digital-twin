@@ -1,7 +1,7 @@
 // scripts/e2e-harness/workflows/W2-uw-override.ts
 import { ACTORS, http, type HttpOptions } from "../http.js";
 import { APPLIES_TO_ALL } from "../fixtures.js";
-import { getLatestDecisionRecord } from "../supabase.js";
+import { pollForDecisionRecord } from "../supabase.js";
 import type { AssertionResult, CellResult, FixtureMeta, WorkflowDef } from "../types.js";
 
 // Note: spec's plan listed SCREAMING_SNAKE category names, but the live API enum
@@ -20,6 +20,7 @@ export const W2: WorkflowDef = {
   appliesTo: APPLIES_TO_ALL,
   run: async (fixture, ctx) => {
     const start = Date.now();
+    const cellStartedAt = new Date().toISOString(); // anchor for decision-record polling
     const apiOpts: HttpOptions = { baseUrl: ctx.apiUrl };
     const agentOpts: HttpOptions = { baseUrl: ctx.agentUrl, timeoutMs: 600_000 };
     const assertions: AssertionResult[] = [];
@@ -68,7 +69,7 @@ export const W2: WorkflowDef = {
     // original (pre-override) value — it's not called `original_recommendation`.
     let latest = null;
     try {
-      latest = await getLatestDecisionRecord(fixture.loanId);
+      latest = await pollForDecisionRecord(fixture.loanId, { decidedAfter: cellStartedAt });
     } catch (e) {
       assertions.push({ name: "decision_record_query_ok", expected: "no-throw", actual: e instanceof Error ? e.message : String(e), ok: false });
     }

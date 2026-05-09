@@ -12,6 +12,42 @@ interface DecisionWriteParams {
   chatbotConsultationId?: string | null;
 }
 
+/**
+ * Map a fixture/runtime nqmProgram value (PascalCase, like "BankStatement12")
+ * to a canonical loan_programs.code (lowercase snake_case, like "bank_statement").
+ * The decision_records.loan_program column is a FK into loan_programs.code, so
+ * any unmapped value would fail the FK constraint and silently drop the record.
+ * If you add a new fixture program, add the mapping here AND seed the
+ * corresponding loan_programs row, or this will silently drop decisions for it.
+ */
+const PROGRAM_CODE_MAP: Record<string, string> = {
+  BankStatement12: "bank_statement",
+  BankStatement24: "bank_statement",
+  DSCR: "dscr",
+  AssetDepletion: "asset_depletion",
+  PnL: "profit_and_loss",
+  "1099Only": "1099_income",
+  ITIN: "itin",
+  ForeignNational: "foreign_national",
+  // FullDocNonQM has no perfect FK match in current loan_programs. Treated as
+  // the documented-income path until a "full_doc" code is added.
+  FullDocNonQM: "bank_statement",
+};
+
+function resolveLoanProgramCode(nqmProgram: string): string {
+  // Fall back to "bank_statement" for unknown programs to keep the FK happy
+  // and surface a console warning so the gap is visible during dev.
+  const code = PROGRAM_CODE_MAP[nqmProgram];
+  if (!code) {
+    console.warn(
+      `[decision-writer] unmapped nqmProgram "${nqmProgram}" — falling back to bank_statement. ` +
+      `Add a mapping in decision-writer.ts:PROGRAM_CODE_MAP and ensure the loan_programs row exists.`
+    );
+    return "bank_statement";
+  }
+  return code;
+}
+
 export async function writeDecisionRecord(params: DecisionWriteParams): Promise<string | null> {
   const { tenantId, loanId, loan, action, kbVersion, chatbotConsultationId } = params;
 
@@ -73,7 +109,7 @@ export async function writeDecisionRecord(params: DecisionWriteParams): Promise<
           ingested_at, decided_at, decision_time_seconds,
           recorded_by, kb_version, chatbot_consultation_id
         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
-        [id, tenantId, loanId, loan.nqmProgram, decisionType,
+        [id, tenantId, loanId, resolveLoanProgramCode(loan.nqmProgram), decisionType,
          agentRecommendation, agentConfidence, finalDecision,
          overrideReason, rationale, guidelineVersionId,
          agentVersion, promptVersion, modelId,
