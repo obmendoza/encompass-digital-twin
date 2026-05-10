@@ -13,14 +13,33 @@ interface DecisionWriteParams {
 }
 
 /**
- * Map a fixture/runtime nqmProgram value (PascalCase, like "BankStatement12")
- * to a canonical loan_programs.code (lowercase snake_case, like "bank_statement").
+ * Map a fixture/runtime nqmProgram value to a canonical loan_programs.code.
  * The decision_records.loan_program column is a FK into loan_programs.code, so
  * any unmapped value would fail the FK constraint and silently drop the record.
+ *
+ * Two taxonomy generations live here:
+ * - Pre-Phase-2 PascalCase (BankStatement12, DSCR, etc.) — kept for back-compat
+ *   with any caller that still emits them.
+ * - Active KB display names (Flex Select, Investor DSCR, etc.) — the current
+ *   guidelines on demo + npnqm-twin tenants use these.
+ *
  * If you add a new fixture program, add the mapping here AND seed the
- * corresponding loan_programs row, or this will silently drop decisions for it.
+ * corresponding loan_programs row, or decisions for it will silently drop.
  */
 const PROGRAM_CODE_MAP: Record<string, string> = {
+  // Active KB display names (Phase 2 fixtures, 2026-05-10):
+  "Flex Select": "bank_statement",
+  "Flex Supreme": "bank_statement",
+  "Investor DSCR": "dscr",
+  "Investor DSCR No Ratio": "dscr",
+  "DSCR Supreme": "dscr",
+  "DSCR Multi (5-8 Units)": "dscr",
+  "Foreign National": "foreign_national",
+  "Select ITIN": "itin",
+  "Second Lien Select": "bank_statement", // closest existing code; "second_lien" doesn't exist in registry
+  "Super Jumbo": "bank_statement", // closest existing code; "super_jumbo" doesn't exist in registry
+
+  // Legacy PascalCase taxonomy (pre-Phase-2 fixtures — kept for back-compat):
   BankStatement12: "bank_statement",
   BankStatement24: "bank_statement",
   DSCR: "dscr",
@@ -29,8 +48,6 @@ const PROGRAM_CODE_MAP: Record<string, string> = {
   "1099Only": "1099_income",
   ITIN: "itin",
   ForeignNational: "foreign_national",
-  // FullDocNonQM has no perfect FK match in current loan_programs. Treated as
-  // the documented-income path until a "full_doc" code is added.
   FullDocNonQM: "bank_statement",
 };
 

@@ -26,7 +26,7 @@ export const nqmDenyCandidate: Scenario = {
   description: "DSCR 0.72, low FICO 660, recent 30-day late. Most likely a denial scenario.",
   loan: {
     id: "2501000112",
-    nqmProgram: "DSCR",
+    nqmProgram: "Investor DSCR",
     qualifyingMethod: "DSCRCoverage",
     borrower: { fullName: "Carter, Devin", ssnMasked: "xxx-xx-6655", dob: "1991-10-03", maritalStatus: "Unmarried" },
     property: { street: "3820 Dusty Trail Blvd", city: "Fresno", state: "CA", zip: "93720",
@@ -100,7 +100,7 @@ export const nqmDenyCandidate: Scenario = {
     },
     // LTV 80 <= 80 Pass, FICO 660 >= 620 Pass, DSCR 0.72 < 0.75 Fail, Reserves 12.9 >= 6 Pass, Property Investment Pass
     overlay: {
-      programName: "NQM DSCR",
+      programName: "Investor DSCR — Deny Candidate",
       investorName: "NQM Capital",
       maxLTV: 80,
       minFICO: 620,

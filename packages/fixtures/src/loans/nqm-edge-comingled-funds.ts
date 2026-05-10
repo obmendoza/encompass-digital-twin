@@ -74,7 +74,7 @@ export const nqmEdgeComingledFunds: Scenario = {
   description: "24-mo business bank statement with visible personal expenses. Expense factor could range from 35% to 65% depending on treatment, swinging income from $11,200 to $20,800.",
   loan: {
     id: "2501000203",
-    nqmProgram: "BankStatement24",
+    nqmProgram: "Flex Supreme",
     qualifyingMethod: "BankStatementDeposits",
     borrower: { fullName: "Nakamura, Kenji", ssnMasked: "xxx-xx-5589", dob: "1976-11-03", maritalStatus: "Married" },
     property: { street: "2905 Granite Peak Ct", city: "Denver", state: "CO", zip: "80210",
@@ -155,7 +155,7 @@ export const nqmEdgeComingledFunds: Scenario = {
       ],
     },
     overlay: {
-      programName: "NQM Bank Statement 24",
+      programName: "Flex Supreme — Bank Statement 24mo",
       investorName: "NQM Capital",
       maxLTV: 85,
       minFICO: 660,

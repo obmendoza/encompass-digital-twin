@@ -27,7 +27,7 @@ export const nqmEdgeShortLeaseDscr: Scenario = {
   description: "Current lease $3,200/mo (DSCR 1.10) expires in 60 days. Market rent $2,750/mo drops DSCR to 0.95. UW must determine which rent to use for qualifying.",
   loan: {
     id: "2501000204",
-    nqmProgram: "DSCR",
+    nqmProgram: "Investor DSCR",
     qualifyingMethod: "DSCRCoverage",
     borrower: { fullName: "Pham, Anthony T.", ssnMasked: "xxx-xx-4481", dob: "1983-07-29", maritalStatus: "Married" },
     property: { street: "1134 Parkview Circle", city: "Las Vegas", state: "NV", zip: "89128",
@@ -109,7 +109,7 @@ export const nqmEdgeShortLeaseDscr: Scenario = {
       ],
     },
     overlay: {
-      programName: "NQM DSCR",
+      programName: "Investor DSCR — Short Lease",
       investorName: "NQM Capital",
       maxLTV: 80,
       minFICO: 620,

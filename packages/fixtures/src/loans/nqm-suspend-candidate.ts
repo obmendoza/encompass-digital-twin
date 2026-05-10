@@ -26,7 +26,7 @@ export const nqmSuspendCandidate: Scenario = {
   description: "High LTV, high DTI, 3 NSFs. Likely to be suspended pending LOX and mitigation.",
   loan: {
     id: "2501000111",
-    nqmProgram: "BankStatement12",
+    nqmProgram: "Flex Select",
     qualifyingMethod: "BankStatementDeposits",
     borrower: { fullName: "Brooks, Tammy", ssnMasked: "xxx-xx-5544", dob: "1988-01-09", maritalStatus: "Unmarried" },
     property: { street: "199 Willow Creek Rd", city: "Fresno", state: "CA", zip: "93720",
@@ -98,7 +98,7 @@ export const nqmSuspendCandidate: Scenario = {
     },
     // LTV 85 <= 90 Exception (high LTV requires conditions), FICO 680 >= 660 Pass, DTI 58.18 > 50 Fail, Reserves 10.0 >= 6 Pass
     overlay: {
-      programName: "NQM Bank Statement",
+      programName: "Flex Select — Bank Statement 12mo",
       investorName: "NQM Capital",
       maxLTV: 90,
       minFICO: 660,

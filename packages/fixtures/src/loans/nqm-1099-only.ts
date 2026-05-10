@@ -30,7 +30,7 @@ export const nqm1099Only: Scenario = {
   description: "Independent contractor qualifying on 1099 gross income with 70% income factor.",
   loan: {
     id: "2501000106",
-    nqmProgram: "1099Only",
+    nqmProgram: "Flex Select",
     qualifyingMethod: "1099Gross",
     borrower: { fullName: "Ramirez, Jose", ssnMasked: "xxx-xx-9966", dob: "1983-07-30", maritalStatus: "Unmarried" },
     property: { street: "777 Palm Tree Blvd", city: "Fresno", state: "CA", zip: "93720",
@@ -102,7 +102,7 @@ export const nqm1099Only: Scenario = {
     },
     // LTV 80 <= 85 Pass, FICO 710 >= 680 Pass, DTI 34.95 <= 50 Pass, Reserves 17.3 >= 6 Pass
     overlay: {
-      programName: "NQM 1099",
+      programName: "Flex Select — 1099 Income",
       investorName: "NQM Capital",
       maxLTV: 85,
       minFICO: 680,

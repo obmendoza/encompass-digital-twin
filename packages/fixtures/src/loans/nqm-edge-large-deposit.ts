@@ -27,7 +27,7 @@ export const nqmEdgeLargeDeposit: Scenario = {
   description: "Month 7 has $85K inheritance deposit inflating 12-mo average. DTI swings from 45.8% to 82.1% depending on whether deposit is included.",
   loan: {
     id: "2501000201",
-    nqmProgram: "BankStatement12",
+    nqmProgram: "Flex Select",
     qualifyingMethod: "BankStatementDeposits",
     borrower: { fullName: "Kim, David S.", ssnMasked: "xxx-xx-3317", dob: "1982-09-22", maritalStatus: "Married" },
     property: { street: "4418 Ridgeway Blvd", city: "Sacramento", state: "CA", zip: "95831",
@@ -106,7 +106,7 @@ export const nqmEdgeLargeDeposit: Scenario = {
       ],
     },
     overlay: {
-      programName: "NQM Bank Statement",
+      programName: "Flex Select — Bank Statement 12mo",
       investorName: "NQM Capital",
       maxLTV: 90,
       minFICO: 660,

@@ -22,7 +22,7 @@ export const nqmForeignNational: Scenario = {
   description: "Foreign national investor qualifying via DSCR; no US credit score; OFAC clearance required.",
   loan: {
     id: "2501000108",
-    nqmProgram: "ForeignNational",
+    nqmProgram: "Foreign National",
     qualifyingMethod: "DSCRCoverage",
     borrower: { fullName: "Silva, Lucas", ssnMasked: "xxx-xx-2211", dob: "1977-12-05", maritalStatus: "Married" },
     property: { street: "4490 Olive Branch Way", city: "Fresno", state: "CA", zip: "93720",
@@ -90,7 +90,7 @@ export const nqmForeignNational: Scenario = {
     },
     // LTV 65 <= 70 Pass, DSCR 1.14 >= 1.0 Pass, Reserves 35.2 >= 12 Pass, Property Investment Pass, Occupancy Investment Pass
     overlay: {
-      programName: "NQM Foreign National",
+      programName: "Foreign National",
       investorName: "NQM Capital",
       maxLTV: 70,
       minFICO: null,

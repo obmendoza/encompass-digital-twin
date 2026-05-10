@@ -24,6 +24,13 @@ export interface Document {
 }
 
 export type NqmProgram =
+  // Phase 2 (2026-05-10) — active KB display names from the ingested guidelines.
+  | "Flex Select" | "Flex Supreme"
+  | "Investor DSCR" | "Investor DSCR No Ratio"
+  | "DSCR Supreme" | "DSCR Multi (5-8 Units)"
+  | "Foreign National" | "Select ITIN"
+  | "Second Lien Select" | "Super Jumbo"
+  // Legacy PascalCase taxonomy — kept for back-compat (older fixtures, tests, type assertions).
   | "BankStatement12" | "BankStatement24"
   | "DSCR" | "AssetDepletion"
   | "1099Only" | "PnL"
@@ -82,7 +89,7 @@ export interface PropertySummary {
   city: string;
   state: string;
   zip: string;
-  propertyType: "SFR Det." | "Condo" | "PUD" | "2-4 Unit";
+  propertyType: "SFR Det." | "Condo" | "PUD" | "2-4 Unit" | "5-8 Unit" | "Multi-Family";
   units: number;
   yearBuilt: number;
 }

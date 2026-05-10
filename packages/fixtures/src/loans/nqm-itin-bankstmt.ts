@@ -22,7 +22,7 @@ export const nqmItinBankstmt: Scenario = {
   description: "ITIN borrower qualifying on 12mo bank statement deposits; alternative credit required.",
   loan: {
     id: "2501000109",
-    nqmProgram: "ITIN",
+    nqmProgram: "Select ITIN",
     qualifyingMethod: "BankStatementDeposits",
     borrower: { fullName: "Morales, Rosa", ssnMasked: "xxx-xx-3322", dob: "1990-06-17", maritalStatus: "Married" },
     property: { street: "615 Sunflower St", city: "Fresno", state: "CA", zip: "93720",
@@ -92,7 +92,7 @@ export const nqmItinBankstmt: Scenario = {
     },
     // LTV 80 <= 80 Pass, FICO 690 >= 660 Pass, DTI 48.33 <= 50 Pass, Reserves 16.6 >= 6 Pass
     overlay: {
-      programName: "NQM ITIN",
+      programName: "Select ITIN",
       investorName: "NQM Capital",
       maxLTV: 80,
       minFICO: 660,

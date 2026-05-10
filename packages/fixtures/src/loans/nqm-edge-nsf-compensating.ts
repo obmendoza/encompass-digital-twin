@@ -27,7 +27,7 @@ export const nqmEdgeNsfCompensating: Scenario = {
   description: "7 NSFs exceed investor guideline max of 3, but all from a resolved auto-pay timing issue. Strong compensating factors: FICO 748, 12mo reserves, 65% LTV, zero credit lates.",
   loan: {
     id: "2501000206",
-    nqmProgram: "BankStatement12",
+    nqmProgram: "Flex Select",
     qualifyingMethod: "BankStatementDeposits",
     borrower: { fullName: "Washington, Terrence D.", ssnMasked: "xxx-xx-2208", dob: "1980-06-14", maritalStatus: "Unmarried" },
     property: { street: "3312 Elmwood Court", city: "Atlanta", state: "GA", zip: "30309",
@@ -107,7 +107,7 @@ export const nqmEdgeNsfCompensating: Scenario = {
       ],
     },
     overlay: {
-      programName: "NQM Bank Statement",
+      programName: "Flex Select — Bank Statement 12mo",
       investorName: "NQM Capital",
       maxLTV: 90,
       minFICO: 660,

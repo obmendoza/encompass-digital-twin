@@ -19,6 +19,9 @@ import { nqmEdgeRestrictedAssets } from "./loans/nqm-edge-restricted-assets.js";
 import { nqmEdgeNsfCompensating } from "./loans/nqm-edge-nsf-compensating.js";
 import { nqmEdgePropertyFlip } from "./loans/nqm-edge-property-flip.js";
 import { nqmEdgeGiftFundsNqm } from "./loans/nqm-edge-gift-funds-nqm.js";
+import { nqmDscrSupremeJumbo } from "./loans/nqm-dscr-supreme-jumbo.js";
+import { nqmDscrMulti5To8Units } from "./loans/nqm-dscr-multi-5to8-units.js";
+import { nqmSecondLienSelect } from "./loans/nqm-second-lien-select.js";
 
 const all: Scenario[] = [
   nqmBankstmt12moClean, nqmBankstmt24moBusiness, nqmDscrInvestorPurchase, nqmDscrSub1,
@@ -26,6 +29,8 @@ const all: Scenario[] = [
   nqmFullDocRecentBk, nqmSuspendCandidate, nqmDenyCandidate,
   nqmEdgeLargeDeposit, nqmEdgeDecliningIncome, nqmEdgeComingledFunds, nqmEdgeShortLeaseDscr,
   nqmEdgeRestrictedAssets, nqmEdgeNsfCompensating, nqmEdgePropertyFlip, nqmEdgeGiftFundsNqm,
+  // Phase 2 (2026-05-10) — fixtures aligned to the active KB's program taxonomy.
+  nqmDscrSupremeJumbo, nqmDscrMulti5To8Units, nqmSecondLienSelect,
 ];
 export const scenarios: Record<string, Scenario> = Object.fromEntries(all.map((s) => [s.id, s]));
 export function listScenarios() {

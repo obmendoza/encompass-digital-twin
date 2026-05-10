@@ -37,7 +37,7 @@ export const nqmEdgeGiftFundsNqm: Scenario = {
   description: "$45,000 gift (44% of $103K down payment) from parent. NQM investor gift policy unclear — some cap at 25%, others disallow. If disallowed: LTV jumps from 80% to 90%, triggering different tier.",
   loan: {
     id: "2501000208",
-    nqmProgram: "BankStatement12",
+    nqmProgram: "Flex Select",
     qualifyingMethod: "BankStatementDeposits",
     borrower: { fullName: "Chen, Lisa W.", ssnMasked: "xxx-xx-8836", dob: "1991-03-28", maritalStatus: "Unmarried" },
     property: { street: "9214 Harbor Glen Way", city: "San Diego", state: "CA", zip: "92131",
@@ -115,7 +115,7 @@ export const nqmEdgeGiftFundsNqm: Scenario = {
       ],
     },
     overlay: {
-      programName: "NQM Bank Statement",
+      programName: "Flex Select — Bank Statement 12mo",
       investorName: "NQM Capital",
       maxLTV: 90,
       minFICO: 660,

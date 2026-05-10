@@ -27,7 +27,7 @@ export const nqmEdgeRestrictedAssets: Scenario = {
   description: "Reported $2.8M assets includes $1.6M 401(k) (60% accessible) and $400K restricted RSUs (25% vested). Eligible assets $1.86M vs reported $2.8M changes depletion income from $46,667 to $31,000/mo.",
   loan: {
     id: "2501000205",
-    nqmProgram: "AssetDepletion",
+    nqmProgram: "Flex Supreme",
     qualifyingMethod: "AssetDepletionMonths",
     borrower: { fullName: "Rodriguez, Carmen L.", ssnMasked: "xxx-xx-9914", dob: "1968-02-17", maritalStatus: "Married" },
     property: { street: "8820 Bel Air Canyon Rd", city: "Los Angeles", state: "CA", zip: "90077",
@@ -107,7 +107,7 @@ export const nqmEdgeRestrictedAssets: Scenario = {
       ],
     },
     overlay: {
-      programName: "NQM Asset Depletion",
+      programName: "Flex Supreme — Asset Depletion",
       investorName: "NQM Capital",
       maxLTV: 75,
       minFICO: 660,

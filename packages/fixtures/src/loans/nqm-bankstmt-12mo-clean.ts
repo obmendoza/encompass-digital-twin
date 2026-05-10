@@ -17,7 +17,7 @@ export const nqmBankstmt12moClean: Scenario = {
   description: "Self-employed happy path. 12mo personal bank statements, clean file.",
   loan: {
     id: "2501000101",
-    nqmProgram: "BankStatement12",
+    nqmProgram: "Flex Select",
     qualifyingMethod: "BankStatementDeposits",
     borrower: { fullName: "Sanchez, Maria A.", ssnMasked: "xxx-xx-4421", dob: "1987-05-14", maritalStatus: "Unmarried" },
     property: { street: "812 Alder Ln", city: "Fresno", state: "CA", zip: "93720",
@@ -93,7 +93,7 @@ export const nqmBankstmt12moClean: Scenario = {
     },
     // LTV 80 <= 90 Pass, FICO 742 >= 660 Pass, DTI 36.88 <= 50 Pass, Reserves 23.6 >= 6 Pass
     overlay: {
-      programName: "NQM Bank Statement",
+      programName: "Flex Select — Bank Statement 12mo",
       investorName: "NQM Capital",
       maxLTV: 90,
       minFICO: 660,

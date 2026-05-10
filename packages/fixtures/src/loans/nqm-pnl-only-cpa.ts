@@ -26,7 +26,7 @@ export const nqmPnlOnlyCpa: Scenario = {
   description: "Business owner qualifying on CPA-certified P&L with strong net income.",
   loan: {
     id: "2501000107",
-    nqmProgram: "PnL",
+    nqmProgram: "Flex Select",
     qualifyingMethod: "PnLCPACertified",
     borrower: { fullName: "Patel, Anjali", ssnMasked: "xxx-xx-1100", dob: "1980-02-14", maritalStatus: "Married" },
     property: { street: "2100 Cypress Hill Dr", city: "Fresno", state: "CA", zip: "93720",
@@ -99,7 +99,7 @@ export const nqmPnlOnlyCpa: Scenario = {
     },
     // LTV 75 <= 80 Pass, FICO 720 >= 700 Pass, DTI 27.82 <= 45 Pass, Reserves 22.3 >= 6 Pass
     overlay: {
-      programName: "NQM P&L",
+      programName: "Flex Select — P&L Only",
       investorName: "NQM Capital",
       maxLTV: 80,
       minFICO: 700,

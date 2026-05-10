@@ -21,7 +21,7 @@ export const nqmAssetDepletion: Scenario = {
   description: "High-net-worth borrower qualifying via asset depletion over 60 months.",
   loan: {
     id: "2501000105",
-    nqmProgram: "AssetDepletion",
+    nqmProgram: "Flex Supreme",
     qualifyingMethod: "AssetDepletionMonths",
     borrower: { fullName: "Weber, Hans", ssnMasked: "xxx-xx-8855", dob: "1961-04-02", maritalStatus: "Married" },
     property: { street: "5501 Estate Dr", city: "Fresno", state: "CA", zip: "93720",
@@ -93,7 +93,7 @@ export const nqmAssetDepletion: Scenario = {
     },
     // LTV 65 <= 70 Pass, FICO 730 >= 700 Pass, Reserves 429.7 >= 12 Pass
     overlay: {
-      programName: "NQM Asset Utilization",
+      programName: "Flex Supreme — Asset Depletion",
       investorName: "NQM Capital",
       maxLTV: 70,
       minFICO: 700,

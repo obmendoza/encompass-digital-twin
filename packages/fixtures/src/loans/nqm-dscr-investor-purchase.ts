@@ -20,7 +20,7 @@ export const nqmDscrInvestorPurchase: Scenario = {
   description: "DSCR investor purchase with healthy coverage ratio of 1.18.",
   loan: {
     id: "2501000103",
-    nqmProgram: "DSCR",
+    nqmProgram: "Investor DSCR",
     qualifyingMethod: "DSCRCoverage",
     borrower: { fullName: "Nguyen, Linh", ssnMasked: "xxx-xx-6633", dob: "1985-03-07", maritalStatus: "Unmarried" },
     property: { street: "2280 Harvest Rd", city: "Fresno", state: "CA", zip: "93720",
@@ -94,7 +94,7 @@ export const nqmDscrInvestorPurchase: Scenario = {
     },
     // LTV 75 <= 80 Pass, FICO 740 >= 620 Pass, DSCR 1.18 >= 0.75 Pass, Reserves 21.5 >= 6 Pass
     overlay: {
-      programName: "NQM DSCR",
+      programName: "Investor DSCR",
       investorName: "NQM Capital",
       maxLTV: 80,
       minFICO: 620,

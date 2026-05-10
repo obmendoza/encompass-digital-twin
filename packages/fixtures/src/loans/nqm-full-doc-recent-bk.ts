@@ -20,7 +20,7 @@ export const nqmFullDocRecentBk: Scenario = {
   description: "W2/full-doc borrower with recent BK discharge. BK seasoning and re-established credit required.",
   loan: {
     id: "2501000110",
-    nqmProgram: "FullDocNonQM",
+    nqmProgram: "Super Jumbo",
     qualifyingMethod: "TraditionalDocs",
     borrower: { fullName: "Johnson, Lamar", ssnMasked: "xxx-xx-4433", dob: "1975-08-25", maritalStatus: "Separated" },
     property: { street: "888 Cedar Grove Ave", city: "Fresno", state: "CA", zip: "93720",
@@ -90,7 +90,7 @@ export const nqmFullDocRecentBk: Scenario = {
     },
     // LTV 70 <= 75 Pass, FICO 680 >= 660 Pass, DTI 34.2 <= 50 Pass, Reserves 15.9 >= 6 Pass, Seasoning BK >= 2 years Pass (housingRatio 31.72)
     overlay: {
-      programName: "NQM Full Doc (BK Seasoning)",
+      programName: "Super Jumbo — Full Doc",
       investorName: "NQM Capital",
       maxLTV: 75,
       minFICO: 660,

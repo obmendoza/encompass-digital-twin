@@ -26,7 +26,7 @@ export const nqmBankstmt24moBusiness: Scenario = {
   description: "Self-employed using 24mo business bank statements. NSF explanation required.",
   loan: {
     id: "2501000102",
-    nqmProgram: "BankStatement24",
+    nqmProgram: "Flex Supreme",
     qualifyingMethod: "BankStatementDeposits",
     borrower: { fullName: "Okafor, Samuel", ssnMasked: "xxx-xx-5512", dob: "1979-09-22", maritalStatus: "Married" },
     property: { street: "1044 Magnolia Ave", city: "Fresno", state: "CA", zip: "93720",
@@ -98,7 +98,7 @@ export const nqmBankstmt24moBusiness: Scenario = {
     },
     // LTV 75 <= 90 Pass, FICO 700 >= 660 Pass, DTI 43.37 <= 50 Pass, Reserves 23.1 >= 6 Pass
     overlay: {
-      programName: "NQM Bank Statement",
+      programName: "Flex Supreme — Bank Statement 24mo",
       investorName: "NQM Capital",
       maxLTV: 90,
       minFICO: 660,

@@ -27,7 +27,7 @@ export const nqmEdgeDecliningIncome: Scenario = {
   description: "12-mo deposit average masks 38.6% income decline. Months 1-6 avg $22K vs months 7-12 avg $13.5K. UW must determine appropriate qualifying income.",
   loan: {
     id: "2501000202",
-    nqmProgram: "BankStatement12",
+    nqmProgram: "Flex Select",
     qualifyingMethod: "BankStatementDeposits",
     borrower: { fullName: "Foster, Rachel M.", ssnMasked: "xxx-xx-7742", dob: "1979-04-11", maritalStatus: "Married" },
     property: { street: "7821 Westbrook Terrace", city: "Phoenix", state: "AZ", zip: "85254",
@@ -107,7 +107,7 @@ export const nqmEdgeDecliningIncome: Scenario = {
       ],
     },
     overlay: {
-      programName: "NQM Bank Statement",
+      programName: "Flex Select — Bank Statement 12mo",
       investorName: "NQM Capital",
       maxLTV: 90,
       minFICO: 660,

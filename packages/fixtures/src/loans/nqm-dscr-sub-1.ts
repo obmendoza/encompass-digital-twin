@@ -20,7 +20,7 @@ export const nqmDscrSub1: Scenario = {
   description: "DSCR investor purchase with below-1.0 coverage. Edge case for underwriter review.",
   loan: {
     id: "2501000104",
-    nqmProgram: "DSCR",
+    nqmProgram: "Investor DSCR No Ratio",
     qualifyingMethod: "DSCRCoverage",
     borrower: { fullName: "Kohli, Priya", ssnMasked: "xxx-xx-7744", dob: "1982-11-18", maritalStatus: "Married" },
     property: { street: "3310 Vineyard Ct", city: "Fresno", state: "CA", zip: "93720",
@@ -95,7 +95,7 @@ export const nqmDscrSub1: Scenario = {
     },
     // LTV 68.89 <= 80 Pass, FICO 760 >= 620 Pass, DSCR 0.85 >= 0.75 Pass, Reserves 21.9 >= 6 Pass
     overlay: {
-      programName: "NQM DSCR",
+      programName: "Investor DSCR No Ratio",
       investorName: "NQM Capital",
       maxLTV: 80,
       minFICO: 620,

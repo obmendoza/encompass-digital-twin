@@ -37,7 +37,7 @@ export const nqmEdgePropertyFlip: Scenario = {
   description: "Seller acquired property 67 days ago at $310K, now selling at $485K (56% appreciation). Appraised at $480K. Flip seasoning policy triggered. Renovation documented but UW must verify legitimacy.",
   loan: {
     id: "2501000207",
-    nqmProgram: "DSCR",
+    nqmProgram: "Investor DSCR",
     qualifyingMethod: "DSCRCoverage",
     borrower: { fullName: "Ellis, Morgan J.", ssnMasked: "xxx-xx-6623", dob: "1986-10-05", maritalStatus: "Unmarried" },
     property: { street: "5540 Rosewood Ave", city: "Tampa", state: "FL", zip: "33606",
@@ -119,7 +119,7 @@ export const nqmEdgePropertyFlip: Scenario = {
       ],
     },
     overlay: {
-      programName: "NQM DSCR",
+      programName: "Investor DSCR — Property Flip",
       investorName: "NQM Capital",
       maxLTV: 80,
       minFICO: 620,
