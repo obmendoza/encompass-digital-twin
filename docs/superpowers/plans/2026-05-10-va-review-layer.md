@@ -16,7 +16,7 @@
 
 These five resolutions came up while writing the plan — none change the spec's intent, just lock in the implementation choice the spec left open:
 
-1. **Migration numbering.** The next free migration is `014` (existing migrations end at `013-e2e-harness-metadata.sql`). VA schema is `014-va-review-layer.sql`; default-pool seed is `015-va-default-pools.sql`.
+1. **Migration numbering.** The next free migration is `013` (existing migrations end at `012-guideline-processing.sql`; the harness plan referenced a `013-e2e-harness-metadata.sql` but it was never merged). VA schema is `013-va-review-layer.sql`; default-pool seed is `014-va-default-pools.sql`.
 2. **Where the routing happens.** The spec says "API handler resolves the routing rules." Concretely: routing fires inside the existing `StageRecommendation` action handler in `packages/api/src/routes/world.ts`, *after* the reducer transitions the state to `agent_review_pending` but *before* the response returns. If `tenant.settings.va.required === true`, the handler then calls `vaRouter.routeLoan(loanId)` which evaluates rules and writes `loans.assigned_pool_id` + transitions state to `va_review_pending`.
 3. **Where the gate invariant lives.** Reducer-level (`packages/core/src/reduce.ts`) for the deterministic state-machine check, AND API-level (`requireUWStateOrTenantOptOut` middleware) so the API returns 409 with a structured error before the action even reaches the reducer. Belt-and-suspenders to avoid 500s.
 4. **Outbox dispatcher process model.** A single Node process per API instance, started in `server.ts` at boot (after migrations), holding advisory lock 44 in a continuous loop with a 2-second sleep between iterations. Multi-instance safety: every instance tries the lock, only one wins; the others sleep and retry every 30s in case the leader dies.
@@ -28,8 +28,8 @@ These five resolutions came up while writing the plan — none change the spec's
 
 | File | Responsibility | Phase |
 |---|---|---|
-| `packages/api/src/db/migrations/014-va-review-layer.sql` | All 8 new tables + 4 ALTER TABLE additions on `loans` | 1 |
-| `packages/api/src/db/migrations/015-va-default-pools.sql` | One internal pool per existing tenant; populates `tenant.settings.va` defaults | 1 |
+| `packages/api/src/db/migrations/013-va-review-layer.sql` | All 8 new tables + 4 ALTER TABLE additions on `loans` | 1 |
+| `packages/api/src/db/migrations/014-va-default-pools.sql` | One internal pool per existing tenant; populates `tenant.settings.va` defaults | 1 |
 | `packages/core/src/types.ts` | Add `LoanState` union, 5 new Action variants, `VAReview` interface, `BpoActor` discriminator on `Actor` | 1 |
 | `packages/core/src/schemas.ts` | Zod schemas for `VAReview` payload + 5 new action shapes | 1 |
 | `packages/core/src/reduce.ts` | Handle 5 new actions; enforce VA-gate invariant on `AcceptRecommendation` / `OverrideDecision` / `SetDecision` | 1 |
@@ -82,12 +82,12 @@ Phase 1 lands the database schema, core types, Zod schemas, reducer changes, and
 ### Task 1: DB migration 014 — VA Review Layer schema
 
 **Files:**
-- Create: `packages/api/src/db/migrations/014-va-review-layer.sql`
+- Create: `packages/api/src/db/migrations/013-va-review-layer.sql`
 
 - [ ] **Step 1: Write the migration**
 
 ```sql
--- 014-va-review-layer.sql
+-- 013-va-review-layer.sql
 -- VA Review Layer: tables, RLS, indexes. Numbering picks up after 013.
 
 -- ============================================================================
@@ -309,7 +309,7 @@ API runs migrations on boot via `runMigrations()` in `packages/api/src/db/migrat
 pnpm --filter @twin/api dev
 ```
 
-Expected log line: `[migrations] applied 014-va-review-layer.sql`. No error.
+Expected log line: `[migrations] applied 013-va-review-layer.sql`. No error.
 
 - [ ] **Step 3: Smoke-check the schema**
 
@@ -337,7 +337,7 @@ Expected: the second INSERT fails with `va_pools.dpa_gate_violation`. Clean up: 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/api/src/db/migrations/014-va-review-layer.sql
+git add packages/api/src/db/migrations/013-va-review-layer.sql
 git commit -m "feat(db): VA review layer schema — tables, RLS, DPA gate trigger"
 ```
 
@@ -346,12 +346,12 @@ git commit -m "feat(db): VA review layer schema — tables, RLS, DPA gate trigge
 ### Task 2: DB migration 015 — default pools + tenant.settings.va seed
 
 **Files:**
-- Create: `packages/api/src/db/migrations/015-va-default-pools.sql`
+- Create: `packages/api/src/db/migrations/014-va-default-pools.sql`
 
 - [ ] **Step 1: Write the migration**
 
 ```sql
--- 015-va-default-pools.sql
+-- 014-va-default-pools.sql
 -- For every existing tenant, create a default internal pool and seed
 -- tenant.settings.va. Demo defaults required=false; npnqm-twin defaults
 -- required=true. Other tenants default required=false (opt-in).
@@ -420,7 +420,7 @@ Expected: demo has `"required": false`; npnqm-twin has `"required": true`. Both 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add packages/api/src/db/migrations/015-va-default-pools.sql
+git add packages/api/src/db/migrations/014-va-default-pools.sql
 git commit -m "feat(db): seed default VA internal pool per tenant + tenants.settings.va defaults"
 ```
 
