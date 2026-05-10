@@ -36,6 +36,7 @@ import { registerVARoutes } from "./routes/va.js";
 import { registerVAAdminRoutes } from "./routes/va-admin.js";
 import { registerBpoRoutes } from "./routes/bpo.js";
 import { startLearningWorker } from "./learning-worker.js";
+import { startVAOutboxDispatcher } from "./services/va-outbox-dispatcher.js";
 import { getDemoTenantId, getTenantType } from "./tenant-cache.js";
 
 export interface BuildOpts {
@@ -147,6 +148,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 
     if (isDbEnabled()) startSlaMonitor();
     if (isDbEnabled()) startLearningWorker();
+    if (isDbEnabled() && process.env.NODE_ENV !== "test") {
+      void startVAOutboxDispatcher();
+    }
 
     // Resolve demo tenant ID (for fixture loading + dispatch routing)
     let DEMO_TENANT_ID: string | undefined;
