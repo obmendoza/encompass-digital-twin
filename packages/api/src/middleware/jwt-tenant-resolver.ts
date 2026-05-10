@@ -13,6 +13,11 @@ function isPublicPath(url: string): boolean {
   if (PUBLIC_PATHS.has(url)) return true;
   if (url.startsWith("/api/ingest/")) return true;
   if (url.startsWith("/system/")) return true;
+  // BPO portal routes use their own bearer-token auth (verifyBpoToken,
+  // applied per-route via bpoGuarded). They must bypass the JWT resolver
+  // because the BPO token is a random hex string, not a Supabase JWT —
+  // letting verifyJwt see it would fail with 401 before the route runs.
+  if (url.startsWith("/bpo/")) return true;
   return false;
 }
 
