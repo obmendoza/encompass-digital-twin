@@ -7,6 +7,7 @@ import { ConditionModal } from "@/components/encompass/ConditionModal";
 import { TabBar } from "@/components/encompass/TabBar";
 import { RunAgentButton } from "@/components/encompass/RunAgentButton";
 import { RecommendationPanel } from "@/components/encompass/RecommendationPanel";
+import { UWReviewPanel, type VAReviewProps, type SpecialistSignoff, type ConditionAction } from "@/components/encompass/UWReviewPanel";
 import { money, pct } from "@/lib/format";
 import { getUser } from "@/lib/auth";
 
@@ -24,6 +25,36 @@ export default async function TransmittalPage({
     loan = await api.getLoan(loanId);
   }
   const user = await getUser();
+
+  let latestVAReview: VAReviewProps | null = null;
+  if (loan.currentVaReviewId) {
+    try {
+      const history = await api.vaReviewHistory(loan.id);
+      const sorted = [...history.reviews].sort(
+        (a, b) => new Date(a.submitted_at).getTime() - new Date(b.submitted_at).getTime(),
+      );
+      const latest = sorted[sorted.length - 1];
+      if (latest) {
+        latestVAReview = {
+          vaId: latest.va_id,
+          poolKind: latest.pool_kind,
+          verdict: latest.verdict,
+          specialistSignoffs: Array.isArray(latest.specialist_signoffs)
+            ? (latest.specialist_signoffs as SpecialistSignoff[])
+            : [],
+          conditionActions: Array.isArray(latest.condition_actions)
+            ? (latest.condition_actions as ConditionAction[])
+            : [],
+          overallRationale: latest.overall_rationale,
+          submittedAt: latest.submitted_at,
+          reviewTimeSeconds: latest.review_time_seconds,
+        };
+      }
+    } catch {
+      latestVAReview = null;
+    }
+  }
+
   const openCount = loan.conditions.filter((c) => c.status === "Open").length;
   const rcvdCount = loan.conditions.filter((c) => c.status === "Received").length;
   const clrCount = loan.conditions.filter((c) => c.status === "Cleared").length;
@@ -103,6 +134,10 @@ export default async function TransmittalPage({
         <span className="text-[11px] font-bold text-[#1f4478]">AI Assist:</span>
         <RunAgentButton loanId={loan.id} hasRecommendation={!!loan.pendingRecommendation} userRole={user?.role} />
       </div>
+
+      {latestVAReview && (
+        <UWReviewPanel review={latestVAReview} />
+      )}
 
       {loan.pendingRecommendation && (
         <RecommendationPanel loanId={loan.id} rec={loan.pendingRecommendation} existingConditions={loan.conditions} userRole={user?.role} />
