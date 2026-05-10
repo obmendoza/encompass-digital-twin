@@ -2419,3 +2419,964 @@ git commit -m "feat(api): BPO document signed-URL service (15-min expiry) with t
 
 ---
 
+## Phase 5 — Outbox dispatcher & doc-return ingress
+
+Phase 5 ships the long-running background worker for dispatching `va.doc_request_issued` events through per-tenant adapters, plus the inbound path for docs returned from the originator. After Phase 5, the full request_docs → originator → docs-returned → agent re-run loop closes.
+
+### Task 17: Outbox dispatcher worker (advisory lock 44, ui-only + portal-webhook adapters)
+
+**Files:**
+- Create: `packages/api/src/services/va-outbox-dispatcher.ts`
+- Modify: `packages/api/src/server.ts` (start worker at boot)
+- Create: `packages/api/test/va-outbox.test.ts`
+
+- [ ] **Step 1: Implement dispatcher loop with adapter dispatch**
+
+```ts
+// packages/api/src/services/va-outbox-dispatcher.ts
+import { withDb, withTenantTx } from "../db/pool.js";
+
+const LOCK_KEY = 44;
+const POLL_INTERVAL_MS = 2_000;
+const RETRY_LOCK_RETRY_MS = 30_000;
+const BACKOFF_MINUTES = [1, 5, 30, 120, 720]; // 5 retries → dead-letter at attempt 6
+
+let running = false;
+
+export async function startVAOutboxDispatcher(): Promise<void> {
+  if (running) return;
+  running = true;
+  void dispatcherLoop();
+}
+
+export function stopVAOutboxDispatcher() { running = false; }
+
+async function dispatcherLoop() {
+  while (running) {
+    const gotLock = await withDb(async (c) => {
+      const { rows } = await c.query<{ ok: boolean }>("SELECT pg_try_advisory_lock($1) AS ok", [LOCK_KEY]);
+      return rows[0].ok;
+    });
+    if (!gotLock) {
+      await sleep(RETRY_LOCK_RETRY_MS);
+      continue;
+    }
+    try {
+      while (running) {
+        const processed = await processBatch();
+        if (processed === 0) await sleep(POLL_INTERVAL_MS);
+      }
+    } finally {
+      await withDb(async (c) => c.query("SELECT pg_advisory_unlock($1)", [LOCK_KEY])).catch(() => {});
+    }
+  }
+}
+
+async function processBatch(): Promise<number> {
+  const events = await withDb(async (c) => {
+    const { rows } = await c.query<{ id: string; tenant_id: string; event_type: string; loan_id: string; payload: any; attempts: number }>(
+      `SELECT id, tenant_id, event_type, loan_id, payload, attempts
+         FROM va_event_outbox
+        WHERE delivered_at IS NULL AND next_attempt_at <= now()
+        ORDER BY created_at ASC LIMIT 25`,
+    );
+    return rows;
+  });
+  for (const ev of events) await dispatchOne(ev);
+  return events.length;
+}
+
+async function dispatchOne(ev: { id: string; tenant_id: string; event_type: string; loan_id: string; payload: any; attempts: number }) {
+  const adapter = await getAdapterForTenant(ev.tenant_id);
+  try {
+    await invokeAdapter(adapter, ev);
+    await withDb(async (c) => c.query(
+      "UPDATE va_event_outbox SET delivered_at = now(), last_attempted_at = now(), attempts = attempts + 1 WHERE id = $1",
+      [ev.id],
+    ));
+  } catch (e: any) {
+    const newAttempts = ev.attempts + 1;
+    if (newAttempts >= BACKOFF_MINUTES.length + 1) {
+      await withDb(async (c) => c.query(
+        "UPDATE va_event_outbox SET attempts = $1, last_attempted_at = now(), last_error = $2, next_attempt_at = 'infinity' WHERE id = $3",
+        [newAttempts, `dead_letter: ${e?.message ?? e}`, ev.id],
+      ));
+    } else {
+      const minutes = BACKOFF_MINUTES[newAttempts - 1];
+      await withDb(async (c) => c.query(
+        "UPDATE va_event_outbox SET attempts = $1, last_attempted_at = now(), last_error = $2, next_attempt_at = now() + ($3 || ' minutes')::interval WHERE id = $4",
+        [newAttempts, e?.message ?? String(e), String(minutes), ev.id],
+      ));
+    }
+  }
+}
+
+async function getAdapterForTenant(tenantId: string): Promise<{ kind: string; url?: string; secretRef?: string }> {
+  const { rows } = await withDb(async (c) => c.query<{ adapter: any }>("SELECT settings->'va'->'docRequestAdapter' AS adapter FROM tenants WHERE id = $1", [tenantId]));
+  return rows[0]?.adapter ?? { kind: "ui-only" };
+}
+
+async function invokeAdapter(adapter: { kind: string; url?: string; secretRef?: string }, ev: any): Promise<void> {
+  switch (adapter.kind) {
+    case "ui-only":
+      // No external delivery — the event is visible in the in-app feed only.
+      return;
+    case "portal-webhook": {
+      if (!adapter.url) throw new Error("portal-webhook missing url");
+      const res = await fetch(adapter.url, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-uas-event": ev.event_type },
+        body: JSON.stringify({ eventId: ev.id, tenantId: ev.tenant_id, loanId: ev.loan_id, payload: ev.payload }),
+        signal: AbortSignal.timeout(20_000),
+      });
+      if (!res.ok) throw new Error(`webhook ${res.status}`);
+      return;
+    }
+    case "npnqm-portal":
+      // Placeholder — separate implementation spec. Throw so the dispatcher retries with backoff.
+      throw new Error("npnqm-portal adapter not implemented (separate spec)");
+    default:
+      throw new Error(`unknown adapter kind: ${adapter.kind}`);
+  }
+}
+
+function sleep(ms: number) { return new Promise((r) => setTimeout(r, ms)); }
+```
+
+- [ ] **Step 2: Start dispatcher at boot**
+
+In `server.ts`, after migrations:
+
+```ts
+import { startVAOutboxDispatcher } from "./services/va-outbox-dispatcher.js";
+// ... after server is built and migrations run:
+if (process.env.NODE_ENV !== "test") {
+  void startVAOutboxDispatcher();
+}
+```
+
+- [ ] **Step 3: Write integration test (single dispatch with ui-only)**
+
+```ts
+// packages/api/test/va-outbox.test.ts
+import { describe, it, expect } from "vitest";
+import { withDb } from "../src/db/pool.js";
+// import the internal helpers if you export them, or test via the public surface.
+
+describe("va-outbox dispatcher", () => {
+  it("ui-only adapter marks event delivered without HTTP call", async () => {
+    // Setup: insert a tenant with va.docRequestAdapter = { kind: 'ui-only' };
+    //        insert one outbox row with that tenant_id.
+    // Run: import processBatch() if exposed, or wait one POLL_INTERVAL.
+    // Assert: outbox row.delivered_at != null after a tick.
+  });
+
+  it("portal-webhook failure increments attempts and schedules retry", async () => {
+    // Setup: tenant with adapter url pointing at httpstat.us/500;
+    //        insert outbox row.
+    // Run: processBatch().
+    // Assert: attempts == 1, next_attempt_at > now() + 50s (1m backoff).
+  });
+});
+```
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add packages/api/src/services/va-outbox-dispatcher.ts packages/api/src/server.ts packages/api/test/va-outbox.test.ts
+git commit -m "feat(api): VA outbox dispatcher (lock 44, ui-only + portal-webhook adapters, exp backoff)"
+```
+
+---
+
+### Task 18: Doc-return ingress + agent re-run trigger
+
+**Files:**
+- Create: `packages/api/src/services/va-doc-return.ts`
+- Modify: `packages/api/src/routes/va.ts` (add `/loans/:id/va/docs-returned`)
+- Create: `packages/api/test/va-doc-return.test.ts`
+
+- [ ] **Step 1: Service**
+
+```ts
+// packages/api/src/services/va-doc-return.ts
+import { withTenantTx } from "../db/pool.js";
+
+export interface ReceiveDocsInput {
+  tenantId: string;
+  loanId: string;
+  documents: Array<{ id: string; name: string; docType: string; uploadedAt?: string; uploadedBy?: string; storageBucket?: string; storagePath?: string; pageCount?: number }>;
+}
+
+export async function receiveVADocResponse(input: ReceiveDocsInput): Promise<{ accepted: number; newState: string }> {
+  return withTenantTx(input.tenantId, async (c) => {
+    // 1. Insert docs.
+    for (const d of input.documents) {
+      await c.query(
+        `INSERT INTO loan_documents (id, loan_id, name, doc_type, uploaded_at, uploaded_by, storage_bucket, storage_path, page_count)
+         VALUES ($1,$2,$3,$4,COALESCE($5, now()),$6,$7,$8,$9)
+         ON CONFLICT (id) DO NOTHING`,
+        [d.id, input.loanId, d.name, d.docType, d.uploadedAt ?? null, d.uploadedBy ?? "originator", d.storageBucket ?? null, d.storagePath ?? null, d.pageCount ?? null],
+      );
+    }
+    // 2. Transition state from va_doc_request_pending → agent_review_pending.
+    const { rowCount } = await c.query(
+      "UPDATE loans SET va_state = 'agent_review_pending' WHERE id = $1 AND va_state = 'va_doc_request_pending'",
+      [input.loanId],
+    );
+    if (rowCount !== 1) throw new Error("LOAN_NOT_AWAITING_DOCS");
+    // 3. Trigger agent re-run via the existing agent-trigger mechanism.
+    //    (If the project uses a job queue, enqueue here. If synchronous, call the existing helper.)
+    await enqueueAgentRerun(input.tenantId, input.loanId);
+    return { accepted: input.documents.length, newState: "agent_review_pending" };
+  });
+}
+
+async function enqueueAgentRerun(tenantId: string, loanId: string): Promise<void> {
+  // Existing project pattern: post to the agent service via /api/twin/underwrite-multi.
+  // Implementer fills in based on current code in packages/api/src/routes/loans.ts.
+  const agentUrl = process.env.AGENT_SERVICE_URL ?? "http://localhost:8000";
+  await fetch(`${agentUrl}/api/twin/underwrite-multi/${loanId}?tenant_id=${tenantId}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ trigger: "va_doc_return" }),
+  }).catch((e) => { console.warn("[va-doc-return] agent re-run trigger failed:", e); });
+}
+```
+
+- [ ] **Step 2: Wire route in `va.ts`**
+
+```ts
+app.post("/loans/:id/va/docs-returned", async (req) => {
+  const tenantId = getTenantId();
+  const { id } = req.params as { id: string };
+  const body = req.body as { documents: any[] };
+  return receiveVADocResponse({ tenantId, loanId: id, documents: body.documents });
+});
+```
+
+- [ ] **Step 3: Test**
+
+```ts
+// packages/api/test/va-doc-return.test.ts
+import { describe, it, expect } from "vitest";
+import { receiveVADocResponse } from "../src/services/va-doc-return.js";
+import { withTenantTx } from "../src/db/pool.js";
+
+describe("receiveVADocResponse", () => {
+  it("rejects when loan is not in va_doc_request_pending", async () => {
+    await expect(receiveVADocResponse({ tenantId: "T", loanId: "NOT_WAITING", documents: [] }))
+      .rejects.toThrow(/LOAN_NOT_AWAITING_DOCS/);
+  });
+
+  it("inserts documents and transitions state on happy path", async () => {
+    // Setup: tenant + loan in va_doc_request_pending.
+    // Run: receiveVADocResponse with one document.
+    // Assert: 1 row in loan_documents, loan.va_state == agent_review_pending.
+  });
+});
+```
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add packages/api/src/services/va-doc-return.ts packages/api/src/routes/va.ts packages/api/test/va-doc-return.test.ts
+git commit -m "feat(api): doc-return ingress — insert docs, flip state, trigger agent re-run"
+```
+
+---
+
+## Phase 6 — UI surfaces
+
+Phase 6 builds the four UI surfaces. The implementer will recognize the pattern: server components do the data fetch, client components handle interaction. All styling uses existing `enc-*` Tailwind classes per `CLAUDE.md`. No emojis.
+
+### Task 19: VAReviewWorkspace component (signoff table + condition actions + rationale + verdict)
+
+**Files:**
+- Create: `packages/web/components/encompass/VAReviewWorkspace.tsx`
+
+- [ ] **Step 1: Component skeleton with the six-row signoff table and verdict-driven doc-request form**
+
+```tsx
+// packages/web/components/encompass/VAReviewWorkspace.tsx
+"use client";
+
+import { useState, useTransition } from "react";
+import type { Loan, VASpecialistKind, VASpecialistSignoff, VAConditionAction, VADocRequest } from "@twin/core";
+
+interface Props {
+  loan: Loan;
+  agentRecommendationId: string;
+  kbVersion: string;
+  onSubmit: (payload: SubmitPayload) => Promise<{ ok: true } | { ok: false; error: string }>;
+}
+
+interface SubmitPayload {
+  verdict: "concur" | "request_docs";
+  specialistSignoffs: VASpecialistSignoff[];
+  conditionActions: VAConditionAction[];
+  overallRationale: string;
+  docRequest: VADocRequest | null;
+  agentRecommendationId: string;
+  kbVersion: string;
+  chatbotConsultationIds: string[];
+}
+
+const SPECIALISTS: VASpecialistKind[] = ["doc","income","asset","credit","property","compliance"];
+
+export function VAReviewWorkspace({ loan, agentRecommendationId, kbVersion, onSubmit }: Props) {
+  const [signoffs, setSignoffs] = useState<Record<VASpecialistKind, { signoff: "concur" | "disagree"; notes: string }>>(
+    Object.fromEntries(SPECIALISTS.map((s) => [s, { signoff: "concur", notes: "" }])) as any,
+  );
+  const [conditionActions, setConditionActions] = useState<VAConditionAction[]>([]);
+  const [rationale, setRationale] = useState("");
+  const [verdict, setVerdict] = useState<"concur" | "request_docs">("concur");
+  const [docRequest, setDocRequest] = useState<VADocRequest | null>(null);
+  const [pending, start] = useTransition();
+  const [err, setErr] = useState<string | null>(null);
+
+  const canSubmit =
+    rationale.length >= 20 &&
+    SPECIALISTS.every((s) => signoffs[s].signoff === "concur" || signoffs[s].notes.trim().length > 0) &&
+    (verdict === "concur" || (docRequest !== null && docRequest.docs.length > 0));
+
+  function submit() {
+    setErr(null);
+    const signoffArray: VASpecialistSignoff[] = SPECIALISTS.map((s) => ({
+      specialist: s,
+      signoff: signoffs[s].signoff,
+      notes: signoffs[s].signoff === "disagree" ? signoffs[s].notes : null,
+    }));
+    start(async () => {
+      const res = await onSubmit({
+        verdict,
+        specialistSignoffs: signoffArray,
+        conditionActions,
+        overallRationale: rationale,
+        docRequest: verdict === "request_docs" ? docRequest : null,
+        agentRecommendationId, kbVersion, chatbotConsultationIds: [],
+      });
+      if (!res.ok) setErr(res.error);
+    });
+  }
+
+  return (
+    <div className="enc-panel">
+      <h3 className="text-[14px] font-bold text-[#1a2b4a] mb-2">VA Review — {loan.id}</h3>
+
+      {/* Signoff table */}
+      <table className="w-full text-[11px] mb-3">
+        <thead><tr><th>Specialist</th><th>Signoff</th><th>Notes (required when disagree)</th></tr></thead>
+        <tbody>
+          {SPECIALISTS.map((s) => (
+            <tr key={s}>
+              <td className="capitalize">{s}</td>
+              <td>
+                <select className="enc-input" value={signoffs[s].signoff}
+                  onChange={(e) => setSignoffs({ ...signoffs, [s]: { ...signoffs[s], signoff: e.target.value as any } })}>
+                  <option value="concur">Concur</option>
+                  <option value="disagree">Disagree</option>
+                </select>
+              </td>
+              <td>
+                <input className="enc-input w-full" disabled={signoffs[s].signoff === "concur"}
+                  value={signoffs[s].notes}
+                  onChange={(e) => setSignoffs({ ...signoffs, [s]: { ...signoffs[s], notes: e.target.value } })} />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {/* Condition actions */}
+      <div className="mb-3">
+        <h4 className="text-[12px] font-bold">Condition actions (clear / contest)</h4>
+        {loan.conditions.map((c) => (
+          <div key={c.id} className="flex gap-2 items-center text-[11px] py-[2px]">
+            <span className="flex-1">{c.description}</span>
+            {/* Implementer fills in clear/contest UI per condition */}
+          </div>
+        ))}
+      </div>
+
+      {/* Overall rationale */}
+      <textarea className="enc-input w-full mb-3" rows={4} placeholder="Overall rationale (≥ 20 chars)"
+        value={rationale} onChange={(e) => setRationale(e.target.value)} />
+
+      {/* Verdict picker + conditional doc-request form */}
+      <div className="mb-3">
+        <label className="mr-3"><input type="radio" checked={verdict === "concur"} onChange={() => setVerdict("concur")} /> Concur — forward to UW</label>
+        <label><input type="radio" checked={verdict === "request_docs"} onChange={() => setVerdict("request_docs")} /> Request docs from originator</label>
+      </div>
+
+      {verdict === "request_docs" && (
+        <DocRequestForm value={docRequest} onChange={setDocRequest} />
+      )}
+
+      {err && <div className="text-[11px] text-[#c00] mb-2">Submit failed: {err}</div>}
+
+      <button className="enc-btn enc-btn--primary" disabled={!canSubmit || pending} onClick={submit}>
+        {pending ? "Submitting…" : "Submit Review"}
+      </button>
+    </div>
+  );
+}
+
+function DocRequestForm({ value, onChange }: { value: VADocRequest | null; onChange: (v: VADocRequest) => void }) {
+  // Implementer: doc-type multi-select from tenant Doc Checklist + reason + deadline + message.
+  // Initial scaffold below; flesh out with the project's existing doc-type catalog.
+  const cur = value ?? { docs: [], deadline: "", messageToOriginator: "" };
+  return (
+    <div className="enc-sec mb-3">
+      <h4>Doc Request</h4>
+      <input className="enc-input mb-1" placeholder="Deadline (YYYY-MM-DD)" value={cur.deadline}
+        onChange={(e) => onChange({ ...cur, deadline: e.target.value })} />
+      <textarea className="enc-input w-full" rows={2} placeholder="Message to originator"
+        value={cur.messageToOriginator} onChange={(e) => onChange({ ...cur, messageToOriginator: e.target.value })} />
+      {/* doc-type list editor goes here */}
+    </div>
+  );
+}
+```
+
+- [ ] **Step 2: Commit**
+
+```bash
+git add packages/web/components/encompass/VAReviewWorkspace.tsx
+git commit -m "feat(web): VAReviewWorkspace component — six-row signoff table, conditions, rationale, doc-request"
+```
+
+---
+
+### Task 20: PriorReviewsPanel + history fetch + page route
+
+**Files:**
+- Create: `packages/web/components/encompass/PriorReviewsPanel.tsx`
+- Create: `packages/web/app/loan/[loanId]/va/review/page.tsx`
+- Create: `packages/web/app/loan/[loanId]/va/review/actions.ts`
+
+- [ ] **Step 1: PriorReviewsPanel**
+
+```tsx
+// packages/web/components/encompass/PriorReviewsPanel.tsx
+"use client";
+import { useState } from "react";
+
+interface PriorReview {
+  id: string;
+  vaId: string;
+  poolKind: "internal" | "bpo";
+  verdict: "concur" | "request_docs";
+  overallRationale: string;
+  docRequest: { docs: any[]; deadline: string; messageToOriginator: string } | null;
+  submittedAt: string;
+}
+
+export function PriorReviewsPanel({ reviews }: { reviews: PriorReview[] }) {
+  const [open, setOpen] = useState(false);
+  if (reviews.length === 0) return null;
+  return (
+    <div className="enc-panel mb-3 border-l-4 border-[#8a4b00]">
+      <button className="text-[12px] font-bold text-[#1a2b4a]" onClick={() => setOpen(!open)}>
+        {open ? "▼" : "▶"} Prior reviews ({reviews.length}) — see why earlier VAs sent this back
+      </button>
+      {open && (
+        <div className="mt-2 space-y-2">
+          {reviews.map((r) => (
+            <div key={r.id} className="text-[11px] border-t border-[#c8c4b5] pt-2">
+              <div><b>{r.submittedAt}</b> · {r.poolKind} · verdict: <b>{r.verdict}</b></div>
+              <div className="mt-1">{r.overallRationale}</div>
+              {r.docRequest && (
+                <div className="mt-1 text-[#8a4b00]">Requested {r.docRequest.docs.length} docs by {r.docRequest.deadline}: {r.docRequest.messageToOriginator}</div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+```
+
+- [ ] **Step 2: Server actions**
+
+```ts
+// packages/web/app/loan/[loanId]/va/review/actions.ts
+"use server";
+import { apiPost } from "@/lib/api-client";
+
+export async function actionClaimVA(loanId: string) {
+  return apiPost(`/loans/${loanId}/va/claim`, {});
+}
+
+export async function actionSubmitVAReview(loanId: string, body: any) {
+  return apiPost(`/loans/${loanId}/va/review`, body);
+}
+
+export async function actionReleaseVA(loanId: string) {
+  return apiPost(`/loans/${loanId}/va/release`, {});
+}
+```
+
+- [ ] **Step 3: Page route**
+
+```tsx
+// packages/web/app/loan/[loanId]/va/review/page.tsx
+import { apiGet } from "@/lib/api-client";
+import { VAReviewWorkspace } from "@/components/encompass/VAReviewWorkspace";
+import { PriorReviewsPanel } from "@/components/encompass/PriorReviewsPanel";
+import { actionSubmitVAReview } from "./actions";
+
+export default async function Page({ params }: { params: Promise<{ loanId: string }> }) {
+  const { loanId } = await params;
+  const [loan, history] = await Promise.all([
+    apiGet<{ loan: any }>(`/loans/${loanId}`),
+    apiGet<{ reviews: any[] }>(`/loans/${loanId}/va/review-history`),
+  ]);
+  const agentRecommendationId = loan.loan.pendingRecommendation?.id ?? "00000000-0000-0000-0000-000000000000";
+  const kbVersion = loan.loan.kbVersion ?? "v0";
+  return (
+    <div className="p-4 max-w-[1200px] mx-auto">
+      <PriorReviewsPanel reviews={history.reviews} />
+      {/* Client component handles submit via server action */}
+      <VAReviewWorkspace loan={loan.loan} agentRecommendationId={agentRecommendationId} kbVersion={kbVersion}
+        onSubmit={async (payload) => {
+          const res: any = await actionSubmitVAReview(loanId, payload);
+          return res?.error ? { ok: false, error: res.error } : { ok: true };
+        }} />
+    </div>
+  );
+}
+```
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add packages/web/components/encompass/PriorReviewsPanel.tsx packages/web/app/loan/[loanId]/va/review
+git commit -m "feat(web): VA review page route + PriorReviewsPanel + server actions"
+```
+
+---
+
+### Task 21: VADashboard pool-filter extension + Claim button per row
+
+**Files:**
+- Modify: `packages/web/components/encompass/VADashboard.tsx`
+
+- [ ] **Step 1: Add pool selector + Claim button**
+
+In `VADashboard.tsx`, alongside the existing `My Queue / Unassigned / All` filter buttons, add a Pool filter. For each row in `filter === "pool"` (loans the current user can claim), render a `Claim & Review` button:
+
+```tsx
+// Existing component — splice in:
+const [poolFilter, setPoolFilter] = useState<string | "any">("any");
+const claimable = validLoans.filter((l) =>
+  l.state === "va_review_pending" &&
+  (poolFilter === "any" || l.assignedPoolId === poolFilter)
+);
+
+// In the filter button row:
+<button onClick={() => setFilter("pool")}>Pool Queue ({claimable.length})</button>
+
+// In the rendered table for filter==="pool":
+<button className="enc-btn"
+  onClick={() => router.push(`/loan/${loan.id}/va/review`)}>Claim & Review</button>
+```
+
+(Implementer should fetch `/va/pools` once on mount to populate the pool dropdown.)
+
+- [ ] **Step 2: Commit**
+
+```bash
+git add packages/web/components/encompass/VADashboard.tsx
+git commit -m "feat(web): VADashboard pool filter + Claim & Review button per row"
+```
+
+---
+
+### Task 22: UWReviewPanel — UW-side VA review evidence
+
+**Files:**
+- Create: `packages/web/components/encompass/UWReviewPanel.tsx`
+- Modify: `packages/web/app/loan/[loanId]/page.tsx` (render UWReviewPanel when current_va_review_id set)
+
+- [ ] **Step 1: UWReviewPanel component**
+
+```tsx
+// packages/web/components/encompass/UWReviewPanel.tsx
+import type { VAReview } from "@twin/core";
+
+export function UWReviewPanel({ review }: { review: VAReview }) {
+  const disagreed = review.specialistSignoffs.filter((s) => s.signoff === "disagree");
+  return (
+    <div className="enc-panel mb-3 border-l-4 border-[#1f4478]">
+      <h3 className="text-[14px] font-bold text-[#1a2b4a]">VA Review</h3>
+      <div className="text-[11px]"><b>Submitted:</b> {review.submittedAt} · <b>VA:</b> {review.vaId} ({review.poolKind}) · <b>Time:</b> {review.reviewTimeSeconds}s</div>
+      <div className="text-[11px] mt-1"><b>Verdict:</b> {review.verdict}</div>
+      <div className="text-[11px] mt-1"><b>Rationale:</b> {review.overallRationale}</div>
+      {disagreed.length > 0 && (
+        <div className="mt-2 p-2 bg-[#fff4e0] border border-[#8a4b00]">
+          <b>Specialist disagreements ({disagreed.length}):</b>
+          <ul className="ml-4 list-disc">
+            {disagreed.map((s) => <li key={s.specialist}><b>{s.specialist}</b>: {s.notes}</li>)}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+```
+
+- [ ] **Step 2: Render on UW decision page when present**
+
+In `packages/web/app/loan/[loanId]/page.tsx`, after fetching the loan, if `loan.currentVaReviewId` is set, fetch the review-history and render `<UWReviewPanel review={mostRecent} />` above the existing agent recommendation panel.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add packages/web/components/encompass/UWReviewPanel.tsx packages/web/app/loan/[loanId]/page.tsx
+git commit -m "feat(web): UWReviewPanel — render VA review evidence above agent recommendation on UW page"
+```
+
+---
+
+### Task 23: BPO portal pages + layout chrome
+
+**Files:**
+- Create: `packages/web/app/bpo/layout.tsx`
+- Create: `packages/web/app/bpo/login/page.tsx`
+- Create: `packages/web/app/bpo/queue/page.tsx`
+- Create: `packages/web/app/bpo/loans/[id]/review/page.tsx`
+- Create: `packages/web/lib/bpo-client.ts`
+
+- [ ] **Step 1: Layout chrome (distinct from internal)**
+
+```tsx
+// packages/web/app/bpo/layout.tsx
+export default function BpoLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="min-h-screen bg-[#f5f3e8]">
+      <header className="bg-[#0a3060] text-white px-4 py-2 flex items-center gap-3">
+        <span className="font-bold">UAS BPO Portal</span>
+        <span className="text-[11px] opacity-80 px-2 py-[1px] bg-white/20 rounded">BPO SME</span>
+        <span className="ml-auto text-[11px] opacity-70">External partner — limited access</span>
+      </header>
+      <main className="p-4 max-w-[1200px] mx-auto">{children}</main>
+    </div>
+  );
+}
+```
+
+- [ ] **Step 2: Login + queue + review pages**
+
+```tsx
+// packages/web/app/bpo/login/page.tsx
+"use client";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+
+export default function BpoLogin() {
+  const [token, setToken] = useState("");
+  const router = useRouter();
+  return (
+    <div className="enc-panel max-w-[400px]">
+      <h2 className="text-[14px] font-bold mb-2">BPO SME Sign In</h2>
+      <input className="enc-input w-full mb-2" placeholder="API token" value={token} onChange={(e) => setToken(e.target.value)} />
+      <button className="enc-btn enc-btn--primary" onClick={async () => {
+        document.cookie = `bpo_token=${token}; path=/bpo; secure; samesite=strict`;
+        router.push("/bpo/queue");
+      }}>Sign In</button>
+    </div>
+  );
+}
+```
+
+The queue + review pages reuse the same `VAReviewWorkspace` and `PriorReviewsPanel` components, but call `bpoClient.*` instead of internal API endpoints. Implementer wraps `fetch` with `Authorization: Bearer ${cookie.bpo_token}` in `packages/web/lib/bpo-client.ts`.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add packages/web/app/bpo packages/web/lib/bpo-client.ts
+git commit -m "feat(web): BPO portal — layout, login, queue, review pages, scoped client"
+```
+
+---
+
+## Phase 7 — Pattern detection co-tenant + E2E harness W9
+
+Phase 7 closes out: VA pattern detection runs as a second pass under the existing pattern-detection worker (advisory lock 43), and the E2E harness gets a `W9_va_review` workflow exercising the full agent → VA → UW path.
+
+### Task 24: VA pattern detection co-tenant pass on lock 43
+
+**Files:**
+- Create: `packages/api/src/services/va-pattern-detection.ts`
+- Modify: existing pattern-detection worker entry point (search for `pg_advisory_lock(43)`)
+- Create: `packages/api/test/va-pattern-detection.test.ts`
+
+- [ ] **Step 1: Implement detection passes**
+
+```ts
+// packages/api/src/services/va-pattern-detection.ts
+import { withTenantTx } from "../db/pool.js";
+
+export interface VAPattern {
+  kind: "va_disagree_rate" | "va_contest_rate" | "va_concur_then_uw_override" | "va_request_docs_rate";
+  program: string;
+  value: number;
+  sampleSize: number;
+  windowDays: number;
+}
+
+export async function detectVAPatterns(tenantId: string): Promise<VAPattern[]> {
+  return withTenantTx(tenantId, async (c) => {
+    const out: VAPattern[] = [];
+
+    const { rows: disagree } = await c.query<{ program: string; value: number; n: number }>(
+      `SELECT l.body->>'nqmProgram' AS program,
+              AVG(CASE WHEN EXISTS (SELECT 1 FROM jsonb_array_elements(v.specialist_signoffs) s
+                                    WHERE s->>'signoff' = 'disagree') THEN 1.0 ELSE 0.0 END) AS value,
+              COUNT(*)::int AS n
+         FROM va_reviews v JOIN loans l ON l.id = v.loan_id
+        WHERE v.tenant_id = $1 AND v.submitted_at > now() - interval '30 days'
+        GROUP BY 1 HAVING COUNT(*) >= 5`,
+      [tenantId],
+    );
+    for (const r of disagree) out.push({ kind: "va_disagree_rate", program: r.program, value: r.value, sampleSize: r.n, windowDays: 30 });
+
+    const { rows: contest } = await c.query<{ program: string; value: number; n: number }>(
+      `SELECT l.body->>'nqmProgram' AS program,
+              AVG(CASE WHEN jsonb_array_length(v.condition_actions) > 0 AND
+                            EXISTS (SELECT 1 FROM jsonb_array_elements(v.condition_actions) ca WHERE ca->>'action' = 'contest')
+                       THEN 1.0 ELSE 0.0 END) AS value,
+              COUNT(*)::int AS n
+         FROM va_reviews v JOIN loans l ON l.id = v.loan_id
+        WHERE v.tenant_id = $1 AND v.submitted_at > now() - interval '30 days'
+        GROUP BY 1 HAVING COUNT(*) >= 5`,
+      [tenantId],
+    );
+    for (const r of contest) out.push({ kind: "va_contest_rate", program: r.program, value: r.value, sampleSize: r.n, windowDays: 30 });
+
+    const { rows: requestDocs } = await c.query<{ program: string; value: number; n: number }>(
+      `SELECT l.body->>'nqmProgram' AS program,
+              AVG(CASE WHEN v.verdict = 'request_docs' THEN 1.0 ELSE 0.0 END) AS value,
+              COUNT(*)::int AS n
+         FROM va_reviews v JOIN loans l ON l.id = v.loan_id
+        WHERE v.tenant_id = $1 AND v.submitted_at > now() - interval '30 days'
+        GROUP BY 1 HAVING COUNT(*) >= 5`,
+      [tenantId],
+    );
+    for (const r of requestDocs) out.push({ kind: "va_request_docs_rate", program: r.program, value: r.value, sampleSize: r.n, windowDays: 30 });
+
+    const { rows: concurOverride } = await c.query<{ program: string; value: number; n: number }>(
+      `SELECT l.body->>'nqmProgram' AS program,
+              AVG(CASE WHEN d.decision_type = 'overridden' THEN 1.0 ELSE 0.0 END) AS value,
+              COUNT(*)::int AS n
+         FROM va_reviews v
+         JOIN decision_records d ON d.loan_id = v.loan_id AND d.tenant_id = v.tenant_id
+         JOIN loans l ON l.id = v.loan_id
+        WHERE v.tenant_id = $1 AND v.verdict = 'concur'
+          AND d.decided_at > v.submitted_at AND d.decided_at < v.submitted_at + interval '30 days'
+        GROUP BY 1 HAVING COUNT(*) >= 5`,
+      [tenantId],
+    );
+    for (const r of concurOverride) out.push({ kind: "va_concur_then_uw_override", program: r.program, value: r.value, sampleSize: r.n, windowDays: 30 });
+
+    return out;
+  });
+}
+```
+
+- [ ] **Step 2: Hook into existing pattern-detection worker**
+
+Find the existing 6-hour worker (search `pg_advisory_lock(43)` or `lock 43`). At the end of its per-tenant pass, after the existing decision-record patterns are computed, call `detectVAPatterns(tenantId)` and persist the results in the existing `detected_patterns` table (extending the `pattern_kind` enum/check constraint to include the four new kinds).
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add packages/api/src/services/va-pattern-detection.ts packages/api/src/<existing-pattern-worker> packages/api/test/va-pattern-detection.test.ts
+git commit -m "feat(api): VA pattern detection co-tenant pass on lock 43 — disagree, contest, concur+override, request_docs rates"
+```
+
+---
+
+### Task 25: E2E harness W9_va_review workflow + harness integration
+
+**Files:**
+- Create: `scripts/e2e-harness/workflows/W9-va-review.ts`
+- Modify: `scripts/e2e-harness/run.ts` (register W9)
+- Modify: harness `--purge-test-data` to clean `va_reviews` + `va_event_outbox`
+
+- [ ] **Step 1: Workflow module**
+
+```ts
+// scripts/e2e-harness/workflows/W9-va-review.ts
+import type { WorkflowDef } from "../types.js";
+import { http } from "../http.js";
+
+export const W9: WorkflowDef = {
+  id: "W9_va_review",
+  specRefs: ["va-review-layer §State Machine", "va-review-layer §Send-Back Flow"],
+  appliesTo: () => true,
+  async run(fixture, ctx) {
+    const startedAt = new Date().toISOString();
+    const assertions: any[] = [];
+
+    // 1. Reset world + load fixture under a VA-required tenant.
+    await http.api(ctx).post("/world/reset");
+    await http.api(ctx).post("/world/load-scenario", { loanId: fixture.loanId });
+
+    // 2. Run agent → expect loan reaches va_review_pending.
+    await http.api(ctx).post(`/loans/${fixture.loanId}/run-agent`, {});
+    const afterAgent = await http.api(ctx).get<{ loan: any }>(`/loans/${fixture.loanId}`);
+    assertions.push({ name: "loan_in_va_review_pending", ok: afterAgent.loan.state === "va_review_pending" });
+
+    // 3. Claim, submit concur, expect uw_review_pending.
+    const claim = await http.api(ctx).post(`/loans/${fixture.loanId}/va/claim`, {});
+    assertions.push({ name: "claim_succeeded", ok: claim.claimed === true });
+
+    const submit = await http.api(ctx).post(`/loans/${fixture.loanId}/va/review`, {
+      verdict: "concur",
+      specialistSignoffs: ["doc","income","asset","credit","property","compliance"].map((s) => ({ specialist: s, signoff: "concur", notes: null })),
+      conditionActions: [],
+      overallRationale: "All specialists concur with the agent's analysis. Loan presents no anomalies.",
+      docRequest: null,
+      agentRecommendationId: "00000000-0000-0000-0000-000000000099",
+      kbVersion: "v7.10",
+      chatbotConsultationIds: [],
+    });
+    assertions.push({ name: "submit_concur_uw_review_pending", ok: submit.newState === "uw_review_pending" });
+
+    // 4. UW accept now succeeds (state == uw_review_pending).
+    const accept = await http.api(ctx).post(`/loans/${fixture.loanId}/accept`, { actor: { kind: "internal", userId: "uw1", email: "uw1@test" } });
+    assertions.push({ name: "uw_accept_succeeded", ok: accept.ok === true });
+
+    return {
+      status: assertions.every(a => a.ok) ? "pass" : "fail",
+      severity: assertions.every(a => a.ok) ? null : "P0",
+      assertions,
+      durationMs: Date.now() - Date.parse(startedAt),
+      evidence: {},
+      auditClaim: null,
+      skippedAssertions: [],
+    };
+  },
+};
+```
+
+- [ ] **Step 2: Register W9 in `run.ts` and harness fixtures**
+
+```ts
+// scripts/e2e-harness/run.ts
+import { W9 } from "./workflows/W9-va-review.js";
+const ALL_WORKFLOWS = [W1, W2, W3, W4, W5, W6, W7, W8, W9];
+```
+
+The harness must load fixtures into a tenant where `va.required = true`. Either: (a) point the harness at `npnqm-twin` (already configured), or (b) create an ephemeral `e2e-test-va-*` tenant in setup with `va.required = true`. Pick (b) for hermeticity.
+
+- [ ] **Step 3: Extend `--purge-test-data` to clean VA tables**
+
+In the harness's purge script, add:
+
+```ts
+await db.query("DELETE FROM va_event_outbox WHERE payload->>'harness_run_id' = $1", [runId]);
+await db.query(`DELETE FROM va_reviews WHERE loan_id IN (
+  SELECT id FROM loans WHERE body->>'harness_run_id' = $1
+)`, [runId]);
+```
+
+- [ ] **Step 4: Smoke-run W9 on one fixture**
+
+```bash
+DEMO_TENANT_ID=<va-required-tenant-id> node_modules/.bin/tsx --env-file=packages/api/.env scripts/e2e-harness/run.ts \
+  --workflow W9 --fixture nqm-bankstmt-12mo-clean --repeat 1 --skip-canary --out tmp/w9-smoke
+```
+
+Expected: `Run complete: 1/1 passed`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add scripts/e2e-harness
+git commit -m "feat(e2e): W9_va_review workflow + purge cleanup for va_reviews/va_event_outbox"
+```
+
+---
+
+### Task 26: End-to-end smoke verification (the bar before declaring done)
+
+**Files:** none new — execute the existing harness end-to-end and verify.
+
+- [ ] **Step 1: Run the full matrix (8 workflows × 23 fixtures + W9)**
+
+```bash
+DEMO_TENANT_ID=5d175193-6ee2-4d6a-b16e-f1777f7e18ad node_modules/.bin/tsx \
+  --env-file=packages/api/.env scripts/e2e-harness/run.ts --repeat 1 --out reports/$(date +%Y-%m-%d-%H%M)
+```
+
+Expected: 0 P0 failures. Any P1/P2 are documented in `punch-list.md` for follow-up tickets.
+
+- [ ] **Step 2: Boot the web app, walk the happy path manually**
+
+```bash
+pnpm --filter @twin/web dev
+```
+
+In an incognito browser:
+1. Sign in as an internal user on `npnqm-twin`.
+2. Trigger an agent run on a fresh loan.
+3. Visit `/t/npnqm-twin/va` → see the loan in Pool Queue.
+4. Click Claim & Review → land on `/loan/<id>/va/review`.
+5. Fill all six signoffs (concur), enter rationale, click Submit Review.
+6. Sign in as a UW, visit the loan → see the VA Review Panel above the agent recommendation.
+7. Click Accept → loan reaches `decided`.
+
+- [ ] **Step 3: Walk the request_docs loop**
+
+Repeat steps 1–4. At step 5, pick "Request docs from originator," fill in 1+ docs, deadline, message, submit. Verify:
+- Loan state is now `va_doc_request_pending`.
+- `va_event_outbox` has a row with `delivered_at IS NOT NULL` (ui-only adapter).
+- Posting to `/loans/<id>/va/docs-returned` (manually via curl) flips state back to `agent_review_pending`.
+
+- [ ] **Step 4: Walk the BPO portal**
+
+Generate a BPO API key via `/admin/bpo/api-keys`, sign into `/bpo/login` with the token, claim a loan, submit a review. Verify same flow works under BPO identity.
+
+- [ ] **Step 5: Final commit**
+
+```bash
+git commit --allow-empty -m "chore: VA review layer — end-to-end smoke verified, plan complete"
+```
+
+---
+
+## Self-review notes
+
+After writing this plan I checked it against the spec section-by-section:
+
+- **§State Machine, Toggle Semantics** — covered by Task 6 (reducer) and Task 10 (toggle service) and Task 11 (toggle endpoint).
+- **§Data Model** — Task 1 (schema), Task 2 (seed), Task 3 (core types), Task 5 (Zod). RLS coverage on every tenant-scoped table verified in Task 1's SQL.
+- **§Routing & Claim Flow** — Task 7 (routing), Task 8 (claim/release), Task 12 (handler integration).
+- **§Send-Back Flow** — Task 9 (review writer with outbox INSERT), Task 17 (dispatcher), Task 18 (doc-return ingress).
+- **§Per-Tenant Configuration** — Task 2 seeds; Task 11 toggle endpoint enforces invariants.
+- **§Authentication / BPO NPI handling** — Task 13 (auth), Task 16 (signed URL + audit).
+- **§API Surface** — Task 11 (VA endpoints), Task 14 (admin), Task 15 (BPO portal). Review-history endpoint in Task 11.
+- **§UI Surfaces** — Task 19 (workspace), Task 20 (page + history panel), Task 21 (dashboard extension), Task 22 (UW panel), Task 23 (BPO portal).
+- **§Learning Engine Integration** — Task 24.
+- **§Error Handling** — woven through each task (409 for state violations, 404 for cross-pool BPO, 422 for validation, etc.).
+- **§Testing Strategy** — covered per-task with Vitest tests and W9 harness in Task 25.
+- **§Migration & Rollout** — Tasks 1, 2, 11 (toggle).
+
+All ten Non-Goals from the spec stay non-goals — none of the tasks above implement doc-request expiry, NPNQM portal adapter, Predictive Conditions, VA dashboard UI, conditional-by-confidence routing, multi-VA review, in-app messaging, add-condition-during-review, reassignment, or original-VA pinning.
+
+---
+
+## Execution handoff
+
+Plan complete. Two execution options:
+
+**1. Subagent-Driven (recommended)** — I dispatch a fresh subagent per task, review between tasks, fast iteration. Phase boundaries (1→2→3→4→5→6→7) are natural sequencing checkpoints; within a phase, tasks are mostly sequential except UI components in Phase 6 which can parallelize.
+
+**2. Inline Execution** — Execute tasks in this session using `executing-plans`, batch execution with checkpoints for review.
+
+Which approach?
+
