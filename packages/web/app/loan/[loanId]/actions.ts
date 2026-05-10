@@ -1,9 +1,28 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
 import { api } from "@/lib/api-client";
 import { getUser } from "@/lib/auth";
 import type { Actor, UwDecision, NewCondition, QualifyingIncomeWorksheet } from "@twin/core";
+
+// Resolve the active user's tenant id from request headers (set by web
+// middleware via x-user-tenant-id). When unset, fall back to looking up the
+// demo tenant the same way api-client does. The agent service uses this
+// value to scope its own callbacks into the API — without it, the agent
+// defaults to its hard-coded tenant and the API rejects the fetch.
+async function resolveTenantId(): Promise<string | null> {
+  try {
+    const h = await headers();
+    const fromHeader = h.get("x-user-tenant-id");
+    if (fromHeader) return fromHeader;
+  } catch { /* not in a request context */ }
+  try {
+    return await api.getTenantIdBySlug("demo");
+  } catch {
+    return null;
+  }
+}
 
 async function getActor(): Promise<Actor> {
   const user = await getUser();
@@ -82,8 +101,10 @@ export async function actionLinkDocument(loanId: string, docId: string, conditio
 
 export async function actionRunAgentMulti(loanId: string): Promise<ActionResult> {
   const agentUrl = process.env.AGENT_SERVICE_URL ?? "http://localhost:8000";
+  const tenantId = await resolveTenantId();
+  const tenantQ = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : "";
   try {
-    const res = await fetch(`${agentUrl}/api/twin/underwrite-multi/${loanId}`, {
+    const res = await fetch(`${agentUrl}/api/twin/underwrite-multi/${loanId}${tenantQ}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       cache: "no-store",
@@ -104,8 +125,10 @@ export async function actionRunAgentMulti(loanId: string): Promise<ActionResult>
 
 export async function actionRunAgent(loanId: string): Promise<ActionResult> {
   const agentUrl = process.env.AGENT_SERVICE_URL ?? "http://localhost:8000";
+  const tenantId = await resolveTenantId();
+  const tenantQ = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : "";
   try {
-    const res = await fetch(`${agentUrl}/api/twin/underwrite/${loanId}`, {
+    const res = await fetch(`${agentUrl}/api/twin/underwrite/${loanId}${tenantQ}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       cache: "no-store",

@@ -24,9 +24,30 @@ for arg in "$@"; do
   esac
 done
 
-api_cmd="cd '$REPO_ROOT' && pnpm --filter @twin/api dev"
-web_cmd="cd '$REPO_ROOT' && pnpm --filter @twin/web dev"
-agent_cmd="cd '$AGENT_DIR' && (test -d .venv && source .venv/bin/activate; uvicorn backend.main:app --reload --port 8000)"
+# Write per-service launcher scripts to a temp dir, then invoke them. This
+# sidesteps the shell-quoting maze of passing inline commands through tmux
+# (which dispatches via /bin/sh on macOS — no `source`, no `set -a`).
+LAUNCHER_DIR="$(mktemp -d /tmp/twin-dev-XXXXXX)"
+
+cat > "$LAUNCHER_DIR/api.sh" <<EOF
+#!/usr/bin/env bash
+cd "$REPO_ROOT" && exec pnpm --filter @twin/api dev
+EOF
+
+cat > "$LAUNCHER_DIR/web.sh" <<EOF
+#!/usr/bin/env bash
+cd "$REPO_ROOT" && exec pnpm --filter @twin/web dev
+EOF
+
+cat > "$LAUNCHER_DIR/agent.sh" <<EOF
+#!/usr/bin/env bash
+cd "$AGENT_DIR" || { echo "AGENT_DIR not found: $AGENT_DIR"; exec bash; }
+if [ -d .venv ]; then source .venv/bin/activate; fi
+if [ -f .env ]; then set -a; source .env; set +a; fi
+exec uvicorn backend.main:app --reload --port 8000
+EOF
+
+chmod +x "$LAUNCHER_DIR"/*.sh
 
 if [ ! -d "$AGENT_DIR" ]; then
   echo "warn: AGENT_DIR not found at $AGENT_DIR — agent pane will exit. Set AGENT_DIR=... to override." >&2
@@ -37,18 +58,19 @@ if [ "$USE_TMUX" -eq 1 ] && command -v tmux >/dev/null 2>&1; then
     echo "Session '$SESSION' already exists — attaching."
     exec tmux attach -t "$SESSION"
   fi
-  tmux new-session -d -s "$SESSION" -n services "$api_cmd"
-  tmux split-window -h -t "$SESSION:services" "$web_cmd"
-  tmux split-window -v -t "$SESSION:services.1" "$agent_cmd"
+  tmux new-session -d -s "$SESSION" -n services "$LAUNCHER_DIR/api.sh"
+  tmux split-window -h -t "$SESSION:services" "$LAUNCHER_DIR/web.sh"
+  tmux split-window -v -t "$SESSION:services.1" "$LAUNCHER_DIR/agent.sh"
   tmux select-layout -t "$SESSION:services" tiled
   echo "Started tmux session '$SESSION'. Attach with: tmux attach -t $SESSION"
+  echo "Launcher scripts: $LAUNCHER_DIR"
   exit 0
 fi
 
 echo "Starting services in background (logs in /tmp/twin-*.log)…"
-nohup bash -lc "$api_cmd"   >/tmp/twin-api.log   2>&1 &
-nohup bash -lc "$web_cmd"   >/tmp/twin-web.log   2>&1 &
-nohup bash -lc "$agent_cmd" >/tmp/twin-agent.log 2>&1 &
+nohup "$LAUNCHER_DIR/api.sh"   >/tmp/twin-api.log   2>&1 &
+nohup "$LAUNCHER_DIR/web.sh"   >/tmp/twin-web.log   2>&1 &
+nohup "$LAUNCHER_DIR/agent.sh" >/tmp/twin-agent.log 2>&1 &
 echo "  API   → http://localhost:4000  (tail -f /tmp/twin-api.log)"
 echo "  Web   → http://localhost:3000  (tail -f /tmp/twin-web.log)"
 echo "  Agent → http://localhost:8000  (tail -f /tmp/twin-agent.log)"
