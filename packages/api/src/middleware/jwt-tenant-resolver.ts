@@ -166,15 +166,25 @@ export function registerJwtTenantResolver(app: FastifyInstance): void {
     // ── 7. Log cross-tenant access for super_admin ──
     if (claims.isSuperAdmin && effectiveTenantId !== claims.tenantId && isDbEnabled()) {
       withDb(async (client) => {
+        // Schema: (target_tenant_id, actor_id, action, reason, metadata).
+        // tenant_audit_log uses metadata jsonb for structured detail; reason
+        // is a short human-readable note. NOT NULL on target_tenant_id is
+        // satisfied by the effective tenant being acted on.
         await client.query(
-          `INSERT INTO tenant_audit_log (tenant_id, actor_id, action, detail)
-           VALUES ($1, $2, $3, $4)`,
-          [effectiveTenantId, claims.sub, "cross_tenant_access", JSON.stringify({
-            from: claims.tenantId,
-            to: effectiveTenantId,
-            path: req.url,
-            method: req.method,
-          })],
+          `INSERT INTO tenant_audit_log (target_tenant_id, actor_id, action, reason, metadata)
+           VALUES ($1, $2, $3, $4, $5::jsonb)`,
+          [
+            effectiveTenantId,
+            claims.sub,
+            "cross_tenant_access",
+            `super_admin access from ${claims.tenantId} to ${effectiveTenantId}`,
+            JSON.stringify({
+              from: claims.tenantId,
+              to: effectiveTenantId,
+              path: req.url,
+              method: req.method,
+            }),
+          ],
         );
       }).catch(() => {
         // Audit log failure is non-fatal

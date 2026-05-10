@@ -47,6 +47,9 @@ export async function detectVAPatterns(
   await withTenantTx(tenantId, async (client) => {
     // ── va_disagree_rate ─────────────────────────────────────────
     // Tenant-wide % of reviews where at least one specialist signoff = 'disagree'.
+    // Belt-and-suspenders tenant_id filter: the Supabase session pooler role has
+    // BYPASSRLS, so the va_reviews policy isn't enforced from the API path.
+    // Without this explicit filter, the COUNT leaks across tenants.
     {
       const { rows } = await client.query<{ total: number; disagreed: number }>(
         `SELECT
@@ -58,7 +61,8 @@ export async function detectVAPatterns(
              )
            )::int AS disagreed
          FROM va_reviews v
-         WHERE v.submitted_at >= $1`,
+         WHERE v.tenant_id = current_setting('app.current_tenant', true)::uuid
+           AND v.submitted_at >= $1`,
         [windowStart],
       );
       const r = rows[0];
@@ -92,7 +96,8 @@ export async function detectVAPatterns(
                )
            )::int AS contested
          FROM va_reviews v
-         WHERE v.submitted_at >= $1`,
+         WHERE v.tenant_id = current_setting('app.current_tenant', true)::uuid
+           AND v.submitted_at >= $1`,
         [windowStart],
       );
       const r = rows[0];
@@ -120,7 +125,8 @@ export async function detectVAPatterns(
            COUNT(*)::int AS total,
            COUNT(*) FILTER (WHERE v.verdict = 'request_docs')::int AS requested
          FROM va_reviews v
-         WHERE v.submitted_at >= $1`,
+         WHERE v.tenant_id = current_setting('app.current_tenant', true)::uuid
+           AND v.submitted_at >= $1`,
         [windowStart],
       );
       const r = rows[0];
