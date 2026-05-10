@@ -184,4 +184,40 @@ export const api = {
     return res.json();
   },
   getFileUrl: (fileKey: string) => `${base}/uploads/${fileKey}`,
+
+  // ─── VA Review Layer ────────────────────────────────────────────
+  vaClaim: (loanId: string) =>
+    req<{ claimed: boolean; loanId: string; vaId: string | null; reason?: string }>(
+      `/loans/${loanId}/va/claim`,
+      { method: "POST", body: JSON.stringify({}) },
+    ),
+  vaRelease: (loanId: string) =>
+    req<{ released: boolean; loanId: string; reason?: string }>(
+      `/loans/${loanId}/va/release`,
+      { method: "POST", body: JSON.stringify({}) },
+    ),
+  vaSubmitReview: (loanId: string, payload: unknown) =>
+    req<{ reviewId: string; newState: string; outboxEventId: string | null }>(
+      `/loans/${loanId}/va/review`,
+      { method: "POST", body: JSON.stringify(payload) },
+    ),
+  vaReviewHistory: (loanId: string) =>
+    req<{ reviews: Array<{
+      id: string; va_id: string; va_pool_id: string; pool_kind: "internal" | "bpo";
+      verdict: "concur" | "request_docs"; specialist_signoffs: unknown; condition_actions: unknown;
+      overall_rationale: string; doc_request: unknown; kb_version: string;
+      agent_recommendation_id: string; chatbot_consultation_ids: string[];
+      claimed_at: string; submitted_at: string; review_time_seconds: number;
+    }> }>(`/loans/${loanId}/va/review-history`),
+  vaQueue: (poolId?: string) =>
+    req<{ items: Array<{ loan_id: string; assigned_pool_id: string; claimed_at: string | null }>; nextCursor: string | null }>(
+      poolId ? `/va/queue?pool=${encodeURIComponent(poolId)}` : `/va/queue`,
+    ),
+  vaPools: () =>
+    req<{ pools: Array<{ id: string; name: string; kind: "internal" | "bpo" }> }>(`/va/pools`),
+  vaDocsReturned: (loanId: string, documents: Array<{ name: string; docType: string }>) =>
+    req<{ accepted: number; newState: string; agentRerunTriggered: boolean }>(
+      `/loans/${loanId}/va/docs-returned`,
+      { method: "POST", body: JSON.stringify({ documents }) },
+    ),
 };
