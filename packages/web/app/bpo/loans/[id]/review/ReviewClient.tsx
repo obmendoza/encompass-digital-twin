@@ -1,5 +1,6 @@
 "use client";
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import type { Loan } from "@twin/core";
 import { VAReviewWorkspace } from "@/components/encompass/VAReviewWorkspace";
 import { actionBpoClaim, actionBpoSubmitReview } from "./actions";
@@ -22,6 +23,7 @@ export function ReviewClient({
   const [claimed, setClaimed] = useState(alreadyClaimed);
   const [claimErr, setClaimErr] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  const router = useRouter();
 
   if (!claimed) {
     return (
@@ -54,8 +56,13 @@ export function ReviewClient({
       kbVersion={kbVersion}
       onSubmit={async (payload) => {
         const res = await actionBpoSubmitReview(loanId, payload);
-        if (res.ok) return { ok: true };
-        return { ok: false, error: res.error };
+        if (!res.ok) return { ok: false, error: res.error };
+        // BPO partners don't have access to the UW page. After a successful
+        // submit, route back to the queue (concur or request_docs — the loan
+        // either advances or moves to va_doc_request_pending; either way the
+        // SME's next action is to look at the queue).
+        router.push("/bpo/queue");
+        return { ok: true };
       }}
     />
   );
