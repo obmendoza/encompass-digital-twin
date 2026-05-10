@@ -26,33 +26,36 @@ export default async function TransmittalPage({
   }
   const user = await getUser();
 
+  // Always fetch VA review history. DB is the source of truth — Loan's
+  // in-memory currentVaReviewId field is only populated by the reducer, but
+  // production submit goes through va-review-writer (DB-only) so that field
+  // stays null in real flows. (Same family of bug as the dashboard pool-queue
+  // and W9 harness fixes — Loan domain object isn't authoritative for VA.)
   let latestVAReview: VAReviewProps | null = null;
-  if (loan.currentVaReviewId) {
-    try {
-      const history = await api.vaReviewHistory(loan.id);
-      const sorted = [...history.reviews].sort(
-        (a, b) => new Date(a.submitted_at).getTime() - new Date(b.submitted_at).getTime(),
-      );
-      const latest = sorted[sorted.length - 1];
-      if (latest) {
-        latestVAReview = {
-          vaId: latest.va_id,
-          poolKind: latest.pool_kind,
-          verdict: latest.verdict,
-          specialistSignoffs: Array.isArray(latest.specialist_signoffs)
-            ? (latest.specialist_signoffs as SpecialistSignoff[])
-            : [],
-          conditionActions: Array.isArray(latest.condition_actions)
-            ? (latest.condition_actions as ConditionAction[])
-            : [],
-          overallRationale: latest.overall_rationale,
-          submittedAt: latest.submitted_at,
-          reviewTimeSeconds: latest.review_time_seconds,
-        };
-      }
-    } catch {
-      latestVAReview = null;
+  try {
+    const history = await api.vaReviewHistory(loan.id);
+    const sorted = [...history.reviews].sort(
+      (a, b) => new Date(a.submitted_at).getTime() - new Date(b.submitted_at).getTime(),
+    );
+    const latest = sorted[sorted.length - 1];
+    if (latest) {
+      latestVAReview = {
+        vaId: latest.va_id,
+        poolKind: latest.pool_kind,
+        verdict: latest.verdict,
+        specialistSignoffs: Array.isArray(latest.specialist_signoffs)
+          ? (latest.specialist_signoffs as SpecialistSignoff[])
+          : [],
+        conditionActions: Array.isArray(latest.condition_actions)
+          ? (latest.condition_actions as ConditionAction[])
+          : [],
+        overallRationale: latest.overall_rationale,
+        submittedAt: latest.submitted_at,
+        reviewTimeSeconds: latest.review_time_seconds,
+      };
     }
+  } catch {
+    latestVAReview = null;
   }
 
   const openCount = loan.conditions.filter((c) => c.status === "Open").length;
