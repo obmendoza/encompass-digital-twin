@@ -1,4 +1,13 @@
 export type LoanId = string;
+
+export type LoanState =
+  | "agent_review_pending"
+  | "va_review_pending"
+  | "va_in_review"
+  | "va_doc_request_pending"
+  | "uw_review_pending"
+  | "decided";
+
 export type ConditionId = string;
 export type DocumentId = string;
 export type DocumentStatus = "Pending" | "Received" | "Reviewed" | "Rejected";
@@ -73,8 +82,13 @@ export type ConditionStatus =
   | "Open" | "Requested" | "Received" | "Cleared" | "Waived";
 
 export interface Actor {
-  kind: "human" | "agent";
+  kind: "human" | "agent" | "internal" | "bpo" | "system";
   id: string;
+  // Optional fields used by specific kinds; back-compat with existing callers.
+  email?: string;          // typically present when kind === "internal"
+  partnerId?: string;      // present when kind === "bpo"
+  smeId?: string;          // present when kind === "bpo"
+  smeName?: string;        // present when kind === "bpo"
 }
 
 export interface BorrowerSummary {
@@ -313,6 +327,62 @@ export interface Loan {
   tenantId?: string;
   guidelineVersionId?: string;
   slaDeadlines?: import("./tenant-types.js").SlaDeadlines;
+  // VA review layer additions (spec 2026-05-10 v2.1):
+  state?: LoanState;                    // undefined ⇒ "agent_review_pending" by convention
+  currentVaReviewId?: string | null;
+  vaId?: string | null;                  // current claimant when state === "va_in_review"
+  claimedAt?: string | null;
+  assignedPoolId?: string | null;
+}
+
+// ─── VA Review Layer (spec 2026-05-10 v2.1) ─────────────────────────────────
+
+export type VASpecialistKind =
+  | "doc" | "income" | "asset" | "credit" | "property" | "compliance";
+
+export interface VASpecialistSignoff {
+  specialist: VASpecialistKind;
+  signoff: "concur" | "disagree";
+  notes: string | null;       // required when signoff === "disagree"
+}
+
+export interface VAConditionAction {
+  conditionId: ConditionId;
+  action: "clear" | "contest"; // no "add" in v1 of the spec
+  note: string | null;          // required when action === "contest"
+}
+
+export interface VADocRequestItem {
+  docType: string;
+  reason: string;
+  required: boolean;
+}
+
+export interface VADocRequest {
+  docs: VADocRequestItem[];
+  deadline: string;            // ISO date (YYYY-MM-DD)
+  messageToOriginator: string;
+}
+
+export interface VAReview {
+  id: string;
+  tenantId: string;
+  loanId: LoanId;
+  vaId: string;
+  vaPoolId: string;
+  poolKind: "internal" | "bpo";
+  verdict: "concur" | "request_docs";
+  specialistSignoffs: VASpecialistSignoff[];   // length 6, one per specialist
+  conditionActions: VAConditionAction[];
+  overallRationale: string;                     // ≥ 20 chars
+  docRequest: VADocRequest | null;              // non-null iff verdict === "request_docs"
+  // Provenance (spec §"Provenance contract"):
+  agentRecommendationId: string;
+  kbVersion: string;
+  chatbotConsultationIds: string[];
+  claimedAt: string;
+  submittedAt: string;
+  reviewTimeSeconds: number;
 }
 
 export interface Scenario {
@@ -361,4 +431,9 @@ export type Action =
   | { type: "UpdateAssignmentStatus"; loanId: LoanId; status: "queued" | "in_progress" | "report_ready" | "under_review" | "decided"; actor: Actor }
   | { type: "UnassignLoan"; loanId: LoanId; actor: Actor }
   | { type: "OverrideDecision"; loanId: LoanId; originalRecommendation: UwDecision; overrideDecision: UwDecision; overrideReason?: import("./learning-types.js").OverrideReasonCategory; rationale: string; actor: Actor }
-  | { type: "SendBackToVA"; loanId: LoanId; notes: string; actor: Actor };
+  | { type: "SendBackToVA"; loanId: LoanId; notes: string; actor: Actor }
+  | { type: "RouteToVA"; loanId: LoanId; assignedPoolId: string; actor: Actor }
+  | { type: "ClaimForVAReview"; loanId: LoanId; vaId: string; poolId: string; poolKind: "internal" | "bpo"; actor: Actor }
+  | { type: "ReleaseVAClaim"; loanId: LoanId; vaId: string; actor: Actor }
+  | { type: "SubmitVAReview"; loanId: LoanId; review: VAReview; actor: Actor }
+  | { type: "ReceiveVADocResponse"; loanId: LoanId; documents: Document[]; actor: Actor };
