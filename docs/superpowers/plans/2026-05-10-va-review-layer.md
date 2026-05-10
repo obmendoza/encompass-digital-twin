@@ -1127,3 +1127,574 @@ git commit -m "feat(core): reducer cases for 5 VA actions + VA-gate invariant on
 
 ---
 
+## Phase 2 — API services (tenant-scoped business logic)
+
+Phase 2 builds the four pure-server-side service modules that the routes will call in Phase 3. Each service does one thing, takes a `client` (or implicit `withTenantTx`) plus typed inputs, and returns a typed result. No HTTP concerns yet.
+
+### Task 7: `va-routing` service — evaluate routing rules and assign pool
+
+**Files:**
+- Create: `packages/api/src/services/va-routing.ts`
+- Create: `packages/api/test/va-routing.test.ts`
+
+- [ ] **Step 1: Write the failing test**
+
+```ts
+// packages/api/test/va-routing.test.ts
+import { describe, it, expect, beforeEach } from "vitest";
+import { withTenantTx } from "../src/db/pool.js";
+import { routeLoan } from "../src/services/va-routing.js";
+
+const T = "00000000-0000-0000-0000-000000000099";  // ephemeral test tenant; created by setup
+
+describe("va-routing", () => {
+  beforeEach(async () => {
+    await withTenantTx(T, async (c) => {
+      await c.query("DELETE FROM va_routing_rules WHERE tenant_id = $1", [T]);
+      await c.query("DELETE FROM va_pools WHERE tenant_id = $1", [T]);
+    });
+  });
+
+  it("routes to fallback pool when no rule matches", async () => {
+    await withTenantTx(T, async (c) => {
+      await c.query(
+        "INSERT INTO va_pools (id, tenant_id, name, kind, active) VALUES ($1,$2,$3,'internal',true)",
+        ["00000000-0000-0000-0000-000000000aaa", T, "Fallback"]
+      );
+    });
+    const loan = { id: "L1", nqmProgram: "Flex Select", transaction: { loanAmount: 200000, occupancy: "Primary" } } as any;
+    const result = await routeLoan(T, loan, { fallbackPoolId: "00000000-0000-0000-0000-000000000aaa" });
+    expect(result.poolId).toBe("00000000-0000-0000-0000-000000000aaa");
+    expect(result.matchedRule).toBeNull();
+  });
+
+  it("routes by program match (priority order)", async () => {
+    await withTenantTx(T, async (c) => {
+      await c.query(
+        "INSERT INTO va_pools (id, tenant_id, name, kind) VALUES ($1,$2,'DSCR Pool','internal'),($3,$2,'Default','internal')",
+        ["00000000-0000-0000-0000-000000000bbb", T, "00000000-0000-0000-0000-000000000ccc"]
+      );
+      await c.query(
+        "INSERT INTO va_routing_rules (tenant_id, priority, match, target_pool_id) VALUES ($1,1,$2,$3)",
+        [T, JSON.stringify({ program: ["Investor DSCR", "DSCR Supreme"] }), "00000000-0000-0000-0000-000000000bbb"]
+      );
+    });
+    const dscrLoan = { id: "L2", nqmProgram: "Investor DSCR", transaction: { loanAmount: 500000, occupancy: "Investment" } } as any;
+    const result = await routeLoan(T, dscrLoan, { fallbackPoolId: "00000000-0000-0000-0000-000000000ccc" });
+    expect(result.poolId).toBe("00000000-0000-0000-0000-000000000bbb");
+  });
+
+  it("returns the first-priority match when multiple rules match", async () => {
+    // Setup: two rules both match Flex Select; lower priority number wins.
+    await withTenantTx(T, async (c) => {
+      await c.query("INSERT INTO va_pools (id, tenant_id, name, kind) VALUES ($1,$2,'A','internal'),($3,$2,'B','internal'),($4,$2,'F','internal')",
+        ["00000000-0000-0000-0000-000000000111", T, "00000000-0000-0000-0000-000000000222", "00000000-0000-0000-0000-000000000333"]);
+      await c.query("INSERT INTO va_routing_rules (tenant_id, priority, match, target_pool_id) VALUES ($1,2,$2,$3),($1,1,$4,$5)",
+        [T, JSON.stringify({ program: ["Flex Select"] }), "00000000-0000-0000-0000-000000000222",
+            JSON.stringify({ loanAmountMin: 100000 }), "00000000-0000-0000-0000-000000000111"]);
+    });
+    const loan = { id: "L3", nqmProgram: "Flex Select", transaction: { loanAmount: 200000, occupancy: "Primary" } } as any;
+    const result = await routeLoan(T, loan, { fallbackPoolId: "00000000-0000-0000-0000-000000000333" });
+    expect(result.poolId).toBe("00000000-0000-0000-0000-000000000111");  // priority 1 wins
+  });
+});
+```
+
+- [ ] **Step 2: Run test, expect failure**
+
+```bash
+pnpm --filter @twin/api test va-routing
+```
+
+Expected: FAIL — module not found.
+
+- [ ] **Step 3: Implement the service**
+
+```ts
+// packages/api/src/services/va-routing.ts
+import type { Loan } from "@twin/core";
+import { withTenantTx } from "../db/pool.js";
+
+interface RoutingMatch {
+  program?: string[];
+  loanAmountMin?: number;
+  loanAmountMax?: number;
+  occupancy?: ("Primary" | "Second" | "Investment")[];
+}
+
+interface RoutingRuleRow {
+  id: string;
+  priority: number;
+  match: RoutingMatch;
+  target_pool_id: string;
+}
+
+export interface RouteLoanOptions {
+  fallbackPoolId: string;
+}
+
+export interface RouteLoanResult {
+  poolId: string;
+  matchedRule: RoutingRuleRow | null;
+}
+
+function ruleMatches(rule: RoutingRuleRow, loan: Loan): boolean {
+  const m = rule.match;
+  if (m.program && !m.program.includes(loan.nqmProgram as string)) return false;
+  if (m.loanAmountMin !== undefined && loan.transaction.loanAmount < m.loanAmountMin) return false;
+  if (m.loanAmountMax !== undefined && loan.transaction.loanAmount > m.loanAmountMax) return false;
+  if (m.occupancy && !m.occupancy.includes(loan.transaction.occupancy as any)) return false;
+  return true;
+}
+
+export async function routeLoan(
+  tenantId: string,
+  loan: Loan,
+  opts: RouteLoanOptions,
+): Promise<RouteLoanResult> {
+  return withTenantTx(tenantId, async (client) => {
+    const { rows } = await client.query<RoutingRuleRow>(
+      `SELECT id, priority, match, target_pool_id
+         FROM va_routing_rules
+        WHERE tenant_id = $1
+        ORDER BY priority ASC`,
+      [tenantId],
+    );
+    for (const rule of rows) {
+      if (ruleMatches(rule, loan)) {
+        return { poolId: rule.target_pool_id, matchedRule: rule };
+      }
+    }
+    return { poolId: opts.fallbackPoolId, matchedRule: null };
+  });
+}
+```
+
+- [ ] **Step 4: Run test, expect pass**
+
+```bash
+pnpm --filter @twin/api test va-routing
+```
+
+Expected: 3 tests pass.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add packages/api/src/services/va-routing.ts packages/api/test/va-routing.test.ts
+git commit -m "feat(api): va-routing service — priority-ordered rule evaluation with fallback pool"
+```
+
+---
+
+### Task 8: `va-pool` service — race-safe claim/release
+
+**Files:**
+- Create: `packages/api/src/services/va-pool.ts`
+- Create: `packages/api/test/va-claim-race.test.ts`
+
+- [ ] **Step 1: Write the failing test (concurrency-focused)**
+
+```ts
+// packages/api/test/va-claim-race.test.ts
+import { describe, it, expect, beforeEach } from "vitest";
+import { withTenantTx } from "../src/db/pool.js";
+import { claimLoan, releaseLoan } from "../src/services/va-pool.js";
+
+const T = "00000000-0000-0000-0000-000000000099";
+const POOL = "00000000-0000-0000-0000-000000000aaa";
+const LOAN = "L_CLAIM_RACE";
+
+beforeEach(async () => {
+  await withTenantTx(T, async (c) => {
+    await c.query("DELETE FROM va_pool_memberships WHERE pool_id = $1", [POOL]);
+    await c.query("DELETE FROM va_pools WHERE id = $1", [POOL]);
+    await c.query("INSERT INTO va_pools (id, tenant_id, name, kind, active) VALUES ($1,$2,'TestPool','internal',true)", [POOL, T]);
+    await c.query("INSERT INTO va_pool_memberships (pool_id, member_id, member_kind) VALUES ($1,'u1','internal'),($1,'u2','internal')", [POOL]);
+    await c.query("DELETE FROM loans WHERE id = $1", [LOAN]);
+    await c.query("INSERT INTO loans (id, tenant_id, va_state, assigned_pool_id, body) VALUES ($1,$2,'va_review_pending',$3,'{}')", [LOAN, T, POOL]);
+  });
+});
+
+describe("va-pool", () => {
+  it("exactly one of two concurrent claims succeeds", async () => {
+    const [r1, r2] = await Promise.allSettled([
+      claimLoan(T, LOAN, "u1"),
+      claimLoan(T, LOAN, "u2"),
+    ]);
+    const successes = [r1, r2].filter((r) => r.status === "fulfilled" && (r as any).value.claimed === true);
+    expect(successes.length).toBe(1);
+  });
+
+  it("claim by non-pool-member returns claimed=false", async () => {
+    const r = await claimLoan(T, LOAN, "u_outsider");
+    expect(r.claimed).toBe(false);
+    expect(r.reason).toMatch(/not a member/i);
+  });
+
+  it("release reverts state and clears va_id", async () => {
+    await claimLoan(T, LOAN, "u1");
+    const r = await releaseLoan(T, LOAN, "u1");
+    expect(r.released).toBe(true);
+    await withTenantTx(T, async (c) => {
+      const { rows } = await c.query("SELECT va_state, va_id FROM loans WHERE id=$1", [LOAN]);
+      expect(rows[0].va_state).toBe("va_review_pending");
+      expect(rows[0].va_id).toBeNull();
+    });
+  });
+});
+```
+
+- [ ] **Step 2: Run test, expect failure**
+
+```bash
+pnpm --filter @twin/api test va-claim-race
+```
+
+Expected: FAIL — module not found.
+
+- [ ] **Step 3: Implement the service**
+
+```ts
+// packages/api/src/services/va-pool.ts
+import { withTenantTx } from "../db/pool.js";
+
+export interface ClaimResult {
+  claimed: boolean;
+  loanId: string;
+  vaId: string | null;
+  reason?: string;
+}
+
+export interface ReleaseResult {
+  released: boolean;
+  loanId: string;
+  reason?: string;
+}
+
+export async function claimLoan(
+  tenantId: string,
+  loanId: string,
+  vaId: string,
+): Promise<ClaimResult> {
+  return withTenantTx(tenantId, async (client) => {
+    // Single update guarded by both state predicate and pool-membership predicate.
+    const { rows } = await client.query<{ id: string; va_id: string }>(
+      `UPDATE loans
+          SET va_state = 'va_in_review', va_id = $1, claimed_at = now()
+        WHERE id = $2 AND va_state = 'va_review_pending'
+          AND EXISTS (
+            SELECT 1 FROM va_pool_memberships m
+             WHERE m.pool_id = loans.assigned_pool_id AND m.member_id = $1
+          )
+       RETURNING id, va_id`,
+      [vaId, loanId],
+    );
+    if (rows.length === 1) return { claimed: true, loanId, vaId: rows[0].va_id };
+
+    // Diagnose why we lost: still pending? Already claimed? Not a pool member?
+    const { rows: existing } = await client.query<{ va_state: string; va_id: string | null; assigned_pool_id: string | null }>(
+      `SELECT va_state, va_id, assigned_pool_id FROM loans WHERE id = $1`,
+      [loanId],
+    );
+    if (existing.length === 0) return { claimed: false, loanId, vaId: null, reason: "loan not found" };
+    const cur = existing[0];
+    if (cur.va_state !== "va_review_pending") {
+      return { claimed: false, loanId, vaId: cur.va_id, reason: `state is ${cur.va_state} (already claimed by ${cur.va_id ?? "unknown"})` };
+    }
+    return { claimed: false, loanId, vaId: null, reason: "user is not a member of the loan's assigned pool" };
+  });
+}
+
+export async function releaseLoan(
+  tenantId: string,
+  loanId: string,
+  vaId: string,
+): Promise<ReleaseResult> {
+  return withTenantTx(tenantId, async (client) => {
+    const { rows } = await client.query(
+      `UPDATE loans
+          SET va_state = 'va_review_pending', va_id = NULL, claimed_at = NULL
+        WHERE id = $1 AND va_state = 'va_in_review' AND va_id = $2
+       RETURNING id`,
+      [loanId, vaId],
+    );
+    if (rows.length === 1) return { released: true, loanId };
+    return { released: false, loanId, reason: "loan is not currently claimed by this user" };
+  });
+}
+```
+
+- [ ] **Step 4: Run test, expect pass**
+
+```bash
+pnpm --filter @twin/api test va-claim-race
+```
+
+Expected: 3 tests pass.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add packages/api/src/services/va-pool.ts packages/api/test/va-claim-race.test.ts
+git commit -m "feat(api): va-pool service — race-safe claim/release with pool-membership predicate"
+```
+
+---
+
+### Task 9: `va-review-writer` service — single-tx submit (concur + request_docs)
+
+**Files:**
+- Create: `packages/api/src/services/va-review-writer.ts`
+
+- [ ] **Step 1: Implement (test in Task 13 once route exists)**
+
+```ts
+// packages/api/src/services/va-review-writer.ts
+import { randomUUID } from "node:crypto";
+import { withTenantTx } from "../db/pool.js";
+import type { VAReview } from "@twin/core";
+
+export interface SubmitVAReviewInput {
+  tenantId: string;
+  loanId: string;
+  vaId: string;
+  vaPoolId: string;
+  poolKind: "internal" | "bpo";
+  verdict: "concur" | "request_docs";
+  specialistSignoffs: VAReview["specialistSignoffs"];
+  conditionActions: VAReview["conditionActions"];
+  overallRationale: string;
+  docRequest: VAReview["docRequest"];
+  agentRecommendationId: string;
+  kbVersion: string;
+  chatbotConsultationIds: string[];
+  claimedAt: string;
+}
+
+export interface SubmitVAReviewResult {
+  reviewId: string;
+  newState: "uw_review_pending" | "va_doc_request_pending";
+  outboxEventId: string | null;
+}
+
+export async function submitVAReview(input: SubmitVAReviewInput): Promise<SubmitVAReviewResult> {
+  const reviewId = randomUUID();
+  const submittedAt = new Date().toISOString();
+  const reviewTimeSeconds = Math.max(0, Math.floor((Date.parse(submittedAt) - Date.parse(input.claimedAt)) / 1000));
+  const newState = input.verdict === "concur" ? "uw_review_pending" : "va_doc_request_pending";
+
+  return withTenantTx(input.tenantId, async (client) => {
+    // 1. INSERT into va_reviews
+    await client.query(
+      `INSERT INTO va_reviews (
+        id, tenant_id, loan_id, va_id, va_pool_id, pool_kind, verdict,
+        specialist_signoffs, condition_actions, overall_rationale, doc_request,
+        agent_recommendation_id, kb_version, chatbot_consultation_ids,
+        claimed_at, submitted_at, review_time_seconds
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10,$11,$12,$13,$14,$15,$16,$17)`,
+      [
+        reviewId, input.tenantId, input.loanId, input.vaId, input.vaPoolId, input.poolKind, input.verdict,
+        JSON.stringify(input.specialistSignoffs), JSON.stringify(input.conditionActions),
+        input.overallRationale,
+        input.docRequest ? JSON.stringify(input.docRequest) : null,
+        input.agentRecommendationId, input.kbVersion, input.chatbotConsultationIds,
+        input.claimedAt, submittedAt, reviewTimeSeconds,
+      ],
+    );
+
+    // 2. UPDATE loan
+    await client.query(
+      `UPDATE loans
+          SET va_state = $1, current_va_review_id = $2, va_id = NULL, claimed_at = NULL
+        WHERE id = $3 AND va_state = 'va_in_review'`,
+      [newState, reviewId, input.loanId],
+    );
+
+    // 3. INSERT outbox row when request_docs
+    let outboxEventId: string | null = null;
+    if (input.verdict === "request_docs" && input.docRequest) {
+      outboxEventId = randomUUID();
+      const payload = {
+        docs: input.docRequest.docs,
+        deadline: input.docRequest.deadline,
+        messageToOriginator: input.docRequest.messageToOriginator,
+        loanId: input.loanId,
+        vaReviewId: reviewId,
+      };
+      await client.query(
+        `INSERT INTO va_event_outbox (id, tenant_id, event_type, loan_id, payload)
+         VALUES ($1,$2,'va.doc_request_issued',$3,$4::jsonb)`,
+        [outboxEventId, input.tenantId, input.loanId, JSON.stringify(payload)],
+      );
+    }
+
+    return { reviewId, newState, outboxEventId };
+  });
+}
+```
+
+- [ ] **Step 2: Build and commit**
+
+```bash
+pnpm --filter @twin/api build
+git add packages/api/src/services/va-review-writer.ts
+git commit -m "feat(api): va-review-writer service — single-tx insert review + update loan + outbox row"
+```
+
+---
+
+### Task 10: `va-toggle` service — backfill on flip
+
+**Files:**
+- Create: `packages/api/src/services/va-toggle.ts`
+- Create: `packages/api/test/va-toggle.test.ts`
+
+- [ ] **Step 1: Write the failing test**
+
+```ts
+// packages/api/test/va-toggle.test.ts
+import { describe, it, expect, beforeEach } from "vitest";
+import { withTenantTx } from "../src/db/pool.js";
+import { applyToggleFlip } from "../src/services/va-toggle.js";
+
+const T = "00000000-0000-0000-0000-000000000099";
+const POOL = "00000000-0000-0000-0000-000000000aaa";
+
+beforeEach(async () => {
+  await withTenantTx(T, async (c) => {
+    await c.query("DELETE FROM loans WHERE id LIKE 'TFLIP%'");
+    await c.query("DELETE FROM va_pools WHERE id = $1", [POOL]);
+    await c.query("INSERT INTO va_pools (id, tenant_id, name, kind, active) VALUES ($1,$2,'TestPool','internal',true)", [POOL, T]);
+  });
+});
+
+describe("va-toggle", () => {
+  it("false→true backfills agent_review_pending loans to va_review_pending", async () => {
+    await withTenantTx(T, async (c) => {
+      await c.query("INSERT INTO loans (id, tenant_id, va_state, body) VALUES ('TFLIP1',$1,'agent_review_pending','{}'),('TFLIP2',$1,'uw_review_pending','{}')", [T]);
+    });
+    const result = await applyToggleFlip(T, false, true, POOL);
+    expect(result.transitioned).toBe(1);
+    await withTenantTx(T, async (c) => {
+      const { rows } = await c.query("SELECT id, va_state, assigned_pool_id FROM loans WHERE id LIKE 'TFLIP%' ORDER BY id");
+      expect(rows[0]).toMatchObject({ id: "TFLIP1", va_state: "va_review_pending", assigned_pool_id: POOL });
+      expect(rows[1]).toMatchObject({ id: "TFLIP2", va_state: "uw_review_pending" });  // unchanged
+    });
+  });
+
+  it("true→false releases va_review_pending and va_in_review to uw_review_pending; preserves doc_request_pending", async () => {
+    await withTenantTx(T, async (c) => {
+      await c.query(`INSERT INTO loans (id, tenant_id, va_state, body) VALUES
+        ('TFLIP3',$1,'va_review_pending','{}'),
+        ('TFLIP4',$1,'va_in_review','{}'),
+        ('TFLIP5',$1,'va_doc_request_pending','{}'),
+        ('TFLIP6',$1,'decided','{}')`, [T]);
+    });
+    const result = await applyToggleFlip(T, true, false, POOL);
+    expect(result.released).toBe(2);
+    expect(result.preservedDocRequest).toBe(1);
+    await withTenantTx(T, async (c) => {
+      const { rows } = await c.query("SELECT id, va_state FROM loans WHERE id LIKE 'TFLIP%' ORDER BY id");
+      const m = Object.fromEntries(rows.map(r => [r.id, r.va_state]));
+      expect(m.TFLIP3).toBe("uw_review_pending");
+      expect(m.TFLIP4).toBe("uw_review_pending");
+      expect(m.TFLIP5).toBe("va_doc_request_pending");  // preserved
+      expect(m.TFLIP6).toBe("decided");                 // terminal
+    });
+  });
+});
+```
+
+- [ ] **Step 2: Run test, expect failure**
+
+```bash
+pnpm --filter @twin/api test va-toggle
+```
+
+Expected: FAIL — module not found.
+
+- [ ] **Step 3: Implement the service**
+
+```ts
+// packages/api/src/services/va-toggle.ts
+import { withTenantTx } from "../db/pool.js";
+
+export interface ToggleFlipResult {
+  direction: "false_to_true" | "true_to_false" | "noop";
+  transitioned: number;     // false→true: loans moved from agent_review_pending to va_review_pending
+  released: number;         // true→false: loans moved from va_review_pending or va_in_review to uw_review_pending
+  preservedDocRequest: number;  // true→false: loans left in va_doc_request_pending
+}
+
+export async function applyToggleFlip(
+  tenantId: string,
+  fromRequired: boolean,
+  toRequired: boolean,
+  fallbackPoolId: string,
+): Promise<ToggleFlipResult> {
+  if (fromRequired === toRequired) {
+    return { direction: "noop", transitioned: 0, released: 0, preservedDocRequest: 0 };
+  }
+
+  return withTenantTx(tenantId, async (client) => {
+    if (!fromRequired && toRequired) {
+      // false → true: every loan currently at agent_review_pending must be routed.
+      // Routing simplification for the backfill: assign every backfilled loan to fallback pool.
+      // (The full per-loan rule evaluation happens for newly staged loans; backfilling
+      // historical loans against rules they may not match cleanly is operationally hostile.)
+      const { rowCount: t } = await client.query(
+        `UPDATE loans
+            SET va_state = 'va_review_pending', assigned_pool_id = $1
+          WHERE tenant_id = $2 AND va_state = 'agent_review_pending'`,
+        [fallbackPoolId, tenantId],
+      );
+      // Audit-log a single summary row.
+      await client.query(
+        `INSERT INTO tenant_audit_log (tenant_id, action_type, actor, metadata)
+         VALUES ($1, 'va_toggle_flip', $2::jsonb, $3::jsonb)
+         ON CONFLICT DO NOTHING`,
+        [tenantId, JSON.stringify({ kind: "system", id: "va-toggle" }), JSON.stringify({ direction: "false_to_true", transitioned: t ?? 0, fallbackPoolId })],
+      ).catch(() => { /* tenant_audit_log may not exist in early dev */ });
+      return { direction: "false_to_true", transitioned: t ?? 0, released: 0, preservedDocRequest: 0 };
+    }
+
+    // true → false: release pending-VA states, preserve in-flight doc-request loops.
+    const { rowCount: r } = await client.query(
+      `UPDATE loans
+          SET va_state = 'uw_review_pending', va_id = NULL, claimed_at = NULL
+        WHERE tenant_id = $1 AND va_state IN ('va_review_pending', 'va_in_review')`,
+      [tenantId],
+    );
+    const { rows: preserved } = await client.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count FROM loans WHERE tenant_id = $1 AND va_state = 'va_doc_request_pending'`,
+      [tenantId],
+    );
+    await client.query(
+      `INSERT INTO tenant_audit_log (tenant_id, action_type, actor, metadata)
+       VALUES ($1, 'va_toggle_flip', $2::jsonb, $3::jsonb) ON CONFLICT DO NOTHING`,
+      [tenantId, JSON.stringify({ kind: "system", id: "va-toggle" }),
+       JSON.stringify({ direction: "true_to_false", released: r ?? 0, preservedDocRequest: parseInt(preserved[0].count, 10) })],
+    ).catch(() => {});
+    return { direction: "true_to_false", transitioned: 0, released: r ?? 0, preservedDocRequest: parseInt(preserved[0].count, 10) };
+  });
+}
+```
+
+- [ ] **Step 4: Run test, expect pass**
+
+```bash
+pnpm --filter @twin/api test va-toggle
+```
+
+Expected: 2 tests pass.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add packages/api/src/services/va-toggle.ts packages/api/test/va-toggle.test.ts
+git commit -m "feat(api): va-toggle service — false→true backfill, true→false release, preserve doc_request_pending"
+```
+
+---
+
