@@ -5,7 +5,12 @@ export type ActionErrorCode =
   | "SCENARIO_NOT_FOUND"
   | "REQUIRED_FIELD_MISSING"
   | "ACTION_FORBIDDEN_IN_DECISION_STATE"
-  | "DOCUMENT_NOT_FOUND";
+  | "DOCUMENT_NOT_FOUND"
+  | "VA_REVIEW_REQUIRED"
+  | "VA_CLAIM_INVALID_STATE"
+  | "VA_RELEASE_INVALID_STATE"
+  | "VA_SUBMIT_INVALID_STATE"
+  | "VA_DOC_RESPONSE_INVALID_STATE";
 
 export class ActionError extends Error {
   public readonly code: ActionErrorCode;

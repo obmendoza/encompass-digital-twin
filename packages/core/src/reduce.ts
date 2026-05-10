@@ -70,6 +70,22 @@ export function reduce(
         throw new ActionError("REQUIRED_FIELD_MISSING",
           "rationale is required for SetDecision", { loanId: action.loanId });
       }
+      // VA gate invariant (spec 2026-05-10 v2.1 §State Machine).
+      // When tenant.va.required=true, the API routes loans to va_review_pending
+      // before UW can decide. When false, loan stays at agent_review_pending and
+      // UW can decide directly. Either way, va_review_pending and va_in_review
+      // and va_doc_request_pending are NOT acceptable for UW decisions.
+      {
+        const _l = state.loans[action.loanId];
+        if (_l) {
+          const _s = _l.state ?? "agent_review_pending";
+          if (_s !== "uw_review_pending" && _s !== "agent_review_pending") {
+            throw new ActionError("VA_REVIEW_REQUIRED",
+              `loan ${action.loanId} cannot be UW-decided in state ${_s}; VA review required first`,
+              { loanId: action.loanId, currentState: _s });
+          }
+        }
+      }
       const next = withLoan(state, action.loanId, (l) => ({
         ...l,
         decision: action.decision,
@@ -276,6 +292,22 @@ export function reduce(
     }
 
     case "AcceptRecommendation": {
+      // VA gate invariant (spec 2026-05-10 v2.1 §State Machine).
+      // When tenant.va.required=true, the API routes loans to va_review_pending
+      // before UW can decide. When false, loan stays at agent_review_pending and
+      // UW can decide directly. Either way, va_review_pending and va_in_review
+      // and va_doc_request_pending are NOT acceptable for UW decisions.
+      {
+        const _l = state.loans[action.loanId];
+        if (_l) {
+          const _s = _l.state ?? "agent_review_pending";
+          if (_s !== "uw_review_pending" && _s !== "agent_review_pending") {
+            throw new ActionError("VA_REVIEW_REQUIRED",
+              `loan ${action.loanId} cannot be UW-decided in state ${_s}; VA review required first`,
+              { loanId: action.loanId, currentState: _s });
+          }
+        }
+      }
       const l0 = requireLoan(state, action.loanId);
       if (!l0.pendingRecommendation) {
         throw new ActionError("INVALID_TRANSITION",
@@ -385,6 +417,22 @@ export function reduce(
         throw new ActionError("REQUIRED_FIELD_MISSING",
           "rationale is required for OverrideDecision", { loanId: action.loanId });
       }
+      // VA gate invariant (spec 2026-05-10 v2.1 §State Machine).
+      // When tenant.va.required=true, the API routes loans to va_review_pending
+      // before UW can decide. When false, loan stays at agent_review_pending and
+      // UW can decide directly. Either way, va_review_pending and va_in_review
+      // and va_doc_request_pending are NOT acceptable for UW decisions.
+      {
+        const _l = state.loans[action.loanId];
+        if (_l) {
+          const _s = _l.state ?? "agent_review_pending";
+          if (_s !== "uw_review_pending" && _s !== "agent_review_pending") {
+            throw new ActionError("VA_REVIEW_REQUIRED",
+              `loan ${action.loanId} cannot be UW-decided in state ${_s}; VA review required first`,
+              { loanId: action.loanId, currentState: _s });
+          }
+        }
+      }
       const next = withLoan(state, action.loanId, (l) => ({
         ...l,
         decision: action.overrideDecision,
@@ -408,6 +456,80 @@ export function reduce(
           `Sent back to VA: ${action.notes}`,
           action.actor.id, at
         )],
+      }));
+      return log(next);
+    }
+
+    case "RouteToVA": {
+      const next = withLoan(state, action.loanId, (l) => ({
+        ...l,
+        state: "va_review_pending",
+        assignedPoolId: action.assignedPoolId,
+      }));
+      return log(next);
+    }
+
+    case "ClaimForVAReview": {
+      const cur = requireLoan(state, action.loanId);
+      const cs = cur.state ?? "agent_review_pending";
+      if (cs !== "va_review_pending") {
+        throw new ActionError("VA_CLAIM_INVALID_STATE",
+          `loan must be in va_review_pending; was ${cs}`, { loanId: action.loanId, currentState: cs });
+      }
+      const next = withLoan(state, action.loanId, (l) => ({
+        ...l,
+        state: "va_in_review",
+        vaId: action.vaId,
+        claimedAt: at,
+      }));
+      return log(next);
+    }
+
+    case "ReleaseVAClaim": {
+      const cur = requireLoan(state, action.loanId);
+      const cs = cur.state ?? "agent_review_pending";
+      if (cs !== "va_in_review") {
+        throw new ActionError("VA_RELEASE_INVALID_STATE",
+          `loan must be in va_in_review; was ${cs}`, { loanId: action.loanId, currentState: cs });
+      }
+      const next = withLoan(state, action.loanId, (l) => ({
+        ...l,
+        state: "va_review_pending",
+        vaId: null,
+        claimedAt: null,
+      }));
+      return log(next);
+    }
+
+    case "SubmitVAReview": {
+      const cur = requireLoan(state, action.loanId);
+      const cs = cur.state ?? "agent_review_pending";
+      if (cs !== "va_in_review") {
+        throw new ActionError("VA_SUBMIT_INVALID_STATE",
+          `loan must be in va_in_review; was ${cs}`, { loanId: action.loanId, currentState: cs });
+      }
+      const newState = action.review.verdict === "concur" ? "uw_review_pending" : "va_doc_request_pending";
+      const next = withLoan(state, action.loanId, (l) => ({
+        ...l,
+        state: newState,
+        currentVaReviewId: action.review.id,
+        vaId: null,
+        claimedAt: null,
+      }));
+      return log(next);
+    }
+
+    case "ReceiveVADocResponse": {
+      const cur = requireLoan(state, action.loanId);
+      const cs = cur.state ?? "agent_review_pending";
+      if (cs !== "va_doc_request_pending") {
+        throw new ActionError("VA_DOC_RESPONSE_INVALID_STATE",
+          `loan must be in va_doc_request_pending; was ${cs}`, { loanId: action.loanId, currentState: cs });
+      }
+      const next = withLoan(state, action.loanId, (l) => ({
+        ...l,
+        state: "agent_review_pending",
+        documents: [...l.documents, ...action.documents],
       }));
       return log(next);
     }
