@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useEffect, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Loan } from "@twin/core";
 import type { AuthUser } from "@/lib/auth";
-import { actionAssignLoan, actionUpdateAssignmentStatus, actionUnassignLoan } from "@/app/va/actions";
+import { actionAssignLoan, actionUpdateAssignmentStatus, actionUnassignLoan, actionGetVAPools } from "@/app/va/actions";
 import { actionRunAgent } from "@/app/loan/[loanId]/actions";
 import { money } from "@/lib/format";
 
@@ -28,14 +28,36 @@ interface Props {
   currentUser: AuthUser;
 }
 
+type PoolInfo = { id: string; name: string; kind: "internal" | "bpo" };
+
 export function VADashboard({ loans, currentUser }: Props) {
   const [pending, startTransition] = useTransition();
-  const [filter, setFilter] = useState<"my" | "unassigned" | "all">("my");
+  const [filter, setFilter] = useState<"my" | "unassigned" | "all" | "pool">("my");
+  const [pools, setPools] = useState<PoolInfo[]>([]);
+
+  useEffect(() => {
+    actionGetVAPools()
+      .then((r) => {
+        if (r.ok) setPools(r.pools);
+      })
+      .catch(() => {});
+  }, []);
 
   const validLoans = loans.filter(Boolean) as Loan[];
   const myLoans = validLoans.filter((l) => l.assignment?.assignedTo === currentUser.email);
   const unassigned = validLoans.filter((l) => !l.assignment);
-  const displayed = filter === "my" ? myLoans : filter === "unassigned" ? unassigned : validLoans;
+  const poolIds = new Set(pools.map((p) => p.id));
+  const poolQueue = validLoans.filter(
+    (l) => l.state === "va_review_pending" && l.assignedPoolId && poolIds.has(l.assignedPoolId),
+  );
+  const displayed =
+    filter === "my"
+      ? myLoans
+      : filter === "unassigned"
+        ? unassigned
+        : filter === "pool"
+          ? poolQueue
+          : validLoans;
 
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
@@ -109,6 +131,13 @@ export function VADashboard({ loans, currentUser }: Props) {
             {f === "my" ? `My Queue (${myLoans.length})` : f === "unassigned" ? `Unassigned (${unassigned.length})` : `All (${validLoans.length})`}
           </button>
         ))}
+        <button
+          onClick={() => setFilter("pool")}
+          className={`px-3 py-1 text-[11px] border border-[#6b7a8f] capitalize ${filter === "pool" ? "bg-[#1f4478] text-white" : "bg-white hover:bg-[#e8f0fe]"}`}
+          data-testid="filter-pool"
+        >
+          Pool Queue ({poolQueue.length})
+        </button>
       </div>
 
       {/* Loan table */}
@@ -173,6 +202,15 @@ export function VADashboard({ loans, currentUser }: Props) {
                   </td>
                   <td className="px-2 py-[3px] border-b border-[#c8c4b5]">
                     <div className="flex gap-1">
+                      {filter === "pool" && (
+                        <button
+                          className="enc-btn"
+                          onClick={() => router.push(`/loan/${loan.id}/va/review`)}
+                          data-testid={`claim-review-${loan.id}`}
+                        >
+                          Claim & Review
+                        </button>
+                      )}
                       {!a && (
                         <button className="enc-btn text-[9px]" disabled={pending} onClick={() => assignToMe(loan.id)}>
                           Assign to me

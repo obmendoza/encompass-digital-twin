@@ -45,3 +45,15 @@ export async function actionUnassignLoan(loanId: string) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
 }
+
+export async function actionGetVAPools(): Promise<
+  | { ok: true; pools: Array<{ id: string; name: string; kind: "internal" | "bpo" }> }
+  | { ok: false; error: string }
+> {
+  try {
+    const result = await api.vaPools();
+    return { ok: true, pools: result.pools };
+  } catch (e: unknown) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
