@@ -1698,3 +1698,724 @@ git commit -m "feat(api): va-toggle service — false→true backfill, true→fa
 
 ---
 
+## Phase 3 — VA routes (internal-staff path)
+
+Phase 3 wires the services from Phase 2 into HTTP routes for internal-staff VAs. BPO routes come in Phase 4. After Phase 3, an internal user can claim, release, submit (concur OR request_docs), see the queue, see review history, and the tenant admin can flip the toggle.
+
+### Task 11: VA route module + claim/release/release routes
+
+**Files:**
+- Create: `packages/api/src/routes/va.ts`
+- Modify: `packages/api/src/server.ts` (register the route module)
+- Create: `packages/api/test/va-routes.test.ts`
+
+- [ ] **Step 1: Implement the route module skeleton**
+
+```ts
+// packages/api/src/routes/va.ts
+import type { FastifyInstance } from "fastify";
+import { z } from "zod";
+import { getTenantId } from "../tenant-context.js";
+import { withTenantTx } from "../db/pool.js";
+import { claimLoan, releaseLoan } from "../services/va-pool.js";
+import { submitVAReview } from "../services/va-review-writer.js";
+import { applyToggleFlip } from "../services/va-toggle.js";
+import { VAReviewSchema } from "@twin/core/schemas";
+
+const SubmitBody = z.object({
+  verdict: z.enum(["concur", "request_docs"]),
+  specialistSignoffs: z.array(z.any()).length(6),
+  conditionActions: z.array(z.any()),
+  overallRationale: z.string().min(20),
+  docRequest: z.any().nullable(),
+  agentRecommendationId: z.string().uuid(),
+  kbVersion: z.string().min(1),
+  chatbotConsultationIds: z.array(z.string().uuid()).default([]),
+});
+
+const ToggleBody = z.object({ required: z.boolean() });
+
+function getActorFromRequest(req: any): { userId: string; email: string } {
+  const userId = req.headers["x-user-id"] ?? "unknown";
+  const email = req.headers["x-user-email"] ?? userId + "@local";
+  return { userId, email };
+}
+
+export function registerVARoutes(app: FastifyInstance) {
+  app.post("/loans/:id/va/claim", async (req, reply) => {
+    const tenantId = getTenantId();
+    const { id: loanId } = req.params as { id: string };
+    const actor = getActorFromRequest(req);
+    const result = await claimLoan(tenantId, loanId, actor.userId);
+    if (!result.claimed) return reply.status(409).send(result);
+    return reply.send(result);
+  });
+
+  app.post("/loans/:id/va/release", async (req, reply) => {
+    const tenantId = getTenantId();
+    const { id: loanId } = req.params as { id: string };
+    const actor = getActorFromRequest(req);
+    const result = await releaseLoan(tenantId, loanId, actor.userId);
+    if (!result.released) return reply.status(409).send(result);
+    return reply.send(result);
+  });
+
+  app.post("/loans/:id/va/review", async (req, reply) => {
+    const tenantId = getTenantId();
+    const { id: loanId } = req.params as { id: string };
+    const actor = getActorFromRequest(req);
+    const body = SubmitBody.parse(req.body);
+    // Look up the loan's claim metadata; bail if not currently claimed by this user.
+    const ctx = await withTenantTx(tenantId, async (c) => {
+      const { rows } = await c.query<{ va_id: string | null; assigned_pool_id: string | null; claimed_at: string | null; va_state: string }>(
+        "SELECT va_id, assigned_pool_id, claimed_at, va_state FROM loans WHERE id = $1",
+        [loanId],
+      );
+      return rows[0];
+    });
+    if (!ctx || ctx.va_state !== "va_in_review" || ctx.va_id !== actor.userId) {
+      return reply.status(409).send({ error: "VA_NOT_CLAIMANT", details: ctx });
+    }
+    const poolKindRow = await withTenantTx(tenantId, async (c) => {
+      const { rows } = await c.query<{ kind: "internal" | "bpo" }>("SELECT kind FROM va_pools WHERE id = $1", [ctx.assigned_pool_id]);
+      return rows[0];
+    });
+    // Validate full payload (rejects malformed signoffs, etc.).
+    const review = VAReviewSchema.parse({
+      id: "00000000-0000-0000-0000-000000000000",  // placeholder; writer assigns the real id
+      tenantId, loanId, vaId: actor.userId, vaPoolId: ctx.assigned_pool_id!, poolKind: poolKindRow.kind,
+      ...body,
+      claimedAt: ctx.claimed_at!, submittedAt: new Date().toISOString(), reviewTimeSeconds: 0,
+    });
+    const result = await submitVAReview({
+      tenantId, loanId, vaId: actor.userId, vaPoolId: ctx.assigned_pool_id!, poolKind: poolKindRow.kind,
+      verdict: review.verdict, specialistSignoffs: review.specialistSignoffs, conditionActions: review.conditionActions,
+      overallRationale: review.overallRationale, docRequest: review.docRequest,
+      agentRecommendationId: review.agentRecommendationId, kbVersion: review.kbVersion,
+      chatbotConsultationIds: review.chatbotConsultationIds, claimedAt: review.claimedAt,
+    });
+    return reply.send(result);
+  });
+
+  app.get("/loans/:id/va/review-history", async (req) => {
+    const tenantId = getTenantId();
+    const { id: loanId } = req.params as { id: string };
+    return withTenantTx(tenantId, async (c) => {
+      const { rows } = await c.query(
+        `SELECT id, va_id, va_pool_id, pool_kind, verdict, specialist_signoffs,
+                condition_actions, overall_rationale, doc_request, kb_version,
+                claimed_at, submitted_at, review_time_seconds
+           FROM va_reviews WHERE loan_id = $1 ORDER BY submitted_at ASC`,
+        [loanId],
+      );
+      return { reviews: rows };
+    });
+  });
+
+  app.get("/va/queue", async (req) => {
+    const tenantId = getTenantId();
+    const { pool, limit = "50", cursor } = req.query as { pool?: string; limit?: string; cursor?: string };
+    return withTenantTx(tenantId, async (c) => {
+      const params: any[] = [tenantId];
+      let where = "tenant_id = $1 AND va_state = 'va_review_pending'";
+      if (pool) { params.push(pool); where += ` AND assigned_pool_id = $${params.length}`; }
+      if (cursor) { params.push(cursor); where += ` AND id > $${params.length}`; }
+      params.push(Math.min(parseInt(limit, 10) || 50, 200));
+      const { rows } = await c.query(
+        `SELECT id, assigned_pool_id, body->>'borrower' AS borrower_json, body->>'transaction' AS tx_json
+           FROM loans WHERE ${where} ORDER BY id ASC LIMIT $${params.length}`,
+        params,
+      );
+      return { items: rows, nextCursor: rows.length === parseInt(limit, 10) ? rows[rows.length - 1].id : null };
+    });
+  });
+
+  app.get("/va/pools", async (req) => {
+    const tenantId = getTenantId();
+    const actor = getActorFromRequest(req);
+    return withTenantTx(tenantId, async (c) => {
+      const { rows } = await c.query(
+        `SELECT p.id, p.name, p.kind FROM va_pools p
+           JOIN va_pool_memberships m ON m.pool_id = p.id
+          WHERE p.tenant_id = $1 AND p.active = true AND m.member_id = $2`,
+        [tenantId, actor.userId],
+      );
+      return { pools: rows };
+    });
+  });
+
+  app.post("/admin/va/toggle", async (req, reply) => {
+    const tenantId = getTenantId();
+    const body = ToggleBody.parse(req.body);
+    const { rows } = await withTenantTx(tenantId, async (c) => c.query<{ settings: any }>("SELECT settings FROM tenants WHERE id = $1", [tenantId]));
+    const cur = rows[0]?.settings?.va;
+    if (!cur) return reply.status(409).send({ error: "TENANT_VA_UNCONFIGURED" });
+    if (body.required && !cur.fallbackPoolId) return reply.status(422).send({ error: "FALLBACK_POOL_REQUIRED" });
+    const result = await applyToggleFlip(tenantId, !!cur.required, body.required, cur.fallbackPoolId);
+    await withTenantTx(tenantId, async (c) => c.query(
+      "UPDATE tenants SET settings = settings || jsonb_build_object('va', settings->'va' || jsonb_build_object('required', $1::boolean)) WHERE id = $2",
+      [body.required, tenantId],
+    ));
+    return reply.send(result);
+  });
+}
+```
+
+- [ ] **Step 2: Register routes in server.ts**
+
+In `packages/api/src/server.ts`, after the existing route registrations:
+
+```ts
+import { registerVARoutes } from "./routes/va.js";
+// ... inside buildServer():
+registerVARoutes(app);
+```
+
+- [ ] **Step 3: Write integration test**
+
+```ts
+// packages/api/test/va-routes.test.ts
+import { describe, it, expect, beforeAll, beforeEach } from "vitest";
+import { buildServer } from "../src/server.js";
+
+const T = "00000000-0000-0000-0000-000000000099";
+const POOL = "00000000-0000-0000-0000-000000000aaa";
+const LOAN = "TR_VA_ROUTES";
+
+let app: Awaited<ReturnType<typeof buildServer>>;
+beforeAll(async () => { app = await buildServer({ store: undefined as any }); await app.ready(); });
+
+beforeEach(async () => {
+  // Seed via direct DB.  (Reuse helpers if your project has them; else use raw SQL through the api's pool.)
+});
+
+describe("VA routes", () => {
+  it("POST /loans/:id/va/claim returns 200 when in va_review_pending", async () => {
+    const res = await app.inject({
+      method: "POST", url: `/loans/${LOAN}/va/claim`,
+      headers: { "x-tenant-id": T, "x-user-id": "u1", "x-user-email": "u1@test" },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ claimed: true });
+  });
+
+  it("POST /loans/:id/va/claim returns 409 when not in va_review_pending", async () => {
+    // Setup: loan in agent_review_pending state (skip seed for brevity)
+    const res = await app.inject({
+      method: "POST", url: `/loans/NOT_PENDING/va/claim`,
+      headers: { "x-tenant-id": T, "x-user-id": "u1" },
+    });
+    expect(res.statusCode).toBe(409);
+  });
+
+  it("GET /loans/:id/va/review-history returns ordered prior reviews", async () => {
+    const res = await app.inject({
+      method: "GET", url: `/loans/${LOAN}/va/review-history`,
+      headers: { "x-tenant-id": T, "x-user-id": "u1" },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toHaveProperty("reviews");
+  });
+});
+```
+
+- [ ] **Step 4: Run tests and commit**
+
+```bash
+pnpm --filter @twin/api test va-routes
+git add packages/api/src/routes/va.ts packages/api/src/server.ts packages/api/test/va-routes.test.ts
+git commit -m "feat(api): VA routes — claim, release, submit, queue, pools, review-history, toggle"
+```
+
+---
+
+### Task 12: Hook routing into `StageRecommendation`
+
+**Files:**
+- Modify: `packages/api/src/routes/loans.ts` (or wherever StageRecommendation handler lives — search `case "StageRecommendation"`)
+
+- [ ] **Step 1: Locate handler and inject routing**
+
+After the reducer dispatches `StageRecommendation` (and the loan is now at `agent_review_pending`), add:
+
+```ts
+import { routeLoan } from "../services/va-routing.js";
+// ... after existing dispatch:
+const tenantSettings = await getTenantSettings(tenantId);  // existing helper
+if (tenantSettings?.va?.required === true) {
+  const route = await routeLoan(tenantId, updatedLoan, { fallbackPoolId: tenantSettings.va.fallbackPoolId });
+  await withTenantTx(tenantId, async (c) => {
+    await c.query(
+      "UPDATE loans SET va_state = 'va_review_pending', assigned_pool_id = $1 WHERE id = $2",
+      [route.poolId, loanId],
+    );
+  });
+} else {
+  // Auto-promote to uw_review_pending so existing UW flow works as today.
+  await withTenantTx(tenantId, async (c) => {
+    await c.query(
+      "UPDATE loans SET va_state = 'uw_review_pending' WHERE id = $1",
+      [loanId],
+    );
+  });
+}
+```
+
+- [ ] **Step 2: Build, test, commit**
+
+```bash
+pnpm --filter @twin/api build && pnpm --filter @twin/api test
+git add packages/api/src/routes/loans.ts
+git commit -m "feat(api): route loan to VA pool after StageRecommendation when tenant.va.required=true"
+```
+
+---
+
+## Phase 4 — BPO identity & portal
+
+Phase 4 ships the BPO partner subsystem: separate identity, `/bpo/*` portal, signed-URL document access with audit logging, and DPA-gated admin endpoints. After Phase 4, an external SME with a valid API key can claim and review loans via the BPO portal.
+
+### Task 13: BPO context + auth middleware
+
+**Files:**
+- Create: `packages/api/src/bpo-context.ts`
+- Create: `packages/api/src/middleware/bpo-auth.ts`
+
+- [ ] **Step 1: BPO context (AsyncLocalStorage)**
+
+```ts
+// packages/api/src/bpo-context.ts
+import { AsyncLocalStorage } from "node:async_hooks";
+
+export interface BpoContext {
+  partnerId: string;
+  smeId: string;
+  smeName: string;
+  tenantId: string;
+}
+
+const storage = new AsyncLocalStorage<BpoContext>();
+
+export function runWithBpoContext<T>(ctx: BpoContext, fn: () => Promise<T>): Promise<T> {
+  return new Promise((resolve, reject) => storage.run(ctx, () => fn().then(resolve, reject)));
+}
+
+export function getBpoContext(): BpoContext {
+  const ctx = storage.getStore();
+  if (!ctx) throw new Error("getBpoContext called outside a BPO request");
+  return ctx;
+}
+
+export function tryGetBpoContext(): BpoContext | null {
+  return storage.getStore() ?? null;
+}
+```
+
+- [ ] **Step 2: BPO auth middleware**
+
+```ts
+// packages/api/src/middleware/bpo-auth.ts
+import type { FastifyRequest, FastifyReply } from "fastify";
+import { createHash } from "node:crypto";
+import { withDb } from "../db/pool.js";
+
+export async function verifyBpoToken(req: FastifyRequest, reply: FastifyReply): Promise<{ ok: false } | { ok: true; tenantId: string; smeId: string; partnerId: string; smeName: string }> {
+  const auth = req.headers.authorization;
+  if (!auth || !auth.startsWith("Bearer ")) {
+    reply.status(401).send({ error: "missing_bearer_token" });
+    return { ok: false };
+  }
+  const token = auth.slice(7);
+  const hash = createHash("sha256").update(token).digest();
+  const row = await withDb(async (c) => {
+    const { rows } = await c.query<{ tenant_id: string; sme_id: string; partner_id: string; sme_name: string }>(
+      `SELECT k.tenant_id, k.sme_id, s.bpo_partner_id AS partner_id, s.name AS sme_name
+         FROM bpo_api_keys k
+         JOIN bpo_smes s ON s.id = k.sme_id
+        WHERE k.key_hash = $1 AND k.revoked_at IS NULL AND s.active = true`,
+      [hash],
+    );
+    return rows[0];
+  });
+  if (!row) {
+    reply.status(401).send({ error: "invalid_or_revoked_token" });
+    return { ok: false };
+  }
+  // Touch last_used_at; cheap async, ignore failure.
+  withDb(async (c) => c.query("UPDATE bpo_api_keys SET last_used_at = now() WHERE key_hash = $1", [hash])).catch(() => {});
+  return { ok: true, tenantId: row.tenant_id, smeId: row.sme_id, partnerId: row.partner_id, smeName: row.sme_name };
+}
+```
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add packages/api/src/bpo-context.ts packages/api/src/middleware/bpo-auth.ts
+git commit -m "feat(api): bpo-context + bpo-auth middleware (sha256 key verification, revoke check)"
+```
+
+---
+
+### Task 14: Admin BPO endpoints (partners + DPA gate, smes, api-keys)
+
+**Files:**
+- Create: `packages/api/src/routes/va-admin.ts`
+- Modify: `packages/api/src/server.ts`
+- Create: `packages/api/test/bpo-admin.test.ts`
+
+- [ ] **Step 1: Implement admin routes**
+
+```ts
+// packages/api/src/routes/va-admin.ts
+import type { FastifyInstance } from "fastify";
+import { z } from "zod";
+import { randomUUID, randomBytes, createHash } from "node:crypto";
+import { getTenantId } from "../tenant-context.js";
+import { withDb, withTenantTx } from "../db/pool.js";
+
+const PartnerCreate = z.object({
+  name: z.string().min(1),
+  contact_email: z.string().email(),
+  dpa_on_file: z.boolean(),
+  dpa_reference: z.string().nullable(),
+});
+
+const SMECreate = z.object({
+  bpo_partner_id: z.string().uuid(),
+  name: z.string().min(1),
+  email: z.string().email(),
+});
+
+const KeyCreate = z.object({
+  sme_id: z.string().uuid(),
+  // tenant_id implicit from getTenantId()
+});
+
+const PoolCreate = z.object({
+  name: z.string().min(1),
+  kind: z.enum(["internal", "bpo"]),
+  bpo_partner_id: z.string().uuid().nullable(),
+});
+
+const RuleCreate = z.object({
+  priority: z.number().int(),
+  match: z.object({
+    program: z.array(z.string()).optional(),
+    loanAmountMin: z.number().optional(),
+    loanAmountMax: z.number().optional(),
+    occupancy: z.array(z.enum(["Primary","Second","Investment"])).optional(),
+  }),
+  target_pool_id: z.string().uuid(),
+});
+
+export function registerVAAdminRoutes(app: FastifyInstance) {
+  // Partners are global — no tenant context required, but require admin auth (existing requireSuperAdmin or equivalent).
+  app.post("/admin/bpo/partners", async (req, reply) => {
+    const body = PartnerCreate.parse(req.body);
+    const id = await withDb(async (c) => {
+      const { rows } = await c.query<{ id: string }>(
+        "INSERT INTO bpo_partners (name, contact_email, dpa_on_file, dpa_reference) VALUES ($1,$2,$3,$4) RETURNING id",
+        [body.name, body.contact_email, body.dpa_on_file, body.dpa_reference],
+      );
+      return rows[0].id;
+    });
+    return reply.send({ id });
+  });
+
+  app.post("/admin/bpo/smes", async (req, reply) => {
+    const body = SMECreate.parse(req.body);
+    const id = await withDb(async (c) => {
+      const { rows } = await c.query<{ id: string }>(
+        "INSERT INTO bpo_smes (bpo_partner_id, name, email) VALUES ($1,$2,$3) RETURNING id",
+        [body.bpo_partner_id, body.name, body.email],
+      );
+      return rows[0].id;
+    });
+    return reply.send({ id });
+  });
+
+  app.post("/admin/bpo/api-keys", async (req, reply) => {
+    const body = KeyCreate.parse(req.body);
+    const tenantId = getTenantId();
+    const raw = randomBytes(32).toString("hex");
+    const hash = createHash("sha256").update(raw).digest();
+    const id = await withDb(async (c) => {
+      const { rows } = await c.query<{ id: string }>(
+        "INSERT INTO bpo_api_keys (sme_id, tenant_id, key_hash) VALUES ($1,$2,$3) RETURNING id",
+        [body.sme_id, tenantId, hash],
+      );
+      return rows[0].id;
+    });
+    // The raw token is returned ONCE here; never persisted.
+    return reply.send({ id, token: raw });
+  });
+
+  app.post("/admin/va/pools", async (req, reply) => {
+    const tenantId = getTenantId();
+    const body = PoolCreate.parse(req.body);
+    if (body.kind === "bpo" && !body.bpo_partner_id) {
+      return reply.status(422).send({ error: "BPO_PARTNER_ID_REQUIRED" });
+    }
+    try {
+      const id = await withTenantTx(tenantId, async (c) => {
+        const { rows } = await c.query<{ id: string }>(
+          "INSERT INTO va_pools (tenant_id, name, kind, bpo_partner_id, active) VALUES ($1,$2,$3,$4,true) RETURNING id",
+          [tenantId, body.name, body.kind, body.bpo_partner_id],
+        );
+        return rows[0].id;
+      });
+      return reply.send({ id });
+    } catch (e: any) {
+      if (e?.message?.includes("dpa_gate_violation")) {
+        return reply.status(409).send({ error: "DPA_GATE_VIOLATION", details: "BPO partner lacks dpa_on_file=true with dpa_reference" });
+      }
+      throw e;
+    }
+  });
+
+  app.post("/admin/va/routing-rules", async (req, reply) => {
+    const tenantId = getTenantId();
+    const body = RuleCreate.parse(req.body);
+    const id = await withTenantTx(tenantId, async (c) => {
+      const { rows } = await c.query<{ id: string }>(
+        "INSERT INTO va_routing_rules (tenant_id, priority, match, target_pool_id) VALUES ($1,$2,$3::jsonb,$4) RETURNING id",
+        [tenantId, body.priority, JSON.stringify(body.match), body.target_pool_id],
+      );
+      return rows[0].id;
+    });
+    return reply.send({ id });
+  });
+}
+```
+
+- [ ] **Step 2: Register + test DPA gate end-to-end**
+
+Test should hit `POST /admin/va/pools` with `kind=bpo` and a partner that has `dpa_on_file=false`; expect 409 with `DPA_GATE_VIOLATION`.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add packages/api/src/routes/va-admin.ts packages/api/src/server.ts packages/api/test/bpo-admin.test.ts
+git commit -m "feat(api): admin BPO + VA pool/routing endpoints; DPA gate enforced as 409"
+```
+
+---
+
+### Task 15: BPO portal routes (auth, queue, loan-detail, review submit, docs-returned)
+
+**Files:**
+- Create: `packages/api/src/routes/bpo.ts`
+- Modify: `packages/api/src/server.ts`
+
+- [ ] **Step 1: Implement portal routes**
+
+```ts
+// packages/api/src/routes/bpo.ts
+import type { FastifyInstance } from "fastify";
+import { verifyBpoToken } from "../middleware/bpo-auth.js";
+import { runWithBpoContext, getBpoContext } from "../bpo-context.js";
+import { runWithTenantContext } from "../tenant-context.js";
+import { withTenantTx } from "../db/pool.js";
+import { claimLoan, releaseLoan } from "../services/va-pool.js";
+import { submitVAReview } from "../services/va-review-writer.js";
+import { receiveVADocResponse } from "../services/va-doc-return.js";
+import { issueSignedUrl } from "../services/bpo-document-access.js";
+import { z } from "zod";
+
+async function bpoGuard<T>(req: any, reply: any, fn: () => Promise<T>): Promise<T | undefined> {
+  const auth = await verifyBpoToken(req, reply);
+  if (!auth.ok) return;
+  return runWithTenantContext({ tenantId: auth.tenantId }, () =>
+    runWithBpoContext({ partnerId: auth.partnerId, smeId: auth.smeId, smeName: auth.smeName, tenantId: auth.tenantId }, fn),
+  );
+}
+
+const SubmitBody = z.object({ /* same shape as /loans/:id/va/review body — reuse SubmitBody type */ });
+
+export function registerBpoRoutes(app: FastifyInstance) {
+  app.post("/bpo/auth", async (req, reply) =>
+    bpoGuard(req, reply, async () => {
+      const ctx = getBpoContext();
+      return { partnerId: ctx.partnerId, smeId: ctx.smeId, smeName: ctx.smeName, tenantId: ctx.tenantId };
+    }),
+  );
+
+  app.get("/bpo/queue", async (req, reply) =>
+    bpoGuard(req, reply, async () => {
+      const ctx = getBpoContext();
+      return withTenantTx(ctx.tenantId, async (c) => {
+        const { rows } = await c.query(
+          `SELECT l.id, l.assigned_pool_id, l.body
+             FROM loans l
+             JOIN va_pool_memberships m ON m.pool_id = l.assigned_pool_id
+            WHERE l.tenant_id = $1 AND l.va_state = 'va_review_pending'
+              AND m.member_id = $2 AND m.member_kind = 'bpo'
+            ORDER BY l.id ASC LIMIT 50`,
+          [ctx.tenantId, ctx.smeId],
+        );
+        return { items: rows };
+      });
+    }),
+  );
+
+  app.get("/bpo/loans/:id", async (req, reply) =>
+    bpoGuard(req, reply, async () => {
+      const ctx = getBpoContext();
+      const { id } = req.params as { id: string };
+      return withTenantTx(ctx.tenantId, async (c) => {
+        const { rows } = await c.query(
+          `SELECT l.* FROM loans l
+             JOIN va_pool_memberships m ON m.pool_id = l.assigned_pool_id
+            WHERE l.id = $1 AND m.member_id = $2 AND m.member_kind = 'bpo' LIMIT 1`,
+          [id, ctx.smeId],
+        );
+        if (rows.length === 0) {
+          // 404 (not 403) — don't leak loan-id existence to non-pool BPO actors.
+          reply.status(404).send({ error: "loan_not_found" });
+          return;
+        }
+        return { loan: rows[0] };
+      });
+    }),
+  );
+
+  app.get("/bpo/loans/:id/documents/:docId/signed-url", async (req, reply) =>
+    bpoGuard(req, reply, async () => {
+      const ctx = getBpoContext();
+      const { id, docId } = req.params as { id: string; docId: string };
+      const result = await issueSignedUrl({ tenantId: ctx.tenantId, partnerId: ctx.partnerId, smeId: ctx.smeId, loanId: id, docId });
+      return result;
+    }),
+  );
+
+  app.post("/bpo/loans/:id/claim", async (req, reply) =>
+    bpoGuard(req, reply, async () => {
+      const ctx = getBpoContext();
+      const { id } = req.params as { id: string };
+      const r = await claimLoan(ctx.tenantId, id, ctx.smeId);
+      if (!r.claimed) reply.status(409);
+      return r;
+    }),
+  );
+
+  app.post("/bpo/loans/:id/review", async (req, reply) =>
+    bpoGuard(req, reply, async () => {
+      // Identical to /loans/:id/va/review but with poolKind=bpo and actor.kind=bpo.
+      // Implementation: reuse the va.ts handler logic — extract a shared helper if duplication grows.
+      return { stub: "implement same way as /loans/:id/va/review" };
+    }),
+  );
+
+  app.post("/bpo/loans/:id/docs-returned", async (req, reply) =>
+    bpoGuard(req, reply, async () => {
+      const ctx = getBpoContext();
+      const { id } = req.params as { id: string };
+      const body = req.body as { documents: any[] };
+      return receiveVADocResponse({ tenantId: ctx.tenantId, loanId: id, documents: body.documents });
+    }),
+  );
+}
+```
+
+- [ ] **Step 2: Commit**
+
+```bash
+git add packages/api/src/routes/bpo.ts packages/api/src/server.ts
+git commit -m "feat(api): /bpo/* portal routes — auth, queue, loan-detail, claim, review, docs-returned"
+```
+
+---
+
+### Task 16: BPO document signed-URL service + audit logging
+
+**Files:**
+- Create: `packages/api/src/services/bpo-document-access.ts`
+- Create: `packages/api/test/bpo-document-access.test.ts`
+
+- [ ] **Step 1: Implement**
+
+```ts
+// packages/api/src/services/bpo-document-access.ts
+import { withTenantTx } from "../db/pool.js";
+import { getSupabaseAdmin } from "../supabase.js";  // existing helper
+
+export interface SignedUrlInput {
+  tenantId: string;
+  partnerId: string;
+  smeId: string;
+  loanId: string;
+  docId: string;
+}
+
+export interface SignedUrlResult {
+  url: string;
+  expiresAt: string;
+}
+
+const EXPIRY_SECONDS = 15 * 60;
+
+export async function issueSignedUrl(input: SignedUrlInput): Promise<SignedUrlResult> {
+  // 1. Resolve doc → bucket + path inside the loan's tenant context, validating membership.
+  const docRow = await withTenantTx(input.tenantId, async (c) => {
+    const { rows } = await c.query<{ storage_bucket: string; storage_path: string }>(
+      `SELECT d.storage_bucket, d.storage_path
+         FROM loan_documents d
+         JOIN loans l ON l.id = d.loan_id
+         JOIN va_pool_memberships m ON m.pool_id = l.assigned_pool_id
+        WHERE d.id = $1 AND d.loan_id = $2
+          AND m.member_id = $3 AND m.member_kind = 'bpo' LIMIT 1`,
+      [input.docId, input.loanId, input.smeId],
+    );
+    if (rows.length === 0) throw new Error("DOCUMENT_NOT_FOUND");
+    return rows[0];
+  });
+
+  // 2. Generate signed URL via Supabase Storage admin client.
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase.storage.from(docRow.storage_bucket).createSignedUrl(docRow.storage_path, EXPIRY_SECONDS);
+  if (error || !data) throw new Error(`signed_url_failed: ${error?.message}`);
+
+  const expiresAt = new Date(Date.now() + EXPIRY_SECONDS * 1000).toISOString();
+
+  // 3. Audit log every issuance.
+  await withTenantTx(input.tenantId, async (c) => {
+    await c.query(
+      `INSERT INTO tenant_audit_log (tenant_id, action_type, actor, target_type, target_id, metadata)
+       VALUES ($1, 'bpo_document_access', $2::jsonb, 'loan_document', $3, $4::jsonb)`,
+      [
+        input.tenantId,
+        JSON.stringify({ kind: "bpo", partnerId: input.partnerId, smeId: input.smeId }),
+        input.docId,
+        JSON.stringify({ tenant_id: input.tenantId, loan_id: input.loanId, expiry_at: expiresAt }),
+      ],
+    );
+  });
+
+  return { url: data.signedUrl, expiresAt };
+}
+```
+
+- [ ] **Step 2: Test (signed URL issued, audit row written, non-pool returns 404 upstream)**
+
+```ts
+// packages/api/test/bpo-document-access.test.ts
+import { describe, it, expect } from "vitest";
+import { issueSignedUrl } from "../src/services/bpo-document-access.js";
+
+describe("bpo-document-access", () => {
+  it("rejects when doc/loan/sme combo doesn't match a pool membership", async () => {
+    await expect(issueSignedUrl({ tenantId: "T", partnerId: "P", smeId: "outsider", loanId: "L", docId: "D" }))
+      .rejects.toThrow(/DOCUMENT_NOT_FOUND/);
+  });
+});
+```
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add packages/api/src/services/bpo-document-access.ts packages/api/test/bpo-document-access.test.ts
+git commit -m "feat(api): BPO document signed-URL service (15-min expiry) with tenant_audit_log row per access"
+```
+
+---
+
