@@ -23,7 +23,7 @@ describe("loan routes", () => {
     const { app } = await loaded();
     const res = await app.inject({ method: "GET", url: "/loans/2501000101" });
     expect(res.statusCode).toBe(200);
-    expect(res.json().nqmProgram).toBe("BankStatement12");
+    expect(res.json().nqmProgram).toBe("Flex Select");
   });
 
   it("GET /loans/:id returns 400 for unknown id", async () => {
