@@ -107,7 +107,7 @@ export async function saveState(state: WorldState, tenantId: string = DEFAULT_TE
       updated_at: new Date().toISOString(),
     });
 
-    const lastSaved = (globalThis as Record<string, number>).__lastSavedSeq ?? 0;
+    const lastSaved = (globalThis as unknown as Record<string, number>).__lastSavedSeq ?? 0;
     const newEntries = state.actionLog.filter((e) => e.seq > lastSaved);
 
     if (newEntries.length > 0) {
@@ -119,7 +119,7 @@ export async function saveState(state: WorldState, tenantId: string = DEFAULT_TE
           action: e.action,
         })),
       );
-      (globalThis as Record<string, number>).__lastSavedSeq =
+      (globalThis as unknown as Record<string, number>).__lastSavedSeq =
         state.actionLog[state.actionLog.length - 1]?.seq ?? 0;
     }
   } catch (e) {
@@ -139,7 +139,7 @@ export async function clearState(): Promise<void> {
       updated_at: new Date().toISOString(),
     });
     await db.from("action_log").delete().gte("seq", 0);
-    (globalThis as Record<string, number>).__lastSavedSeq = 0;
+    (globalThis as unknown as Record<string, number>).__lastSavedSeq = 0;
   } catch (e) {
     console.error("[persistence] Failed to clear state:", e);
   }

@@ -432,11 +432,11 @@ class ClaudeVisionProcessor implements DocumentProcessor {
             "anthropic-version": "2023-06-01",
             "anthropic-beta": "pdfs-2024-09-25",
           },
-        }, (res: { statusCode: number; on: Function }) => {
+        }, (res) => {
           let data = "";
-          res.on("data", (chunk: string) => { data += chunk; });
+          res.on("data", (chunk: Buffer) => { data += chunk.toString(); });
           res.on("end", () => {
-            if ((res.statusCode as number) >= 400) {
+            if ((res.statusCode ?? 0) >= 400) {
               reject(new Error(`Anthropic API ${res.statusCode}: ${data.slice(0, 300)}`));
             } else {
               try { resolve(JSON.parse(data)); }

@@ -49,7 +49,7 @@ export async function verifyJwt(token: string): Promise<VerifiedClaims> {
   };
 }
 
-export function extractJwt(req: { headers: Record<string, string | string[] | undefined>; cookies?: Record<string, string> }): string | null {
+export function extractJwt(req: { headers: Record<string, string | string[] | undefined>; cookies?: Record<string, string | undefined> }): string | null {
   // Authorization header (API clients, direct calls)
   const authHeader = req.headers.authorization;
   if (typeof authHeader === "string" && authHeader.startsWith("Bearer ")) {

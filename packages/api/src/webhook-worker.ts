@@ -54,7 +54,7 @@ async function handleRetry(client: import("pg").PoolClient, deliveryId: string, 
   if (nextAttempt >= RETRY_DELAYS_MS.length) {
     await client.query("UPDATE webhook_deliveries SET status = 'dead', attempts = $1, last_error = $2 WHERE id = $3", [nextAttempt, error, deliveryId]);
   } else {
-    const delay = RETRY_DELAYS_MS[nextAttempt] + Math.random() * 10_000;
+    const delay = RETRY_DELAYS_MS[nextAttempt]! + Math.random() * 10_000;
     const nextRetryAt = new Date(Date.now() + delay).toISOString();
     await client.query("UPDATE webhook_deliveries SET status = 'failed', attempts = $1, last_error = $2, next_retry_at = $3 WHERE id = $4", [nextAttempt, error, nextRetryAt, deliveryId]);
   }

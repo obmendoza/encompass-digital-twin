@@ -110,12 +110,12 @@ export function registerVAAdminRoutes(app: FastifyInstance): void {
         action: "bpo_partner_create",
         reason: `Created BPO partner: ${body.name}`,
         metadata: {
-          partner_id: rows[0].id,
+          partner_id: rows[0]!.id,
           name: body.name,
           dpa_on_file: body.dpa_on_file,
         },
       });
-      return rows[0].id;
+      return rows[0]!.id;
     });
     return reply.send({ id });
   });
@@ -137,12 +137,12 @@ export function registerVAAdminRoutes(app: FastifyInstance): void {
         action: "bpo_sme_create",
         reason: `Created BPO SME: ${body.name}`,
         metadata: {
-          sme_id: rows[0].id,
+          sme_id: rows[0]!.id,
           partner_id: body.bpo_partner_id,
           email: body.email,
         },
       });
-      return rows[0].id;
+      return rows[0]!.id;
     });
     return reply.send({ id });
   });
@@ -168,9 +168,9 @@ export function registerVAAdminRoutes(app: FastifyInstance): void {
         targetTenantId: tenantId,
         action: "bpo_api_key_create",
         reason: `Issued BPO API key for SME ${body.sme_id}`,
-        metadata: { api_key_id: rows[0].id, sme_id: body.sme_id }, // raw token NOT stored
+        metadata: { api_key_id: rows[0]!.id, sme_id: body.sme_id }, // raw token NOT stored
       });
-      return rows[0].id;
+      return rows[0]!.id;
     });
     return reply.send({ id, token: raw }); // raw shown ONCE; never persisted
   });

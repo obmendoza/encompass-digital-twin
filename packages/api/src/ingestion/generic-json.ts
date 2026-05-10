@@ -15,10 +15,11 @@ function setNestedValue(obj: Record<string, unknown>, path: string, value: unkno
   const parts = path.split(".");
   let current = obj;
   for (let i = 0; i < parts.length - 1; i++) {
-    if (!(parts[i] in current) || typeof current[parts[i]] !== "object") current[parts[i]] = {};
-    current = current[parts[i]] as Record<string, unknown>;
+    const key = parts[i]!; // i < parts.length-1 ⇒ parts[i] is defined
+    if (!(key in current) || typeof current[key] !== "object") current[key] = {};
+    current = current[key] as Record<string, unknown>;
   }
-  current[parts[parts.length - 1]] = value;
+  current[parts[parts.length - 1]!] = value;
 }
 
 function coerce(value: unknown): unknown {
@@ -38,6 +39,7 @@ export class GenericJsonTransformer implements IngestionTransformer {
     for (const [sourceField, targetField] of Object.entries(fieldMap)) {
       if (targetField.includes("=")) {
         const [target, expr] = targetField.split("=").map((s) => s.trim());
+        if (!target || !expr) continue;
         if (expr.includes("+")) {
           const parts = expr.split("+").map((p) => {
             p = p.trim();

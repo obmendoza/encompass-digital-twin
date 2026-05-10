@@ -173,7 +173,10 @@ export interface DetectionRuleConfig {
   windowDays: number;
 }
 
-export const DETECTION_RULES: Record<string, DetectionRuleConfig> = {
+// Typed as a concrete shape (not Record<string, ...>) so callers reading a
+// named rule get a non-undefined DetectionRuleConfig under strict mode with
+// noUncheckedIndexedAccess. Adding a new rule? Add the key here.
+export const DETECTION_RULES = {
   high_override_rate: {
     minSample: 20,
     threshold: 0.25,
@@ -194,7 +197,7 @@ export const DETECTION_RULES: Record<string, DetectionRuleConfig> = {
     threshold: 0.3,
     windowDays: 30,
   },
-};
+} satisfies Record<string, DetectionRuleConfig>;
 
 // ── Onboarding Types ────────────────────────────────────────────
 

@@ -48,7 +48,8 @@ export async function claimLoan(
       [vaId, tenantId, loanId],
     );
     if (rows.length === 1) {
-      return { claimed: true, loanId: rows[0].loan_id, vaId: rows[0].va_id };
+      const r = rows[0]!;
+      return { claimed: true, loanId: r.loan_id, vaId: r.va_id };
     }
 
     // Diagnostic SELECT: distinguish not-found / wrong-state / not-a-member.
@@ -58,10 +59,10 @@ export async function claimLoan(
         WHERE tenant_id = $1 AND loan_id = $2`,
       [tenantId, loanId],
     );
-    if (diag.rows.length === 0) {
+    const row = diag.rows[0];
+    if (!row) {
       return { claimed: false, loanId, vaId: null, reason: "loan not found" };
     }
-    const row = diag.rows[0];
     if (row.va_state !== "va_review_pending") {
       const owner = row.va_id ?? "unknown";
       return {
@@ -106,7 +107,7 @@ export async function releaseLoan(
       [tenantId, loanId, vaId],
     );
     if (rows.length === 1) {
-      return { released: true, loanId: rows[0].loan_id };
+      return { released: true, loanId: rows[0]!.loan_id };
     }
 
     const diag = await client.query<VaLoanStateRow>(
@@ -115,10 +116,10 @@ export async function releaseLoan(
         WHERE tenant_id = $1 AND loan_id = $2`,
       [tenantId, loanId],
     );
-    if (diag.rows.length === 0) {
+    const row = diag.rows[0];
+    if (!row) {
       return { released: false, loanId, reason: "loan not found" };
     }
-    const row = diag.rows[0];
     if (row.va_state !== "va_in_review") {
       return {
         released: false,

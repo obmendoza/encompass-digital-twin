@@ -51,7 +51,7 @@ function buildLoanFromPartial(loanId: string, partial: Partial<Loan>, tenantId: 
     },
     qualifying: partial.qualifying ?? {
       housingRatio: monthlyIncome > 0 ? Math.round(piti / monthlyIncome * 10000) / 100 : 0,
-      totalDti: partial.qualifying?.totalDti ?? 0,
+      totalDti: 0,
       piPayment: Math.round(piPayment * 100) / 100,
       qualifyingRate: noteRate,
     },
@@ -96,7 +96,8 @@ export function registerIngestionRoutes(app: FastifyInstance, store: Store): voi
     "/api/ingest/:tenantSlug/loans",
     { preHandler: apiKeyAuthHook },
     async (req, reply) => {
-      const tenantId = (req as unknown as Record<string, string>).tenantId;
+      const tenantId = (req as unknown as { tenantId?: string }).tenantId;
+      if (!tenantId) return reply.code(401).send({ error: "missing tenant context" });
       const parsed = IngestLoanRequestSchema.safeParse(req.body);
       if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
 
@@ -107,7 +108,7 @@ export function registerIngestionRoutes(app: FastifyInstance, store: Store): voi
         async () => {
           // Idempotency check
           const existing = await withTenantTx(tenantId, async (client) => {
-            const { rows } = await client.query(
+            const { rows } = await client.query<{ loan_id: string; status: string }>(
               "SELECT loan_id, status FROM ingested_loans WHERE external_id = $1", [externalId]
             );
             return rows[0] ?? null;
@@ -118,7 +119,7 @@ export function registerIngestionRoutes(app: FastifyInstance, store: Store): voi
 
           // Load mapping + transform
           const mapping = await withTenantTx(tenantId, async (client) => {
-            const { rows } = await client.query(
+            const { rows } = await client.query<{ transformer_type: string; field_map: Record<string, string> | null }>(
               "SELECT transformer_type, field_map FROM ingestion_mappings WHERE source_name = $1 AND active = true LIMIT 1", [source]
             );
             return rows[0] ?? null;
@@ -127,7 +128,7 @@ export function registerIngestionRoutes(app: FastifyInstance, store: Store): voi
           const transformer = getTransformer(mapping?.transformer_type ?? "generic-json");
           if (!transformer) return reply.code(400).send({ error: `Unknown transformer: ${mapping?.transformer_type}` });
 
-          const fieldMap = (mapping?.field_map as Record<string, string>) ?? {};
+          const fieldMap = mapping?.field_map ?? {};
           const partialLoan = Object.keys(fieldMap).length > 0
             ? transformer.transform(loanData, fieldMap)
             : (loanData as Partial<Loan>);

@@ -24,7 +24,7 @@ function isPublicPath(url: string): boolean {
 /** Extract slug from `/t/:slug/...` URLs */
 function extractSlug(url: string): string | null {
   const match = url.match(/^\/t\/([^/]+)/);
-  return match ? match[1] : null;
+  return match?.[1] ?? null;
 }
 
 export function registerJwtTenantResolver(app: FastifyInstance): void {

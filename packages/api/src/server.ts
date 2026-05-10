@@ -162,11 +162,12 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 
     // Load demo fixture loans with real demo tenant UUID
     if (DEMO_TENANT_ID) {
-      for (const id of Object.keys(scenarios)) {
+      for (const [id, scenario] of Object.entries(scenarios)) {
         store.dispatch({
           type: "InjectLoan",
-          loan: { ...scenarios[id].loan, tenantId: DEMO_TENANT_ID },
+          loan: { ...scenario.loan, tenantId: DEMO_TENANT_ID },
         });
+        void id; // unused, but keep loop var explicit
       }
       console.log(`[boot] Loaded ${Object.keys(scenarios).length} fixture loans into demo tenant`);
     }

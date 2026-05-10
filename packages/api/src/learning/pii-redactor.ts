@@ -168,7 +168,7 @@ export function checkKAnonymity(
   // Find indices where count < k
   const uniqueIndices: number[] = [];
   for (let i = 0; i < keys.length; i++) {
-    if ((counts.get(keys[i]) ?? 0) < k) {
+    if ((counts.get(keys[i]!) ?? 0) < k) {
       uniqueIndices.push(i);
     }
   }
@@ -242,7 +242,7 @@ export function redactSamples(
 
   working = working.map((s, i) => ({
     ...s,
-    rationale: textResults[i].redacted,
+    rationale: textResults[i]!.redacted,
   }));
 
   // Stage 3: k-anonymity with bucketed quasi-identifiers
@@ -276,8 +276,8 @@ export function redactSamples(
 
   for (let i = 0; i < working.length; i++) {
     const manifest: RedactionManifest = {
-      sampleId: working[i].id ?? `sample-${i}`,
-      typesRedacted: textResults[i].types,
+      sampleId: working[i]!.id ?? `sample-${i}`,
+      typesRedacted: textResults[i]!.types,
       ficoBand: bandSize,
       ltvBand: bandSize,
       dtiBand: bandSize,

@@ -45,14 +45,14 @@ export function setAtPath(obj: unknown, path: string, value: unknown): void {
   let current = obj as Record<string, unknown>;
 
   for (let i = 0; i < segments.length - 1; i++) {
-    const seg = segments[i];
+    const seg = segments[i]!; // i < segments.length-1 ⇒ defined
     if (current[seg] == null || typeof current[seg] !== "object") {
       current[seg] = {};
     }
     current = current[seg] as Record<string, unknown>;
   }
 
-  current[segments[segments.length - 1]] = value;
+  current[segments[segments.length - 1]!] = value;
 }
 
 /**
@@ -64,7 +64,7 @@ export function deleteAtPath(obj: unknown, path: string): boolean {
   let current = obj as Record<string, unknown>;
 
   for (let i = 0; i < segments.length - 1; i++) {
-    const seg = segments[i];
+    const seg = segments[i]!;
     if (current[seg] == null || typeof current[seg] !== "object") {
       return false;
     }
@@ -72,7 +72,7 @@ export function deleteAtPath(obj: unknown, path: string): boolean {
   }
 
   const lastSeg = segments[segments.length - 1];
-  if (!(lastSeg in current)) return false;
+  if (lastSeg === undefined || !(lastSeg in current)) return false;
 
   delete current[lastSeg];
   return true;
