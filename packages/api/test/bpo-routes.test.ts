@@ -353,21 +353,7 @@ describe("bpo routes", () => {
     }
   });
 
-  it("GET /bpo/loans/:id/documents/:docId/signed-url — 501 stub", async () => {
-    const { app } = buildServer();
-    await app.ready();
-    try {
-      const res = await app.inject({
-        method: "GET",
-        url: `/bpo/loans/${LOAN_SIGNED_URL}/documents/doc-123/signed-url`,
-        headers: bearer(),
-      });
-      expect(res.statusCode).toBe(501);
-      const body = res.json();
-      expect(body.error).toBe("NOT_IMPLEMENTED");
-      expect(body.details).toMatch(/Task 16/);
-    } finally {
-      await app.close();
-    }
-  });
+  // Note: GET /bpo/loans/:id/documents/:docId/signed-url is fully covered by
+  // bpo-document-access.test.ts (Task 16). Service-unit + route integration
+  // tests live there together with their Supabase mock setup.
 });

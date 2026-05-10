@@ -22,6 +22,7 @@ import { runInTenantContext } from "../tenant-context.js";
 import { withTenantTx } from "../db/pool.js";
 import { claimLoan } from "../services/va-pool.js";
 import { submitVAReview } from "../services/va-review-writer.js";
+import { issueSignedUrl } from "../services/bpo-document-access.js";
 import { getLoanForTenant } from "./_helpers.js";
 
 // Body shape for POST /bpo/loans/:id/review. Mirrors va.ts SubmitBody — the
@@ -273,16 +274,84 @@ export function registerBpoRoutes(app: FastifyInstance, store: Store): void {
       ),
   );
 
-  // ── GET /bpo/loans/:id/documents/:docId/signed-url (STUB) ──
-  // Task 16 will wire the signed-URL service here.
+  // ── GET /bpo/loans/:id/documents/:docId/signed-url ──
+  // Issue a 15-minute Supabase Storage signed URL for one document on a loan
+  // the SME owns through pool membership. Two-layer guard mirrors GET
+  // /bpo/loans/:id (404 on either failure to avoid leaking loan-id existence
+  // to actors who don't own the pool):
+  //   1. SQL EXISTS — SME is a 'bpo' member of the loan's assigned pool.
+  //   2. In-memory store — loan exists for this tenant AND has a doc with
+  //      the given id and a non-empty fileKey.
+  // On success the call goes through services/bpo-document-access.ts which
+  // writes a `tenant_audit_log` row with action='bpo_document_access'.
+  // Storage failures map to clean 502/503 instead of bubbling as 500.
   app.get<{ Params: { id: string; docId: string } }>(
     "/bpo/loans/:id/documents/:docId/signed-url",
     async (req, reply) =>
-      bpoGuarded(req, reply, async () =>
-        reply.status(501).send({
-          error: "NOT_IMPLEMENTED",
-          details: "wired in Task 16",
-        }),
-      ),
+      bpoGuarded(req, reply, async () => {
+        const ctx = getBpoContext();
+        const { id: loanId, docId } = req.params;
+
+        // 1. Pool-membership check (same predicate as GET /bpo/loans/:id).
+        const member = await withTenantTx(ctx.tenantId, async (c) => {
+          const { rows } = await c.query<{ ok: boolean }>(
+            `SELECT EXISTS (
+               SELECT 1 FROM va_loan_state s
+                JOIN va_pool_memberships m ON m.pool_id = s.assigned_pool_id
+               WHERE s.tenant_id = $1
+                 AND s.loan_id = $2
+                 AND m.member_id = $3
+                 AND m.member_kind = 'bpo'
+             ) AS ok`,
+            [ctx.tenantId, loanId, ctx.smeId],
+          );
+          return rows[0]?.ok ?? false;
+        });
+        if (!member) {
+          return reply.status(404).send({ error: "loan_not_found" });
+        }
+
+        // 2. Resolve the loan + document from the in-memory store. Use the
+        // shared helper so tenant isolation is enforced consistently.
+        const loan = getLoanForTenant(store, loanId);
+        if (!loan) {
+          return reply.status(404).send({ error: "loan_not_found" });
+        }
+        const doc = loan.documents.find((d) => d.id === docId);
+        if (!doc) {
+          return reply.status(404).send({ error: "document_not_found" });
+        }
+        if (!doc.fileKey) {
+          return reply.status(409).send({ error: "document_has_no_file" });
+        }
+
+        // 3. Issue signed URL + write audit row.
+        try {
+          const result = await issueSignedUrl({
+            tenantId: ctx.tenantId,
+            partnerId: ctx.partnerId,
+            smeId: ctx.smeId,
+            loanId,
+            docId,
+            fileKey: doc.fileKey,
+          });
+          return reply.send(result);
+        } catch (e) {
+          const msg = (e as { message?: unknown })?.message;
+          if (typeof msg === "string" && msg.startsWith("BPO_DOC_STORAGE_UNCONFIGURED")) {
+            return reply.status(503).send({
+              error: "STORAGE_UNCONFIGURED",
+              details: "Supabase storage env vars missing",
+            });
+          }
+          if (typeof msg === "string" && msg.startsWith("BPO_SIGNED_URL_FAILED")) {
+            return reply.status(502).send({
+              error: "STORAGE_FAILED",
+              details: msg,
+            });
+          }
+          throw e;
+        }
+      }),
   );
 }
