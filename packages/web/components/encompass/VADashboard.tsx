@@ -26,11 +26,14 @@ const PRIORITY_COLORS: Record<string, string> = {
 interface Props {
   loans: (Loan | null)[];
   currentUser: AuthUser;
+  /** Loans currently in va_review_pending. Sourced from /va/queue (the
+   * va_loan_state side-table), not from Loan itself which has no VA fields. */
+  queueItems?: Array<{ loan_id: string; assigned_pool_id: string }>;
 }
 
 type PoolInfo = { id: string; name: string; kind: "internal" | "bpo" };
 
-export function VADashboard({ loans, currentUser }: Props) {
+export function VADashboard({ loans, currentUser, queueItems = [] }: Props) {
   const [pending, startTransition] = useTransition();
   const [filter, setFilter] = useState<"my" | "unassigned" | "all" | "pool">("my");
   const [pools, setPools] = useState<PoolInfo[]>([]);
@@ -47,9 +50,12 @@ export function VADashboard({ loans, currentUser }: Props) {
   const myLoans = validLoans.filter((l) => l.assignment?.assignedTo === currentUser.email);
   const unassigned = validLoans.filter((l) => !l.assignment);
   const poolIds = new Set(pools.map((p) => p.id));
-  const poolQueue = validLoans.filter(
-    (l) => l.state === "va_review_pending" && l.assignedPoolId && poolIds.has(l.assignedPoolId),
+  const queuedPoolByLoan = new Map(
+    queueItems
+      .filter((i) => poolIds.has(i.assigned_pool_id))
+      .map((i) => [i.loan_id, i.assigned_pool_id]),
   );
+  const poolQueue = validLoans.filter((l) => queuedPoolByLoan.has(l.id));
   const displayed =
     filter === "my"
       ? myLoans

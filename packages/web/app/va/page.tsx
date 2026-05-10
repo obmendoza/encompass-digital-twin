@@ -25,13 +25,24 @@ export default async function VAPage() {
   );
   const fullLoans = allLoansData.filter(Boolean);
 
+  // VA review state lives in the va_loan_state side-table, not on Loan.
+  // Fetch the current va_review_pending queue so the dashboard can populate
+  // the Pool Queue tab. Empty list is fine (e.g., va.required=false).
+  let queueItems: Array<{ loan_id: string; assigned_pool_id: string }> = [];
+  try {
+    const q = await api.vaQueue();
+    queueItems = q.items.map((i) => ({ loan_id: i.loan_id, assigned_pool_id: i.assigned_pool_id }));
+  } catch {
+    // VA layer not configured for this tenant — leave queueItems empty.
+  }
+
   return (
     <div className="border border-[#6b7a8f] m-2">
       <TitleBar scenarioId="VA Dashboard" user={user} />
       <MenuBar />
       <Toolbar userRole={user.role} />
       <div className="bg-white p-3">
-        <VADashboard loans={fullLoans} currentUser={user} />
+        <VADashboard loans={fullLoans} currentUser={user} queueItems={queueItems} />
       </div>
       <ChatPanelWrapper />
     </div>
