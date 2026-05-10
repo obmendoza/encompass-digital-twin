@@ -32,6 +32,7 @@ import { registerLearningMetricsRoutes } from "./routes/learning-metrics.js";
 import { registerPatternRoutes } from "./routes/patterns.js";
 import { registerApiKeyRoutes } from "./routes/api-keys.js";
 import { registerOnboardingRoutes } from "./routes/onboarding.js";
+import { registerVARoutes } from "./routes/va.js";
 import { startLearningWorker } from "./learning-worker.js";
 import { getDemoTenantId, getTenantType } from "./tenant-cache.js";
 
@@ -87,6 +88,7 @@ export function buildServer(opts: BuildOpts = {}): { app: FastifyInstance; store
   registerPatternRoutes(app);
   registerApiKeyRoutes(app);
   registerOnboardingRoutes(app);
+  registerVARoutes(app);
   if (opts.enableWebSocket) registerWsRoutes(app);
 
   app.get("/health", async () => {
