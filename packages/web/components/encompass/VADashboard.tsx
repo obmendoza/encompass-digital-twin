@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import type { Loan } from "@twin/core";
 import type { AuthUser } from "@/lib/auth";
 import { actionAssignLoan, actionUpdateAssignmentStatus, actionUnassignLoan, actionGetVAPools } from "@/app/va/actions";
+import { actionClaimVA } from "@/app/loan/[loanId]/va/review/actions";
 import { actionRunAgent } from "@/app/loan/[loanId]/actions";
 import { money } from "@/lib/format";
 
@@ -211,7 +212,22 @@ export function VADashboard({ loans, currentUser, queueItems = [] }: Props) {
                       {filter === "pool" && (
                         <button
                           className="enc-btn"
-                          onClick={() => router.push(`/loan/${loan.id}/va/review`)}
+                          disabled={pending}
+                          onClick={() => {
+                            setError(null);
+                            startTransition(async () => {
+                              const r = await actionClaimVA(loan.id);
+                              if (!r.ok) {
+                                setError(`Claim failed: ${r.error}`);
+                                return;
+                              }
+                              if (!r.claimed) {
+                                setError(`Claim failed: ${r.reason ?? "unknown"}`);
+                                return;
+                              }
+                              router.push(`/loan/${loan.id}/va/review`);
+                            });
+                          }}
                           data-testid={`claim-review-${loan.id}`}
                         >
                           Claim & Review
