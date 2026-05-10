@@ -40,3 +40,7 @@ tmp/
 
 # Playwright auth state
 e2e/.auth/
+
+# E2E harness run output (matrix.json, punch-list.md, per-cell JSON files).
+# Each run creates a timestamped subdirectory under reports/.
+reports/
