@@ -91,7 +91,7 @@ export function buildServer(opts: BuildOpts = {}): { app: FastifyInstance; store
   registerPatternRoutes(app);
   registerApiKeyRoutes(app);
   registerOnboardingRoutes(app);
-  registerVARoutes(app);
+  registerVARoutes(app, store);
   registerVAAdminRoutes(app);
   registerBpoRoutes(app, store);
   if (opts.enableWebSocket) registerWsRoutes(app);

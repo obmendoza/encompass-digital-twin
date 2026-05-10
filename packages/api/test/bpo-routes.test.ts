@@ -334,25 +334,10 @@ describe("bpo routes", () => {
     }
   });
 
-  it("POST /bpo/loans/:id/docs-returned — 501 stub", async () => {
-    const { app } = buildServer();
-    await app.ready();
-    try {
-      const res = await app.inject({
-        method: "POST",
-        url: `/bpo/loans/${LOAN_DOCS_RETURNED}/docs-returned`,
-        headers: bearer(),
-        payload: {},
-      });
-      expect(res.statusCode).toBe(501);
-      const body = res.json();
-      expect(body.error).toBe("NOT_IMPLEMENTED");
-      expect(body.details).toMatch(/Task 18/);
-    } finally {
-      await app.close();
-    }
-  });
-
+  // Note: POST /bpo/loans/:id/docs-returned happy-path + state-mismatch
+  // coverage lives in va-doc-return.test.ts (Task 18) — the test there
+  // uses the same BPO auth fixture pattern as this file.
+  //
   // Note: GET /bpo/loans/:id/documents/:docId/signed-url is fully covered by
   // bpo-document-access.test.ts (Task 16). Service-unit + route integration
   // tests live there together with their Supabase mock setup.

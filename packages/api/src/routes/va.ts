@@ -8,12 +8,13 @@
 
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { VAReviewSchema } from "@twin/core";
+import { VAReviewSchema, type Store } from "@twin/core";
 import { getTenantContext, getTenantId } from "../tenant-context.js";
 import { withTenantTx } from "../db/pool.js";
 import { claimLoan, releaseLoan } from "../services/va-pool.js";
 import { submitVAReview } from "../services/va-review-writer.js";
 import { applyToggleFlip } from "../services/va-toggle.js";
+import { receiveVADocResponse } from "../services/va-doc-return.js";
 
 // Body shape for POST /loans/:id/va/review.
 // We do shape-only validation here; the full structural invariants
@@ -32,7 +33,20 @@ const SubmitBody = z.object({
 
 const ToggleBody = z.object({ required: z.boolean() });
 
-export function registerVARoutes(app: FastifyInstance) {
+// Body shape for POST /loans/:id/va/docs-returned. Shared with the BPO route
+// (bpo.ts defines its own copy to keep import surfaces simple).
+const DocsReturnedBody = z.object({
+  documents: z
+    .array(
+      z.object({
+        name: z.string().min(1),
+        docType: z.string().min(1),
+      }),
+    )
+    .min(1),
+});
+
+export function registerVARoutes(app: FastifyInstance, store: Store) {
   // ── POST /loans/:id/va/claim ──
   app.post<{ Params: { id: string } }>("/loans/:id/va/claim", async (req, reply) => {
     const tenantId = getTenantId();
@@ -157,6 +171,36 @@ export function registerVARoutes(app: FastifyInstance) {
     });
     return reply.send(result);
   });
+
+  // ── POST /loans/:id/va/docs-returned ──
+  // Originator (or internal staff acting on their behalf) returns the docs the
+  // VA requested in a `request_docs` verdict. Adds the docs to the loan, flips
+  // va_state back to agent_review_pending, and pings the agent service to
+  // re-run. Returns 409 LOAN_NOT_AWAITING_DOCS if the loan isn't currently in
+  // va_doc_request_pending.
+  app.post<{ Params: { id: string } }>(
+    "/loans/:id/va/docs-returned",
+    async (req, reply) => {
+      const tenantId = getTenantId();
+      const { userId } = getTenantContext();
+      const loanId = req.params.id;
+      const body = DocsReturnedBody.parse(req.body);
+      try {
+        const result = await receiveVADocResponse(
+          store,
+          { tenantId, loanId, documents: body.documents },
+          { kind: "internal", id: userId },
+        );
+        return reply.send(result);
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (msg.startsWith("LOAN_NOT_AWAITING_DOCS")) {
+          return reply.status(409).send({ error: "LOAN_NOT_AWAITING_DOCS" });
+        }
+        throw e;
+      }
+    },
+  );
 
   // ── GET /loans/:id/va/review-history ──
   app.get<{ Params: { id: string } }>("/loans/:id/va/review-history", async (req) => {

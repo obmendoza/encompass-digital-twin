@@ -23,6 +23,7 @@ import { withTenantTx } from "../db/pool.js";
 import { claimLoan } from "../services/va-pool.js";
 import { submitVAReview } from "../services/va-review-writer.js";
 import { issueSignedUrl } from "../services/bpo-document-access.js";
+import { receiveVADocResponse } from "../services/va-doc-return.js";
 import { getLoanForTenant } from "./_helpers.js";
 
 // Body shape for POST /bpo/loans/:id/review. Mirrors va.ts SubmitBody — the
@@ -38,6 +39,19 @@ const SubmitBody = z.object({
   agentRecommendationId: z.string().uuid(),
   kbVersion: z.string().min(1),
   chatbotConsultationIds: z.array(z.string().uuid()).default([]),
+});
+
+// Body shape for POST /bpo/loans/:id/docs-returned. Mirrors va.ts
+// DocsReturnedBody — kept local so this file stays self-contained.
+const DocsReturnedBody = z.object({
+  documents: z
+    .array(
+      z.object({
+        name: z.string().min(1),
+        docType: z.string().min(1),
+      }),
+    )
+    .min(1),
 });
 
 /**
@@ -261,17 +275,36 @@ export function registerBpoRoutes(app: FastifyInstance, store: Store): void {
       }),
   );
 
-  // ── POST /bpo/loans/:id/docs-returned (STUB) ──
-  // Task 18 will wire receiveVADocResponse here.
+  // ── POST /bpo/loans/:id/docs-returned ──
+  // SME returns the docs the VA requested in a `request_docs` verdict. Adds
+  // the docs to the loan, flips va_state back to agent_review_pending, and
+  // pings the agent service to re-run. The state predicate (must be
+  // va_doc_request_pending) is the gate here — unlike GET /bpo/loans/:id,
+  // this route doesn't separately verify pool membership. That's intentional:
+  // the va_state filter narrowly scopes which loans can be acted on, and the
+  // BPO bearer already constrains the tenant.
   app.post<{ Params: { id: string } }>(
     "/bpo/loans/:id/docs-returned",
     async (req, reply) =>
-      bpoGuarded(req, reply, async () =>
-        reply.status(501).send({
-          error: "NOT_IMPLEMENTED",
-          details: "wired in Task 18",
-        }),
-      ),
+      bpoGuarded(req, reply, async () => {
+        const ctx = getBpoContext();
+        const loanId = req.params.id;
+        const body = DocsReturnedBody.parse(req.body);
+        try {
+          const result = await receiveVADocResponse(
+            store,
+            { tenantId: ctx.tenantId, loanId, documents: body.documents },
+            { kind: "bpo", id: ctx.smeId },
+          );
+          return reply.send(result);
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : String(e);
+          if (msg.startsWith("LOAN_NOT_AWAITING_DOCS")) {
+            return reply.status(409).send({ error: "LOAN_NOT_AWAITING_DOCS" });
+          }
+          throw e;
+        }
+      }),
   );
 
   // ── GET /bpo/loans/:id/documents/:docId/signed-url ──
