@@ -1,6 +1,7 @@
 import { withDb } from "./db/pool.js";
 import { withTenantTx } from "./db/pool.js";
 import { detectPatterns, persistPatterns } from "./learning/pattern-detector.js";
+import { detectVAPatterns } from "./learning/va-pattern-detector.js";
 import { computeDailySnapshot, saveSnapshot } from "./learning/metrics-computer.js";
 import { generateInsight } from "./learning/insight-generator.js";
 
@@ -32,6 +33,26 @@ export async function runLearningCycle(): Promise<void> {
             if (newIds.length > 0) {
               console.log(`[learning] Tenant ${tenant.id}: ${newIds.length} new patterns detected`);
             }
+          }
+
+          // 2b. VA pattern detection — co-tenant pass on the same lock-43 cycle.
+          // Wrapped in its own try/catch so VA errors don't poison the existing
+          // decision-record patterns or downstream insight generation.
+          try {
+            const vaCandidates = await detectVAPatterns(tenant.id);
+            if (vaCandidates.length > 0) {
+              const newIds = await persistPatterns(tenant.id, vaCandidates);
+              if (newIds.length > 0) {
+                console.log(
+                  `[learning] Tenant ${tenant.id}: ${newIds.length} new VA patterns detected`,
+                );
+              }
+            }
+          } catch (e) {
+            console.error(
+              `[learning] VA pattern detection failed for tenant ${tenant.id}:`,
+              e,
+            );
           }
 
           // 3. Insight generation for new patterns
