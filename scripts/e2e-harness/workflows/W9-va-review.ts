@@ -57,20 +57,23 @@ export const W9: WorkflowDef = {
       return finalize(fixture, start, "fail", "P1", assertions, {}, "AGENT_PIPELINE_FAILED", msg);
     }
 
-    // 3. Verify loan reached va_review_pending.
-    type Loan = { id: string; state?: string; decision?: string; assignedPoolId?: string | null };
-    const loanAfterAgent = await http.get<Loan>(apiOpts, `/loans/${fixture.loanId}`);
+    // 3. Verify loan reached va_review_pending. VA state is in the side table
+    //    va_loan_state, exposed via GET /va/queue (which filters to
+    //    va_review_pending). Loan id appearing in the queue == correct state.
+    type QueueResp = { items: Array<{ loan_id: string; assigned_pool_id: string }> };
+    const queue = await http.get<QueueResp>(apiOpts, `/va/queue?limit=200`);
+    const queued = queue.items.find((i) => i.loan_id === fixture.loanId);
     assertions.push({
       name: "loan_in_va_review_pending",
-      expected: "va_review_pending",
-      actual: loanAfterAgent.state ?? "unset",
-      ok: loanAfterAgent.state === "va_review_pending",
+      expected: "loan in va queue",
+      actual: queued ? "queued" : "not in queue",
+      ok: !!queued,
     });
-    if (loanAfterAgent.state !== "va_review_pending") {
+    if (!queued) {
       return finalize(
         fixture, start, "fail", "P0", assertions, {},
         "VA_ROUTING_DID_NOT_FIRE",
-        `loan.state was ${loanAfterAgent.state ?? "unset"} after agent — expected va_review_pending`,
+        `loan ${fixture.loanId} not in /va/queue after agent — VA routing did not stage va_review_pending`,
       );
     }
 

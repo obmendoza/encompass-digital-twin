@@ -18,13 +18,20 @@ export function registerTenantRoutes(app: FastifyInstance): void {
     });
   });
 
-  // Get single tenant by slug
+  // Get single tenant by slug, or by UUID when the param is UUID-shaped.
   app.get<{ Params: { slug: string } }>("/tenants/:slug", async (req, reply) => {
     const { slug } = req.params;
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(slug);
     return withDb(async (client) => {
-      const { rows } = await client.query(
-        "SELECT id, name, slug, status, settings, created_at FROM tenants WHERE slug = $1 AND deleted_at IS NULL", [slug]
-      );
+      const { rows } = isUuid
+        ? await client.query(
+            "SELECT id, name, slug, status, settings, created_at FROM tenants WHERE id = $1 AND deleted_at IS NULL",
+            [slug],
+          )
+        : await client.query(
+            "SELECT id, name, slug, status, settings, created_at FROM tenants WHERE slug = $1 AND deleted_at IS NULL",
+            [slug],
+          );
       if (rows.length === 0) return reply.code(404).send({ error: "Tenant not found" });
       return rows[0];
     });
