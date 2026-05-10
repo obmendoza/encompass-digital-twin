@@ -327,11 +327,32 @@ export interface Loan {
   tenantId?: string;
   guidelineVersionId?: string;
   slaDeadlines?: import("./tenant-types.js").SlaDeadlines;
-  // VA review layer additions (spec 2026-05-10 v2.1):
+  // ── VA review layer fields (spec 2026-05-10 v2.1) ──────────────────────────
+  //
+  // ⚠️  IN-MEMORY / TEST-ONLY. Do NOT read these in production code paths.
+  //
+  // The VA reducer cases (RouteToVA / ClaimForVAReview / SubmitVAReview / ...)
+  // populate these so unit tests on the @twin/core reducer can assert on Loan
+  // state. Production VA flows go through DB-only writer services
+  // (va-routing, va-pool, va-review-writer, va-doc-return) that never re-enter
+  // the reducer — so in real deployments these stay null/undefined.
+  //
+  // Authoritative sources for production reads:
+  //   - state, assignedPoolId, vaId, claimedAt → va_loan_state side-table,
+  //     exposed via GET /va/queue
+  //   - currentVaReviewId / latest review        → GET /loans/:id/va/review-history
+  //
+  // See: feedback_va_loan_fields_vestigial.md (project memory).
+
+  /** @deprecated Read from /va/queue instead — see Loan-VA fields note above. */
   state?: LoanState;                    // undefined ⇒ "agent_review_pending" by convention
+  /** @deprecated Read from /loans/:id/va/review-history instead. */
   currentVaReviewId?: string | null;
+  /** @deprecated Read from /va/queue (claimed_at indicates claimant via va_id column). */
   vaId?: string | null;                  // current claimant when state === "va_in_review"
+  /** @deprecated Read from /va/queue. */
   claimedAt?: string | null;
+  /** @deprecated Read from /va/queue. */
   assignedPoolId?: string | null;
 }
 
