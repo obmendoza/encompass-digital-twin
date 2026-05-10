@@ -84,15 +84,25 @@ async function dispatcherLoop(): Promise<void> {
   }
 }
 
-async function processBatch(): Promise<number> {
+// `tenantFilter` is a test-only escape hatch. The production loop calls
+// processBatch() with no args (process all tenants); tests pass their
+// dedicated tenant id so concurrent test files don't poach each other's
+// outbox rows.
+async function processBatch(opts?: { tenantFilter?: string }): Promise<number> {
   const events = await withDb(async (c) => {
+    const params: unknown[] = [BATCH_SIZE];
+    let where = "WHERE delivered_at IS NULL AND next_attempt_at <= now()";
+    if (opts?.tenantFilter) {
+      params.push(opts.tenantFilter);
+      where += ` AND tenant_id = $${params.length}`;
+    }
     const { rows } = await c.query<OutboxEvent>(
       `SELECT id, tenant_id, event_type, loan_id, payload, attempts
          FROM va_event_outbox
-        WHERE delivered_at IS NULL AND next_attempt_at <= now()
+        ${where}
         ORDER BY created_at ASC
         LIMIT $1`,
-      [BATCH_SIZE],
+      params,
     );
     return rows;
   });

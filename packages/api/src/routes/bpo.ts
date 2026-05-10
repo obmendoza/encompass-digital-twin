@@ -278,11 +278,10 @@ export function registerBpoRoutes(app: FastifyInstance, store: Store): void {
   // ── POST /bpo/loans/:id/docs-returned ──
   // SME returns the docs the VA requested in a `request_docs` verdict. Adds
   // the docs to the loan, flips va_state back to agent_review_pending, and
-  // pings the agent service to re-run. The state predicate (must be
-  // va_doc_request_pending) is the gate here — unlike GET /bpo/loans/:id,
-  // this route doesn't separately verify pool membership. That's intentional:
-  // the va_state filter narrowly scopes which loans can be acted on, and the
-  // BPO bearer already constrains the tenant.
+  // pings the agent service to re-run. Two-layer guard matching GET
+  // /bpo/loans/:id and the signed-url route: pool membership AND state
+  // predicate (404 on missing membership to avoid leaking loan-id existence;
+  // 409 on state mismatch).
   app.post<{ Params: { id: string } }>(
     "/bpo/loans/:id/docs-returned",
     async (req, reply) =>
@@ -290,6 +289,28 @@ export function registerBpoRoutes(app: FastifyInstance, store: Store): void {
         const ctx = getBpoContext();
         const loanId = req.params.id;
         const body = DocsReturnedBody.parse(req.body);
+
+        // 1. Pool-membership predicate — same shape as GET /bpo/loans/:id and
+        //    the signed-url route. SME must be a 'bpo' member of the loan's
+        //    assigned pool. Returns 404 (not 403) so cross-pool actors cannot
+        //    probe loan-id existence.
+        const member = await withTenantTx(ctx.tenantId, async (c) => {
+          const { rows } = await c.query<{ ok: boolean }>(
+            `SELECT EXISTS (
+               SELECT 1 FROM va_loan_state s
+                JOIN va_pool_memberships m ON m.pool_id = s.assigned_pool_id
+               WHERE s.tenant_id = $1 AND s.loan_id = $2
+                 AND m.member_id = $3 AND m.member_kind = 'bpo'
+             ) AS ok`,
+            [ctx.tenantId, loanId, ctx.smeId],
+          );
+          return rows[0]?.ok ?? false;
+        });
+        if (!member) {
+          return reply.status(404).send({ error: "loan_not_found" });
+        }
+
+        // 2. State predicate is enforced inside the service.
         try {
           const result = await receiveVADocResponse(
             store,

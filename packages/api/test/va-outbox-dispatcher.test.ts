@@ -124,7 +124,7 @@ describe("va-outbox-dispatcher", () => {
     await setTenantAdapter({ kind: "ui-only" });
     const id = await insertOutboxEvent(`${TEST_LOAN_PREFIX}UI`);
 
-    const processed = await __testing.processBatch();
+    const processed = await __testing.processBatch({ tenantFilter: TEST_TENANT_ID });
     expect(processed).toBeGreaterThanOrEqual(1);
 
     const row = await readOutbox(id);
@@ -148,7 +148,7 @@ describe("va-outbox-dispatcher", () => {
     });
     globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
 
-    await __testing.processBatch();
+    await __testing.processBatch({ tenantFilter: TEST_TENANT_ID });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0];
@@ -184,7 +184,7 @@ describe("va-outbox-dispatcher", () => {
     globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
 
     const before = Date.now();
-    await __testing.processBatch();
+    await __testing.processBatch({ tenantFilter: TEST_TENANT_ID });
     const after = Date.now();
 
     const row = await readOutbox(id);
@@ -201,7 +201,7 @@ describe("va-outbox-dispatcher", () => {
     await setTenantAdapter({ kind: "npnqm-portal" });
     const id = await insertOutboxEvent(`${TEST_LOAN_PREFIX}NPNQM`);
 
-    await __testing.processBatch();
+    await __testing.processBatch({ tenantFilter: TEST_TENANT_ID });
 
     const row = await readOutbox(id);
     expect(row.delivered_at).toBeNull();
@@ -216,7 +216,7 @@ describe("va-outbox-dispatcher", () => {
       attempts: 5,
     });
 
-    await __testing.processBatch();
+    await __testing.processBatch({ tenantFilter: TEST_TENANT_ID });
 
     const row = await readOutbox(id);
     expect(row.delivered_at).toBeNull();
