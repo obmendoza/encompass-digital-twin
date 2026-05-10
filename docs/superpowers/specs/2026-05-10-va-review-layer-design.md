@@ -1,8 +1,32 @@
 # VA Review Layer — Design
 
 **Date:** 2026-05-10
-**Status:** Draft, pending user review
+**Status:** Signed off (v2 — 2026-05-10) with v2.1 architectural amendment (2026-05-10) — see §"Architectural amendment".
 **Owner:** UAS platform team
+
+## Architectural amendment (v2.1, 2026-05-10)
+
+The v2 spec — both during design and during sign-off review — assumed the codebase had a relational `loans` table. **It does not.** Loans are stored as JSONB inside `world_state.loans` (single-row store, reconstructed in-memory at API boot — see `packages/api/src/persistence.ts`). The only loan-related relational tables are `ingested_loans` (a queue/pointer registry) and `loan_programs` (a code lookup). Existing tenant-scoped relational tables that reference loans use `loan_id TEXT` with no foreign key — see `decision_records` for the pattern.
+
+The implementer surfaced this on Plan Task 1.
+
+**Correction.** Per-loan VA state (`va_state`, `current_va_review_id`, `va_id`, `claimed_at`, `assigned_pool_id`) lives in a dedicated **`va_loan_state` side table** keyed by `(tenant_id, loan_id)`. The race-safe single-row UPDATE pattern from §Routing & Claim Flow operates on `va_loan_state` rather than a (nonexistent) `loans` table. The in-memory `Loan` type still carries these fields for the reducer's convenience; the side table is the durable, race-safe persistence layer. World_state.loans JSONB remains the source of truth for the rest of the loan record.
+
+**Why this is the right correction (not an architectural redesign):**
+- Surgical — touches no existing persistence code.
+- Preserves the exact race-safe claim contract the spec promised (single SQL UPDATE guarded by `va_state = 'va_review_pending'` AND a pool-membership EXISTS predicate).
+- Mirrors the `decision_records` pattern already used everywhere (`loan_id TEXT`, no FK, tenant-scoped RLS).
+- All other tables and behavior in the v2 spec remain exactly as specified.
+
+**Concrete substitutions** wherever this spec or its implementation plan show `loans` columns:
+- `loans.va_state` → `va_loan_state.va_state`
+- `loans.current_va_review_id` → `va_loan_state.current_va_review_id`
+- `loans.va_id` → `va_loan_state.va_id`
+- `loans.claimed_at` → `va_loan_state.claimed_at`
+- `loans.assigned_pool_id` → `va_loan_state.assigned_pool_id`
+- `UPDATE loans SET …` (where the SET touches any of those fields) → `UPDATE va_loan_state SET …` keyed by `(tenant_id, loan_id)`. Use upsert (`INSERT … ON CONFLICT (tenant_id, loan_id) DO UPDATE`) when the VA state row may not yet exist.
+
+**Secondary fix.** The v2 spec's three `ALTER TABLE … ADD CONSTRAINT IF NOT EXISTS …` statements use invalid PostgreSQL syntax (Postgres supports `ADD COLUMN IF NOT EXISTS` and `DROP CONSTRAINT IF EXISTS`, but not `ADD CONSTRAINT IF NOT EXISTS`). Migrations run exactly once via the `_migrations` ledger, so plain `ADD CONSTRAINT` is the correct form.
 
 ## Goal
 

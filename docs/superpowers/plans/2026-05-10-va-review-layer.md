@@ -12,6 +12,40 @@
 
 ---
 
+## Architectural correction (post-Task-1, 2026-05-10) — READ THIS FIRST
+
+The v2 spec assumed a relational `loans` table. **There is none.** Loans are stored as JSONB inside `world_state.loans` (see `packages/api/src/persistence.ts`). The implementer surfaced this on Task 1, and the user confirmed the side-table fix.
+
+**Wherever this plan below shows `loans.va_state`, `UPDATE loans SET va_state…`, or `SELECT … FROM loans WHERE va_state…`, substitute `va_loan_state` instead.** `va_loan_state` is a new dedicated side table created by Task 1's migration, keyed by `(tenant_id, loan_id)`, holding only the VA-relevant fields (`va_state`, `current_va_review_id`, `va_id`, `claimed_at`, `assigned_pool_id`). The in-memory `Loan` type (Task 3) still carries the same fields for reducer convenience; the side table is the durable, race-safe persistence layer.
+
+When the VA state row may not yet exist for a given loan (e.g., first time the routing service touches it after `StageRecommendation`), use upsert:
+
+```sql
+INSERT INTO va_loan_state (tenant_id, loan_id, va_state, assigned_pool_id, updated_at)
+VALUES ($1, $2, 'va_review_pending', $3, now())
+ON CONFLICT (tenant_id, loan_id)
+DO UPDATE SET va_state = EXCLUDED.va_state, assigned_pool_id = EXCLUDED.assigned_pool_id, updated_at = now();
+```
+
+The race-safe claim from Task 8 keeps the same shape, just on the side table:
+
+```sql
+UPDATE va_loan_state
+   SET va_state = 'va_in_review', va_id = $1, claimed_at = now(), updated_at = now()
+ WHERE tenant_id = $2 AND loan_id = $3 AND va_state = 'va_review_pending'
+   AND EXISTS (
+     SELECT 1 FROM va_pool_memberships m
+      WHERE m.pool_id = va_loan_state.assigned_pool_id AND m.member_id = $1
+   )
+RETURNING loan_id, va_id;
+```
+
+The plan text below was written before this correction was made; treat the substitution above as authoritative. Spec amendment lives at the top of `docs/superpowers/specs/2026-05-10-va-review-layer-design.md` (§"Architectural amendment").
+
+Secondary fix already applied to Task 1's SQL: `ADD CONSTRAINT IF NOT EXISTS` is invalid PG syntax (only `ADD COLUMN IF NOT EXISTS` and `DROP CONSTRAINT IF EXISTS` exist). Plain `ADD CONSTRAINT` is the correct form — the `_migrations` ledger ensures one-time application.
+
+---
+
 ## Resolutions for spec ambiguities
 
 These five resolutions came up while writing the plan — none change the spec's intent, just lock in the implementation choice the spec left open:
