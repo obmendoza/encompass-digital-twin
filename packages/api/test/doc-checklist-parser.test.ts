@@ -5,6 +5,7 @@ import {
   parseEngineRules,
   parseResolverTable,
   parseAll,
+  verifyParity,
   DocChecklistParseError,
 } from "../src/ingestion/doc-checklist-parser.js";
 
@@ -205,5 +206,35 @@ describe("parseResolverTable", () => {
 | Full Doc | W2 | US Citizen | TRUE | Full Documentation - Wage Earner |
 `;
     expect(() => parseResolverTable(broken)).toThrow(/invalid ITIN value/);
+  });
+});
+
+// ── Task 7: parseAll composer + verifyParity ────────────────────────────────
+
+describe("parseAll + verifyParity", () => {
+  it("parseAll returns 32 scenarios + 3 rules + 32 resolver rows + footer + hash", () => {
+    const md = loadFixture();
+    const r = parseAll(md);
+    expect(r.scenarios).toHaveLength(32);
+    expect(r.rules).toHaveLength(3);
+    expect(r.resolver).toHaveLength(32);
+    expect(r.generatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
+    expect(r.sourceHash).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("verifyParity passes for the real fixture", () => {
+    const md = loadFixture();
+    const r = parseAll(md);
+    // Should not throw
+    verifyParity(r.scenarios);
+  });
+
+  it("verifyParity throws when a parsed list differs from raw_min_msg", () => {
+    const md = loadFixture();
+    const r = parseAll(md);
+    // Hand-corrupt one scenario's minimum_docs
+    const corrupt = JSON.parse(JSON.stringify(r.scenarios)) as typeof r.scenarios;
+    corrupt[0]!.minimum_docs[0]!.name = "TOTALLY DIFFERENT DOC";
+    expect(() => verifyParity(corrupt)).toThrow(/parity mismatch/i);
   });
 });

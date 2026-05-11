@@ -391,6 +391,39 @@ export function parseAll(markdown: string): ParseResult {
   return { scenarios, rules, resolver, generatedAt, sourceHash };
 }
 
+/**
+ * Verify that each scenario's parsed minimum_docs/income_docs reproduce the
+ * raw_min_msg / raw_income_msg pipe-lists embedded in the source markdown's
+ * <details> block. Catches:
+ *   - Parser bugs (we emitted a different list than the engine produced)
+ *   - Stale markdown (the file's parsed sections don't match its own raw lines)
+ *   - Hand-edits post-generation
+ *
+ * Spec §3.4.
+ */
+export function verifyParity(scenarios: ScenarioRow[]): void {
+  for (const s of scenarios) {
+    const parsedMin = `Missing base documents: ${docsToPipeList(s.minimum_docs)}`;
+    const parsedInc = `Required documents: ${docsToPipeList(s.income_docs)}`;
+    if (parsedMin !== s.raw_min_msg.trim()) {
+      throw new DocChecklistParseError(
+        `parity mismatch for scenario '${s.resolved_income_type}' minimum_docs:\n  parsed: ${parsedMin}\n  raw:    ${s.raw_min_msg.trim()}`,
+        "B",
+      );
+    }
+    if (parsedInc !== s.raw_income_msg.trim()) {
+      throw new DocChecklistParseError(
+        `parity mismatch for scenario '${s.resolved_income_type}' income_docs:\n  parsed: ${parsedInc}\n  raw:    ${s.raw_income_msg.trim()}`,
+        "B",
+      );
+    }
+  }
+}
+
+function docsToPipeList(items: DocItem[]): string {
+  return items.map((d) => (d.note ? `${d.name} (Note: ${d.note})` : d.name)).join(" | ");
+}
+
 // ── Internal helpers used by multiple parsers ──────────────────────────────
 
 /** Walk a marked AST, yielding only top-level heading tokens with text. */
