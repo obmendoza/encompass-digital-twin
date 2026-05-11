@@ -170,3 +170,30 @@ describe("parseEngineRules", () => {
     expect(() => parseEngineRules(broken)).toThrow(/unknown engine rule/i);
   });
 });
+
+describe("parseResolverTable", () => {
+  it("parses all 32 resolver rows from the real fixture", () => {
+    const rows = parseResolverTable(loadFixture());
+    expect(rows).toHaveLength(32);
+    // First row: Full Doc / W2 / US Citizen / not-ITIN → Full Documentation - Wage Earner
+    const first = rows[0]!;
+    expect(first.income_doc_type).toBe("Full Doc");
+    expect(first.borrower_type).toBe("W2");
+    expect(first.citizenship).toBe("US Citizen");
+    expect(first.is_itin).toBe(false);
+    expect(first.resolved_income_type).toBe("Full Documentation - Wage Earner");
+    // ITIN row spot-check
+    const itin = rows.find((r) => r.is_itin && r.income_doc_type === "Bank Stmts: 12 Mo. Personal")!;
+    expect(itin.resolved_income_type).toBe("ITIN - Bank Statement 12 Mo. Personal");
+  });
+
+  it("rejects a table with the wrong header order", () => {
+    const broken = `## 4. Quick reference: Frontend → resolved Neo4j type
+
+| BorrowerType | IncomeDocType | Citizenship | ITIN | Resolved |
+|---|---|---|---|---|
+| W2 | Full Doc | US Citizen | False | Full Documentation - Wage Earner |
+`;
+    expect(() => parseResolverTable(broken)).toThrow(/header.*column.*order/i);
+  });
+});

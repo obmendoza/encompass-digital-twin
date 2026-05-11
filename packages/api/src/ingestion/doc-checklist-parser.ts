@@ -294,7 +294,65 @@ function ruleTextToRow(ruleText: string, behavior: string): RuleRow {
 }
 
 export function parseResolverTable(markdown: string): ResolverRow[] {
-  throw new Error("parseResolverTable not yet implemented");
+  const tokens = parseAst(markdown);
+  // File Section D: ## 4. Quick reference: Frontend → resolved Neo4j type
+  let inSection = false;
+  let table: Tokens.Table | null = null;
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i]!;
+    if (t.type === "heading") {
+      const h = t as Tokens.Heading;
+      if (h.depth === 2 && /Quick reference.*resolved Neo4j type/i.test(h.text)) {
+        inSection = true;
+        continue;
+      }
+      if (inSection && h.depth === 2) break;
+    }
+    if (inSection && t.type === "table") {
+      table = t as Tokens.Table;
+      break;
+    }
+  }
+  if (!table) {
+    throw new DocChecklistParseError("File Section D: missing resolver table under H2", "D");
+  }
+
+  // Strict header-order check per spec §1.2.
+  const headers = table.header.map((h) => (h as Tokens.TableCell).text.trim());
+  const expected = ["`IncomeDocType`", "`BorrowerType`", "`Citizenship`", "ITIN", "Resolved"];
+  if (headers.length !== expected.length) {
+    throw new DocChecklistParseError(
+      `File Section D: header column count mismatch (expected ${expected.length}, got ${headers.length})`,
+      "D",
+    );
+  }
+  for (let i = 0; i < expected.length; i++) {
+    if (headers[i] !== expected[i]) {
+      throw new DocChecklistParseError(
+        `File Section D: header column order wrong at index ${i} (expected '${expected[i]}', got '${headers[i]}')`,
+        "D",
+      );
+    }
+  }
+
+  return table.rows.map((row) => {
+    const cells = row.map((c) => (c as Tokens.TableCell).text.trim().replace(/^`|`$/g, ""));
+    const [incomeDocType, borrowerType, citizenship, itinRaw, resolved] = cells;
+    if (borrowerType !== "W2" && borrowerType !== "Self-Employed") {
+      throw new DocChecklistParseError(`File Section D: invalid BorrowerType '${borrowerType}'`, "D");
+    }
+    if (citizenship !== "US Citizen" && citizenship !== "Foreign Nationals") {
+      throw new DocChecklistParseError(`File Section D: invalid Citizenship '${citizenship}'`, "D");
+    }
+    const isItin = itinRaw === "True" || itinRaw === "true";
+    return {
+      income_doc_type: incomeDocType!,
+      borrower_type: borrowerType,
+      citizenship,
+      is_itin: isItin,
+      resolved_income_type: resolved!,
+    };
+  });
 }
 
 export function parseAll(markdown: string): ParseResult {
