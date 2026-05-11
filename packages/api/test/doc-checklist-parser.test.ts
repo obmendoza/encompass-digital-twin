@@ -142,15 +142,18 @@ describe("parseEngineRules", () => {
     expect(rules).toHaveLength(3);
     const llc = rules.find((r) => r.rule_name === "llc_closing_docs")!;
     expect(llc).toBeDefined();
+    expect(llc.predicate.kind).toBe("llc_closing_docs");
     expect(llc.predicate.LLCOrLegalEntity).toBe(true);
     expect(llc.predicate.occupancy_in).toEqual(["investment"]);
     expect(llc.predicate.program_not_in).toEqual(
       expect.arrayContaining(["Investor DSCR", "DSCR Supreme", "DSCR Multi", "Investor DSCR No Ratio"]),
     );
     const fr = rules.find((r) => r.rule_name === "field_review")!;
+    expect(fr.predicate.kind).toBe("field_review");
     expect(fr.predicate.state).toBe("NY");
     expect(fr.predicate.county_in).toEqual(expect.arrayContaining(["Brooklyn", "Kings"]));
     const us = rules.find((r) => r.rule_name === "us_credit_optional")!;
+    expect(us.predicate.kind).toBe("us_credit_optional");
     expect(us.predicate.USCredit).toBe(false);
     expect(us.effect.remove_docs).toEqual(expect.arrayContaining(["Credit Report dated within 90 days"]));
   });

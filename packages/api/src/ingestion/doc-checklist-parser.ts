@@ -257,6 +257,7 @@ function ruleTextToRow(ruleText: string, behavior: string): RuleRow {
     return {
       rule_name: "llc_closing_docs",
       predicate: {
+        kind: "llc_closing_docs",
         LLCOrLegalEntity: true,
         occupancy_in: ["investment"],
         program_not_in: ["Investor DSCR", "DSCR Supreme", "DSCR Multi", "Investor DSCR No Ratio"],
@@ -265,10 +266,11 @@ function ruleTextToRow(ruleText: string, behavior: string): RuleRow {
       description: behavior,
     };
   }
-  if (/Field [Rr]eview/.test(ruleText)) {
+  if (/field review/i.test(ruleText)) {
     return {
       rule_name: "field_review",
       predicate: {
+        kind: "field_review",
         state: "NY",
         county_in: ["Brooklyn", "Kings"],
         occupancy_in: ["investment"],
@@ -280,7 +282,7 @@ function ruleTextToRow(ruleText: string, behavior: string): RuleRow {
   if (/US credit/i.test(ruleText)) {
     return {
       rule_name: "us_credit_optional",
-      predicate: { USCredit: false },
+      predicate: { kind: "us_credit_optional", USCredit: false },
       effect: { add_docs: [], remove_docs: ["Credit Report dated within 90 days"] },
       description: behavior,
     };
