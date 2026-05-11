@@ -119,8 +119,135 @@ async function main(): Promise<void> {
     }
   }
 
-  // Task 15 fills in the writes below.
-  console.log("TODO: DB approval writes land in Task 15.");
+  // 4. Apply the role's writes + audit row in a single transaction
+  await withTenantTx(tenant.id, async (c) => {
+    if (role === "admin") {
+      const r = await c.query<{ status: string }>(
+        `UPDATE kb_versions
+            SET approved_by = $1,
+                approved_at = now(),
+                status = 'pending_compliance'
+          WHERE id = $2 AND tenant_id = $3 AND status = 'pending_approval'
+          RETURNING status`,
+        [userId, versionId, tenant.id],
+      );
+      if (r.rowCount !== 1) {
+        throw new Error(
+          `expected to update 1 kb_versions row (current status must be 'pending_approval'); updated ${r.rowCount}. Concurrent edit or wrong status?`,
+        );
+      }
+      // ON CONFLICT DO NOTHING cannot be used with tenant_audit_log because
+      // migration 008 adds a no_update_audit rewrite rule (append-only). Use
+      // WHERE NOT EXISTS to achieve the same dedup intent (spec §8.3).
+      await c.query(
+        `INSERT INTO tenant_audit_log (target_tenant_id, actor_id, action, reason, metadata)
+         SELECT $1, $2, 'kb_version.approve', $3, $4::jsonb
+         WHERE NOT EXISTS (
+           SELECT 1 FROM tenant_audit_log
+            WHERE target_tenant_id = $1
+              AND action = 'kb_version.approve'
+              AND metadata->>'kb_version_id' = $5
+              AND actor_id = $2
+         )`,
+        [
+          tenant.id,
+          userId,
+          `admin approval of kb_version ${versionId}`,
+          JSON.stringify({ kb_version_id: String(versionId), prior_status: "pending_approval", new_status: "pending_compliance" }),
+          String(versionId),
+        ],
+      );
+      console.log(`Approved as admin. Status: pending_compliance. Next: re-run with --as compliance_officer.`);
+      return;
+    }
+
+    // role === "compliance_officer"
+    if (!activate) {
+      const r = await c.query<{ status: string }>(
+        `UPDATE kb_versions
+            SET compliance_signoff_by = $1,
+                compliance_signoff_at = now()
+          WHERE id = $2 AND tenant_id = $3 AND status = 'pending_compliance'
+          RETURNING status`,
+        [userId, versionId, tenant.id],
+      );
+      if (r.rowCount !== 1) {
+        throw new Error(
+          `expected to update 1 kb_versions row (current status must be 'pending_compliance'); updated ${r.rowCount}.`,
+        );
+      }
+      await c.query(
+        `INSERT INTO tenant_audit_log (target_tenant_id, actor_id, action, reason, metadata)
+         SELECT $1, $2, 'kb_version.compliance_signoff', $3, $4::jsonb
+         WHERE NOT EXISTS (
+           SELECT 1 FROM tenant_audit_log
+            WHERE target_tenant_id = $1
+              AND action = 'kb_version.compliance_signoff'
+              AND metadata->>'kb_version_id' = $5
+              AND actor_id = $2
+         )`,
+        [
+          tenant.id,
+          userId,
+          `compliance signoff of kb_version ${versionId}`,
+          JSON.stringify({ kb_version_id: String(versionId), prior_status: "pending_compliance", new_status: "pending_compliance" }),
+          String(versionId),
+        ],
+      );
+      console.log(`Compliance signoff recorded. Status: pending_compliance. Next: re-run with --activate to make active.`);
+      return;
+    }
+
+    // --activate path: atomic SELECT FOR UPDATE + demote + promote (spec §8.2)
+    await c.query(
+      `SELECT id FROM kb_versions
+        WHERE tenant_id = $1 AND status = 'active'
+          FOR UPDATE`,
+      [tenant.id],
+    );
+    await c.query(
+      `UPDATE kb_versions
+          SET status = 'superseded',
+              activated_at = activated_at
+        WHERE tenant_id = $1 AND status = 'active'`,
+      [tenant.id],
+    );
+    const r = await c.query<{ status: string }>(
+      `UPDATE kb_versions
+          SET status = 'active',
+              activated_at = now(),
+              compliance_signoff_by = $1,
+              compliance_signoff_at = now()
+        WHERE id = $2 AND tenant_id = $3 AND status = 'pending_compliance'
+        RETURNING status`,
+      [userId, versionId, tenant.id],
+    );
+    if (r.rowCount !== 1) {
+      throw new Error(
+        `activation: expected to promote 1 row from pending_compliance to active; promoted ${r.rowCount}. Concurrent edit raced us — transaction rolling back.`,
+      );
+    }
+    await c.query(
+      `INSERT INTO tenant_audit_log (target_tenant_id, actor_id, action, reason, metadata)
+       SELECT $1, $2, 'kb_version.activate', $3, $4::jsonb
+       WHERE NOT EXISTS (
+         SELECT 1 FROM tenant_audit_log
+          WHERE target_tenant_id = $1
+            AND action = 'kb_version.activate'
+            AND metadata->>'kb_version_id' = $5
+            AND actor_id = $2
+       )`,
+      [
+        tenant.id,
+        userId,
+        `activated kb_version ${versionId}`,
+        JSON.stringify({ kb_version_id: String(versionId), prior_status: "pending_compliance", new_status: "active" }),
+        String(versionId),
+      ],
+    );
+    console.log(`Activated. kb_version ${versionId} is now status='active' for tenant ${tenant.slug}. Any prior active version was demoted to 'superseded'.`);
+  });
+
   await closePool();
 }
 
