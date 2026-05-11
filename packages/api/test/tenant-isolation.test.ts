@@ -1,6 +1,22 @@
+import { readFileSync } from "node:fs";
+import { dirname, resolve as resolvePath } from "node:path";
+import { fileURLToPath } from "node:url";
+
+// Boot .env so DATABASE_URL is set for integration tests.
+if (!process.env.DATABASE_URL) {
+  const here = dirname(fileURLToPath(import.meta.url));
+  try {
+    for (const line of readFileSync(resolvePath(here, "../.env"), "utf8").split("\n")) {
+      const m = line.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/);
+      if (m && !process.env[m[1]]) process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
+    }
+  } catch { /* .env not present — DATABASE_URL error will surface clearly */ }
+}
+
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { buildServer } from "../src/server.js";
 import type { FastifyInstance } from "fastify";
+import { withDb, closePool } from "../src/db/pool.js";
 
 let app: FastifyInstance;
 
@@ -47,5 +63,66 @@ describe("tenant isolation — adversarial", () => {
       // Should return empty array — no loans for this tenant
       expect(Array.isArray(loans)).toBe(true);
     }
+  });
+});
+
+// NOTE: The Supabase session pooler connects as a role with BYPASSRLS=true,
+// which means row-level security policies are never enforced at runtime through
+// this connection. Runtime cross-tenant reads cannot be detected in this
+// environment. Instead, we verify policy wiring via pg_policies / pg_class —
+// the metadata that *would* enforce isolation if BYPASSRLS were removed.
+// This matches the approach taken for VA tables after migration 015.
+describe("tenant isolation — doc-checklist tables (spec §7.3)", () => {
+  // Expected qual expression as Postgres normalises it.
+  const EXPECTED_QUAL =
+    "(tenant_id = (current_setting('app.current_tenant'::text, true))::uuid)";
+
+  afterAll(async () => {
+    await closePool();
+  });
+
+  it("program_doc_checklist has RLS enabled with correct isolation policy", async () => {
+    const { relrowsecurity, policy } = await withDb(async (c) => {
+      const cls = await c.query<{ relrowsecurity: boolean }>(
+        `SELECT relrowsecurity FROM pg_class WHERE relname = 'program_doc_checklist'`,
+      );
+      const pol = await c.query<{ policyname: string; qual: string }>(
+        `SELECT policyname, qual FROM pg_policies WHERE tablename = 'program_doc_checklist' AND policyname = 'tenant_isolation_pdc'`,
+      );
+      return { relrowsecurity: cls.rows[0]?.relrowsecurity, policy: pol.rows[0] };
+    });
+    expect(relrowsecurity).toBe(true);
+    expect(policy).toBeDefined();
+    expect(policy!.qual).toBe(EXPECTED_QUAL);
+  });
+
+  it("program_doc_engine_rules has RLS enabled with correct isolation policy", async () => {
+    const { relrowsecurity, policy } = await withDb(async (c) => {
+      const cls = await c.query<{ relrowsecurity: boolean }>(
+        `SELECT relrowsecurity FROM pg_class WHERE relname = 'program_doc_engine_rules'`,
+      );
+      const pol = await c.query<{ policyname: string; qual: string }>(
+        `SELECT policyname, qual FROM pg_policies WHERE tablename = 'program_doc_engine_rules' AND policyname = 'tenant_isolation_pder'`,
+      );
+      return { relrowsecurity: cls.rows[0]?.relrowsecurity, policy: pol.rows[0] };
+    });
+    expect(relrowsecurity).toBe(true);
+    expect(policy).toBeDefined();
+    expect(policy!.qual).toBe(EXPECTED_QUAL);
+  });
+
+  it("income_type_resolver has RLS enabled with correct isolation policy", async () => {
+    const { relrowsecurity, policy } = await withDb(async (c) => {
+      const cls = await c.query<{ relrowsecurity: boolean }>(
+        `SELECT relrowsecurity FROM pg_class WHERE relname = 'income_type_resolver'`,
+      );
+      const pol = await c.query<{ policyname: string; qual: string }>(
+        `SELECT policyname, qual FROM pg_policies WHERE tablename = 'income_type_resolver' AND policyname = 'tenant_isolation_itr'`,
+      );
+      return { relrowsecurity: cls.rows[0]?.relrowsecurity, policy: pol.rows[0] };
+    });
+    expect(relrowsecurity).toBe(true);
+    expect(policy).toBeDefined();
+    expect(policy!.qual).toBe(EXPECTED_QUAL);
   });
 });
