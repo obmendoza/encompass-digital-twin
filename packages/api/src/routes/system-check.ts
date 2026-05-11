@@ -3,6 +3,7 @@ import type { Store } from "@twin/core";
 import { getLoansForTenant } from "./_helpers.js";
 import { getTenantId } from "../tenant-context.js";
 import { detectPatterns, persistPatterns } from "../learning/pattern-detector.js";
+import { withDb } from "../db/pool.js";
 
 export function registerSystemCheckRoutes(app: FastifyInstance, store: Store) {
 
@@ -286,5 +287,36 @@ export function registerSystemCheckRoutes(app: FastifyInstance, store: Store) {
       })),
       timestamp: new Date().toISOString(),
     };
+  });
+
+  // 5. KB-health check — every active tenant should have exactly one
+  // kb_versions row with status='active'. Tenants with 0 indicate a never-
+  // approved KB; tenants with >1 would indicate corrupted state (prevented
+  // by migration 016's partial unique index but checked here as defense-in-depth).
+  app.get("/system/kb-health", async () => {
+    return withDb(async (client) => {
+      // Every active, non-deleted tenant should have exactly one kb_versions
+      // row with status='active'. Tenants with 0 or >1 indicate either a
+      // never-approved tenant or (impossible per migration 016's partial unique
+      // index but defense-in-depth) a corrupted state.
+      const { rows } = await client.query<{ tenant_id: string; slug: string; active_count: number }>(
+        `SELECT t.id AS tenant_id, t.slug,
+                COUNT(kv.id) FILTER (WHERE kv.status = 'active')::int AS active_count
+           FROM tenants t
+           LEFT JOIN kb_versions kv ON kv.tenant_id = t.id
+          WHERE t.deleted_at IS NULL AND t.status = 'active'
+          GROUP BY t.id, t.slug
+          ORDER BY t.slug`,
+      );
+      const problems = rows.filter((r) => r.active_count !== 1);
+      return {
+        ok: problems.length === 0,
+        tenant_count: rows.length,
+        tenants_with_one_active: rows.filter((r) => r.active_count === 1).length,
+        tenants_with_zero_active: rows.filter((r) => r.active_count === 0).map((r) => r.slug),
+        tenants_with_multiple_active: rows.filter((r) => r.active_count > 1).map((r) => r.slug),
+        problems,
+      };
+    });
   });
 }
