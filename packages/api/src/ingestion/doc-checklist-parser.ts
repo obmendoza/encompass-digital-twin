@@ -302,7 +302,9 @@ export function parseResolverTable(markdown: string): ResolverRow[] {
     const t = tokens[i]!;
     if (t.type === "heading") {
       const h = t as Tokens.Heading;
-      if (h.depth === 2 && /Quick reference.*resolved Neo4j type/i.test(h.text)) {
+      // Anchor to the leading '4.' so a future variant that adds another
+      // 'Quick reference' H2 elsewhere can't false-match this section.
+      if (h.depth === 2 && /^4\.\s+Quick reference.*resolved Neo4j type/i.test(h.text)) {
         inSection = true;
         continue;
       }
@@ -319,6 +321,11 @@ export function parseResolverTable(markdown: string): ResolverRow[] {
 
   // Strict header-order check per spec §1.2.
   const headers = table.header.map((h) => (h as Tokens.TableCell).text.trim());
+  // marked v18 preserves backtick wrapping in TableCell.text. The upstream
+  // emitter writes column headers as `\`IncomeDocType\`` etc., so the
+  // expected strings include the backtick chars. If the emitter ever
+  // switches to plain text, this strict check throws — that's the desired
+  // fail-loud behavior per spec §1.2.
   const expected = ["`IncomeDocType`", "`BorrowerType`", "`Citizenship`", "ITIN", "Resolved"];
   if (headers.length !== expected.length) {
     throw new DocChecklistParseError(
@@ -344,7 +351,16 @@ export function parseResolverTable(markdown: string): ResolverRow[] {
     if (citizenship !== "US Citizen" && citizenship !== "Foreign Nationals") {
       throw new DocChecklistParseError(`File Section D: invalid Citizenship '${citizenship}'`, "D");
     }
-    const isItin = itinRaw === "True" || itinRaw === "true";
+    // Strict ITIN parse per spec §1.2 fail-loud discipline. The source emits
+    // 'True' or 'False' exactly — silently treating unexpected values as
+    // false could mislabel an ITIN borrower as non-ITIN.
+    if (itinRaw !== "True" && itinRaw !== "False") {
+      throw new DocChecklistParseError(
+        `File Section D: invalid ITIN value '${itinRaw}' (expected 'True' or 'False')`,
+        "D",
+      );
+    }
+    const isItin = itinRaw === "True";
     return {
       income_doc_type: incomeDocType!,
       borrower_type: borrowerType,

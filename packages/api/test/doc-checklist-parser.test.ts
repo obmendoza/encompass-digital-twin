@@ -196,4 +196,14 @@ describe("parseResolverTable", () => {
 `;
     expect(() => parseResolverTable(broken)).toThrow(/header.*column.*order/i);
   });
+
+  it("rejects an ITIN cell with an unexpected value", () => {
+    const broken = `## 4. Quick reference: Frontend → resolved Neo4j type
+
+| \`IncomeDocType\` | \`BorrowerType\` | \`Citizenship\` | ITIN | Resolved |
+|-----------------|----------------|---------------|------|----------|
+| Full Doc | W2 | US Citizen | TRUE | Full Documentation - Wage Earner |
+`;
+    expect(() => parseResolverTable(broken)).toThrow(/invalid ITIN value/);
+  });
 });
