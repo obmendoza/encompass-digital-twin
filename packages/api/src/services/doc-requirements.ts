@@ -140,10 +140,45 @@ export async function resolveRequiredDocs(
     const minimum = [...checklistRows[0]!.minimum_docs];
     const income = [...checklistRows[0]!.income_docs];
 
-    // 4. Fetch + apply engine rules (Task 10 fills in predicate evaluation)
+    // 4. Fetch + apply engine rules
+    const { rows: ruleRows } = await c.query<{
+      rule_name: string;
+      predicate: Record<string, unknown>;
+      effect: { add_docs: string[]; remove_docs: string[] };
+    }>(
+      `SELECT rule_name, predicate, effect FROM program_doc_engine_rules
+        WHERE tenant_id = $1 AND kb_version_id = $2`,
+      [tenantId, resolvedKbId],
+    );
     const appliedRules: string[] = [];
-    // Placeholder — Task 10 implements applyEngineRules. For now no modifiers run.
+    for (const rule of ruleRows) {
+      if (rulePredicateMatches(rule.predicate, loan)) {
+        appliedRules.push(rule.rule_name);
+        // Add: append at end with auto-incremented order
+        for (const docName of rule.effect.add_docs) {
+          minimum.push({ order: minimum.length + 1, name: docName, note: null });
+        }
+        // Remove: filter by exact name match
+        for (const docName of rule.effect.remove_docs) {
+          const idx = minimum.findIndex((d) => d.name === docName);
+          if (idx >= 0) minimum.splice(idx, 1);
+        }
+      }
+    }
 
     return { resolvedIncomeType, minimum, income, appliedRules, kbVersionId: resolvedKbId };
   });
+}
+
+function rulePredicateMatches(predicate: Record<string, unknown>, loan: LoanContext): boolean {
+  for (const [key, val] of Object.entries(predicate)) {
+    if (key === "kind") continue; // discriminator-only, no match logic
+    if (key === "LLCOrLegalEntity" && loan.llcOrLegalEntity !== val) return false;
+    if (key === "USCredit" && loan.usCredit !== val) return false;
+    if (key === "state" && loan.state !== val) return false;
+    if (key === "county_in" && Array.isArray(val) && !val.includes(loan.county)) return false;
+    if (key === "occupancy_in" && Array.isArray(val) && !val.includes(loan.occupancy)) return false;
+    if (key === "program_not_in" && Array.isArray(val) && val.includes(loan.program)) return false;
+  }
+  return true;
 }

@@ -150,3 +150,96 @@ function baseLoanContext(): import("../src/services/doc-requirements.js").LoanCo
     program: "Flex Select",
   };
 }
+
+async function seedAllThreeRules(kbId: number): Promise<void> {
+  await withTenantTx(T, async (c) => {
+    await c.query(
+      `INSERT INTO program_doc_engine_rules (tenant_id, kb_version_id, rule_name, predicate, effect, description)
+       VALUES ($1, $2, 'llc_closing_docs',
+               '{"LLCOrLegalEntity": true, "occupancy_in": ["investment"], "program_not_in": ["Investor DSCR"]}'::jsonb,
+               '{"add_docs": ["LLC closing documents"], "remove_docs": []}'::jsonb,
+               'LLC closing docs')
+       ON CONFLICT DO NOTHING`,
+      [T, kbId],
+    );
+    await c.query(
+      `INSERT INTO program_doc_engine_rules (tenant_id, kb_version_id, rule_name, predicate, effect, description)
+       VALUES ($1, $2, 'field_review',
+               '{"state": "NY", "county_in": ["Brooklyn", "Kings"], "occupancy_in": ["investment"]}'::jsonb,
+               '{"add_docs": ["Field review"], "remove_docs": []}'::jsonb,
+               'Field review for NY investment')
+       ON CONFLICT DO NOTHING`,
+      [T, kbId],
+    );
+    await c.query(
+      `INSERT INTO program_doc_engine_rules (tenant_id, kb_version_id, rule_name, predicate, effect, description)
+       VALUES ($1, $2, 'us_credit_optional',
+               '{"USCredit": false}'::jsonb,
+               '{"add_docs": [], "remove_docs": ["Credit Report dated within 90 days"]}'::jsonb,
+               'US credit optional')
+       ON CONFLICT DO NOTHING`,
+      [T, kbId],
+    );
+  });
+}
+
+describe("resolveRequiredDocs — engine-rule predicates", () => {
+  it("applies llc_closing_docs when LLCOrLegalEntity=true + investment occupancy + not DSCR", async () => {
+    await cleanup();
+    const kbId = await seedTenantAndKbVersion("active");
+    await seedHappyPathRows(kbId);
+    await seedAllThreeRules(kbId);
+    const loan = { ...baseLoanContext(), llcOrLegalEntity: true, occupancy: "investment" as const, program: "Flex Select" };
+    const r = await resolveRequiredDocs(T, kbId, loan);
+    expect(r.appliedRules).toContain("llc_closing_docs");
+    expect(r.minimum.map((d) => d.name)).toContain("LLC closing documents");
+  });
+
+  it("does NOT apply llc_closing_docs when program is DSCR", async () => {
+    await cleanup();
+    const kbId = await seedTenantAndKbVersion("active");
+    await seedHappyPathRows(kbId);
+    await seedAllThreeRules(kbId);
+    const loan = { ...baseLoanContext(), llcOrLegalEntity: true, occupancy: "investment" as const, program: "Investor DSCR" };
+    const r = await resolveRequiredDocs(T, kbId, loan);
+    expect(r.appliedRules).not.toContain("llc_closing_docs");
+  });
+
+  it("applies field_review when state=NY + county=Brooklyn + occupancy=investment", async () => {
+    await cleanup();
+    const kbId = await seedTenantAndKbVersion("active");
+    await seedHappyPathRows(kbId);
+    await seedAllThreeRules(kbId);
+    const loan = { ...baseLoanContext(), state: "NY", county: "Brooklyn", occupancy: "investment" as const };
+    const r = await resolveRequiredDocs(T, kbId, loan);
+    expect(r.appliedRules).toContain("field_review");
+    expect(r.minimum.map((d) => d.name)).toContain("Field review");
+  });
+
+  it("removes Credit Report when usCredit=false", async () => {
+    await cleanup();
+    const kbId = await seedTenantAndKbVersion("active");
+    // Seed a checklist row that DOES include Credit Report
+    await withTenantTx(T, async (c) => {
+      await c.query(
+        `INSERT INTO income_type_resolver (tenant_id, kb_version_id, income_doc_type, borrower_type, citizenship, is_itin, resolved_income_type)
+         VALUES ($1, $2, 'Full Doc', 'W2', 'US Citizen', false, 'Full Documentation - Wage Earner')`,
+        [T, kbId],
+      );
+      await c.query(
+        `INSERT INTO program_doc_checklist (tenant_id, kb_version_id, resolved_income_type, program, minimum_docs, income_docs, raw_min_msg, raw_income_msg)
+         VALUES ($1, $2, 'Full Documentation - Wage Earner', 'Flex Select',
+                 $3::jsonb, '[]'::jsonb, 'raw', 'raw')`,
+        [T, kbId, JSON.stringify([
+          { order: 1, name: "Initial Loan Application (1003)", note: null },
+          { order: 2, name: "Credit Report dated within 90 days", note: null },
+        ])],
+      );
+    });
+    await seedAllThreeRules(kbId);
+    const loan = { ...baseLoanContext(), usCredit: false };
+    const r = await resolveRequiredDocs(T, kbId, loan);
+    expect(r.appliedRules).toContain("us_credit_optional");
+    expect(r.minimum.map((d) => d.name)).not.toContain("Credit Report dated within 90 days");
+  });
+});
