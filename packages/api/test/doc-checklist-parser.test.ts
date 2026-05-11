@@ -93,4 +93,45 @@ describe("parseScenarios", () => {
 `;
     expect(() => parseScenarios(broken)).toThrow(/Raw engine messages/);
   });
+
+  it("captures notes that contain nested parentheses", () => {
+    // Synthetic markdown — upstream doesn't currently emit nested parens, but
+    // the engine is free to. This test pins down the contract.
+    const synthetic = `## 2. Document output by income scenario
+
+### Full Doc (W2)
+
+**Resolved Neo4j income type**: \`Full Documentation - Wage Earner\`
+**Program (validation context)**: \`Flex Select\`
+
+#### Minimum required documents (engine order)
+
+1. Initial Loan Application (1003)
+
+#### Income documentation (engine order)
+
+1. Tax return (Note: applies to LLC (single-member) borrowers)
+
+<details><summary>Raw engine messages</summary>
+
+- Minimum: \`Missing base documents: Initial Loan Application (1003)\`
+- Income: \`Required documents: Tax return (Note: applies to LLC (single-member) borrowers)\`
+
+</details>
+`;
+    const rows = parseScenarios(synthetic);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.income_docs[0]!.name).toBe("Tax return");
+    expect(rows[0]!.income_docs[0]!.note).toBe("applies to LLC (single-member) borrowers");
+  });
+
+  it("captures all items in the longest scenario's income-doc list (ITIN — Bank Stmts: 24 Mo. Personal)", () => {
+    const rows = parseScenarios(loadFixture());
+    const longest = rows.find((r) => r.resolved_income_type === "ITIN - Bank Statement 24 Mo. Personal")!;
+    expect(longest).toBeDefined();
+    // 9 income docs per the fixture (lines 921-931 of the source file)
+    expect(longest.income_docs).toHaveLength(9);
+    const thirdParty = longest.income_docs.find((d) => d.name.startsWith("3rd Party Expense"))!;
+    expect(thirdParty.note).toContain("50% Expense Ratio");
+  });
 });

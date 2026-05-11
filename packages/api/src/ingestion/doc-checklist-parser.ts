@@ -100,6 +100,17 @@ export function parseScenarios(markdown: string): ScenarioRow[] {
     scenarioBlocks.push({ name: currentBlockName, start: currentBlockStart, end: tokens.length });
   }
 
+  // Spec §1.2: File Section B's H2 ("## 2. Document output by income scenario")
+  // is the only anchor that puts the parser into a working state. If upstream
+  // renames or removes that heading, scenarioBlocks would be empty and we'd
+  // silently return []. Fail loud instead.
+  if (scenarioBlocks.length === 0) {
+    throw new DocChecklistParseError(
+      "no scenarios found — File Section B (## 2. Document output by income scenario) missing or renamed",
+      "B",
+    );
+  }
+
   return scenarioBlocks.map((b) => parseOneScenario(tokens, b.start, b.end, b.name));
 }
 
@@ -192,8 +203,11 @@ function nextListAfter(tokens: Tokens.Generic[], from: number, end: number): Tok
 function listItemsToDocs(list: Tokens.List): DocItem[] {
   return list.items.map((item, idx) => {
     const text = item.text.trim();
-    // Notes are inside parentheses suffix like "...(Note: foo)" or "(Note: bar)"
-    const noteMatch = text.match(/\s*\(Note:\s*([^)]+)\)\s*$/i);
+    // Notes are inside parentheses suffix like "...(Note: foo)" or "(Note: bar)".
+    // Use greedy (.+) anchored at end-of-string so notes containing nested
+    // parens (e.g., "(Note: foo (bar) baz)") capture the full body. Today's
+    // NPNQM fixture has no nested parens, but the engine is free to add them.
+    const noteMatch = text.match(/\s*\(Note:\s*(.+)\)\s*$/i);
     if (noteMatch) {
       return {
         order: idx + 1,
