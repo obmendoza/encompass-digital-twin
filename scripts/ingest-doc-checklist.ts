@@ -129,8 +129,70 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
-  // Task 13 fills in the DB writes below.
-  console.log("TODO: DB writes land in Task 13.");
+  // 8. Write kb_versions row + all three child tables in a single transaction.
+  const kbVersionId = await withDb(async (c) => {
+    const { rows } = await c.query<{ id: number }>(
+      `INSERT INTO kb_versions (tenant_id, version, status, source_documents, ingested_by)
+         VALUES ($1, $2, 'pending_approval', $3::jsonb, $4)
+       RETURNING id`,
+      [
+        tenantId,
+        versionInt,
+        JSON.stringify({
+          kind: "doc_checklist",
+          source_file: filePath,
+          source_file_sha256: parsed.sourceHash,
+          generated_at: parsed.generatedAt,
+          ingested_by_cli: true,
+        }),
+        operatorUserId,
+      ],
+    );
+    return rows[0]!.id;
+  });
+
+  await withTenantTx(tenantId, async (c) => {
+    for (const s of parsed.scenarios) {
+      await c.query(
+        `INSERT INTO program_doc_checklist
+           (tenant_id, kb_version_id, resolved_income_type, program,
+            minimum_docs, income_docs, raw_min_msg, raw_income_msg)
+         VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8)`,
+        [
+          tenantId, kbVersionId,
+          s.resolved_income_type, s.program,
+          JSON.stringify(s.minimum_docs), JSON.stringify(s.income_docs),
+          s.raw_min_msg, s.raw_income_msg,
+        ],
+      );
+    }
+    for (const r of parsed.rules) {
+      await c.query(
+        `INSERT INTO program_doc_engine_rules
+           (tenant_id, kb_version_id, rule_name, predicate, effect, description)
+         VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6)`,
+        [
+          tenantId, kbVersionId,
+          r.rule_name, JSON.stringify(r.predicate), JSON.stringify(r.effect),
+          r.description,
+        ],
+      );
+    }
+    for (const rr of parsed.resolver) {
+      await c.query(
+        `INSERT INTO income_type_resolver
+           (tenant_id, kb_version_id, income_doc_type, borrower_type, citizenship, is_itin, resolved_income_type)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [
+          tenantId, kbVersionId,
+          rr.income_doc_type, rr.borrower_type, rr.citizenship, rr.is_itin, rr.resolved_income_type,
+        ],
+      );
+    }
+  });
+
+  console.log(`Ingested. kb_versions.id = ${kbVersionId} (version ${versionInt}, status pending_approval).`);
+  console.log(`Next: pnpm tsx scripts/approve-kb.ts --tenant ${tenantSlugOrId} --version-id ${kbVersionId} --as admin --user-id <admin-uuid>`);
   await closePool();
 }
 
