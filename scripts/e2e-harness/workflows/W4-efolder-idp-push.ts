@@ -16,9 +16,14 @@ export const W4: WorkflowDef = {
     await http.post(apiOpts, "/world/reset");
     await http.post(apiOpts, "/world/load-scenario", { scenarioId: fixture.id });
 
+    // Pass tenant_id so the agent's twin_connector can fetch + write loans
+    // through the API with the right tenant scope. Without it the agent
+    // defaults to its hardcoded tenant and the API returns 400.
+    const tenantQ = process.env.DEMO_TENANT_ID ? `?tenant_id=${process.env.DEMO_TENANT_ID}` : "";
+
     // Generate sample docs (writes uploaded files into the loan's eFolder).
     type GenResp = { documentsGenerated?: number };
-    const gen = await http.post<GenResp>(agentOpts, `/api/workshop/generate-docs/${fixture.loanId}`);
+    const gen = await http.post<GenResp>(agentOpts, `/api/workshop/generate-docs/${fixture.loanId}${tenantQ}`);
     assertions.push({ name: "docs_generated", expected: ">0", actual: gen.documentsGenerated ?? 0, ok: (gen.documentsGenerated ?? 0) > 0 });
 
     type Doc = { id: string; docType: string; fileKey?: string; extractedData?: Record<string, unknown> };
@@ -40,7 +45,7 @@ export const W4: WorkflowDef = {
 
     // Run IDP.
     type IdpResp = { extracted?: Record<string, unknown> };
-    const idp = await http.post<IdpResp>(agentOpts, `/api/idp/extract-from-twin/${fixture.loanId}/${bankDoc.id}`);
+    const idp = await http.post<IdpResp>(agentOpts, `/api/idp/extract-from-twin/${fixture.loanId}/${bankDoc.id}${tenantQ}`);
     assertions.push({ name: "idp_returned_extracted", expected: "object", actual: idp.extracted ? "object" : null, ok: !!idp.extracted });
 
     // Re-fetch to confirm extractedData persisted on the doc.

@@ -30,10 +30,14 @@ export const W6: WorkflowDef = {
       return cell(start, "fail", "P1", assertions, "MISSING_PDFS", "set GUIDELINES_PDF and MATRICES_PDF env vars");
     }
 
-    // Resolve a tenant. Prefer NPNQM; otherwise first available.
+    // Resolve a tenant. Prefer NPNQM; otherwise first available. /tenants
+    // requires super_admin — set the flag explicitly on this call.
     type TenantsResp = { tenants?: Array<{ id: string; slug: string }> };
-    const tenantsRes = await http.get<TenantsResp>(apiOpts, "/tenants").catch(() => ({} as TenantsResp));
-    const npnqm = (tenantsRes.tenants ?? []).find((t) => t.slug.toLowerCase().includes("npnqm")) ?? (tenantsRes.tenants ?? [])[0];
+    const adminOpts: HttpOptions = { ...apiOpts, superAdmin: true };
+    const tenantsArr = await http.get<Array<{ id: string; slug: string }>>(adminOpts, "/tenants").catch(() => [] as Array<{ id: string; slug: string }>);
+    // Endpoint returns a raw array (per tenants.ts); accept both shapes for safety.
+    const tenantsList = Array.isArray(tenantsArr) ? tenantsArr : ((tenantsArr as TenantsResp).tenants ?? []);
+    const npnqm = tenantsList.find((t) => t.slug.toLowerCase().includes("npnqm")) ?? tenantsList[0];
     assertions.push({ name: "tenant_resolved", expected: "non-null", actual: npnqm?.id ?? null, ok: !!npnqm, subCell: "W6.ingest" });
     if (!npnqm) return cell(start, "fail", "P0", assertions, "NO_TENANT", "no tenant available for KB ingest");
 
