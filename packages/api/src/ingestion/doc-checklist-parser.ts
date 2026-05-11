@@ -220,7 +220,75 @@ function listItemsToDocs(list: Tokens.List): DocItem[] {
 }
 
 export function parseEngineRules(markdown: string): RuleRow[] {
-  throw new Error("parseEngineRules not yet implemented");
+  const tokens = parseAst(markdown);
+  // The rules table is under H3 "Engine rules (minimum docs)" inside H2 §1.
+  let inSection = false;
+  let table: Tokens.Table | null = null;
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i]!;
+    if (t.type === "heading") {
+      const h = t as Tokens.Heading;
+      if (h.depth === 3 && /Engine rules/i.test(h.text)) {
+        inSection = true;
+        continue;
+      }
+      if (inSection && h.depth <= 3) break;
+    }
+    if (inSection && t.type === "table") {
+      table = t as Tokens.Table;
+      break;
+    }
+  }
+  if (!table) {
+    throw new DocChecklistParseError("File Section A: missing 'Engine rules' table under H3", "A");
+  }
+
+  return table.rows.map((row) => {
+    const ruleText = (row[0] as Tokens.TableCell).text.trim();
+    const behavior = (row[1] as Tokens.TableCell).text.trim();
+    return ruleTextToRow(ruleText, behavior);
+  });
+}
+
+function ruleTextToRow(ruleText: string, behavior: string): RuleRow {
+  // Match by the human-readable rule text in the first column; map to the
+  // three known structured shapes. New rule names → throw.
+  if (/LLC closing documents/i.test(ruleText)) {
+    return {
+      rule_name: "llc_closing_docs",
+      predicate: {
+        LLCOrLegalEntity: true,
+        occupancy_in: ["investment"],
+        program_not_in: ["Investor DSCR", "DSCR Supreme", "DSCR Multi", "Investor DSCR No Ratio"],
+      },
+      effect: { add_docs: ["LLC closing documents"], remove_docs: [] },
+      description: behavior,
+    };
+  }
+  if (/Field [Rr]eview/.test(ruleText)) {
+    return {
+      rule_name: "field_review",
+      predicate: {
+        state: "NY",
+        county_in: ["Brooklyn", "Kings"],
+        occupancy_in: ["investment"],
+      },
+      effect: { add_docs: ["Field review"], remove_docs: [] },
+      description: behavior,
+    };
+  }
+  if (/US credit/i.test(ruleText)) {
+    return {
+      rule_name: "us_credit_optional",
+      predicate: { USCredit: false },
+      effect: { add_docs: [], remove_docs: ["Credit Report dated within 90 days"] },
+      description: behavior,
+    };
+  }
+  throw new DocChecklistParseError(
+    `unknown engine rule in File Section A rules table: '${ruleText}'. New rules must be added to ruleTextToRow().`,
+    "A",
+  );
 }
 
 export function parseResolverTable(markdown: string): ResolverRow[] {

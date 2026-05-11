@@ -135,3 +135,35 @@ describe("parseScenarios", () => {
     expect(thirdParty.note).toContain("50% Expense Ratio");
   });
 });
+
+describe("parseEngineRules", () => {
+  it("extracts the three known rules from the real fixture", () => {
+    const rules = parseEngineRules(loadFixture());
+    expect(rules).toHaveLength(3);
+    const llc = rules.find((r) => r.rule_name === "llc_closing_docs")!;
+    expect(llc).toBeDefined();
+    expect(llc.predicate.LLCOrLegalEntity).toBe(true);
+    expect(llc.predicate.occupancy_in).toEqual(["investment"]);
+    expect(llc.predicate.program_not_in).toEqual(
+      expect.arrayContaining(["Investor DSCR", "DSCR Supreme", "DSCR Multi", "Investor DSCR No Ratio"]),
+    );
+    const fr = rules.find((r) => r.rule_name === "field_review")!;
+    expect(fr.predicate.state).toBe("NY");
+    expect(fr.predicate.county_in).toEqual(expect.arrayContaining(["Brooklyn", "Kings"]));
+    const us = rules.find((r) => r.rule_name === "us_credit_optional")!;
+    expect(us.predicate.USCredit).toBe(false);
+    expect(us.effect.remove_docs).toEqual(expect.arrayContaining(["Credit Report dated within 90 days"]));
+  });
+
+  it("rejects an unknown rule name in the engine-rules table", () => {
+    const broken = `## 1. How to read this document
+
+### Engine rules (minimum docs)
+
+| Rule | Behavior |
+|------|----------|
+| Quantum field gate | When QuantumPhase is true. |
+`;
+    expect(() => parseEngineRules(broken)).toThrow(/unknown engine rule/i);
+  });
+});
