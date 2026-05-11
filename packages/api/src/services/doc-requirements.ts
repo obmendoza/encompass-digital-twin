@@ -9,8 +9,7 @@
 //   - IncomeTypeUnresolvedError    : (incomeDocType, borrowerType, citizenship,
 //                                     isItin) tuple has no resolver row
 
-// TODO(Task 9): uncomment when resolveRequiredDocs body is implemented
-// import { withTenantTx } from "../db/pool.js";
+import { withTenantTx } from "../db/pool.js";
 
 export interface DocItem {
   order: number;
@@ -76,5 +75,75 @@ export async function resolveRequiredDocs(
   kbVersionId: number | null,
   loan: LoanContext,
 ): Promise<ResolveResult> {
-  throw new Error("resolveRequiredDocs not yet implemented");
+  return withTenantTx(tenantId, async (c) => {
+    // 1. Resolve target kb_version_id
+    let resolvedKbId: number;
+    if (kbVersionId === null) {
+      const { rows } = await c.query<{ id: number }>(
+        `SELECT id FROM kb_versions WHERE tenant_id = $1 AND status = 'active' LIMIT 1`,
+        [tenantId],
+      );
+      if (rows.length === 0) throw new NoActiveKbVersionError(tenantId, tenantId);
+      resolvedKbId = rows[0]!.id;
+    } else {
+      const { rows } = await c.query<{ id: number }>(
+        `SELECT id FROM kb_versions WHERE id = $1 AND tenant_id = $2`,
+        [kbVersionId, tenantId],
+      );
+      if (rows.length === 0) throw new KbVersionNotFoundError(kbVersionId, tenantId);
+      resolvedKbId = kbVersionId;
+    }
+
+    // 2. Resolve income type
+    const { rows: resolverRows } = await c.query<{ resolved_income_type: string }>(
+      `SELECT resolved_income_type FROM income_type_resolver
+        WHERE tenant_id = $1 AND kb_version_id = $2
+          AND income_doc_type = $3 AND borrower_type = $4
+          AND citizenship = $5 AND is_itin = $6`,
+      [tenantId, resolvedKbId, loan.incomeDocType, loan.borrowerType, loan.citizenship, loan.isItin],
+    );
+    if (resolverRows.length === 0) {
+      throw new IncomeTypeUnresolvedError(
+        {
+          incomeDocType: loan.incomeDocType,
+          borrowerType: loan.borrowerType,
+          citizenship: loan.citizenship,
+          isItin: loan.isItin,
+        },
+        tenantId,
+        resolvedKbId,
+      );
+    }
+    const resolvedIncomeType = resolverRows[0]!.resolved_income_type;
+
+    // 3. Fetch base lists
+    const { rows: checklistRows } = await c.query<{
+      minimum_docs: DocItem[];
+      income_docs: DocItem[];
+    }>(
+      `SELECT minimum_docs, income_docs FROM program_doc_checklist
+        WHERE tenant_id = $1 AND kb_version_id = $2 AND resolved_income_type = $3`,
+      [tenantId, resolvedKbId, resolvedIncomeType],
+    );
+    if (checklistRows.length === 0) {
+      throw new IncomeTypeUnresolvedError(
+        {
+          incomeDocType: loan.incomeDocType,
+          borrowerType: loan.borrowerType,
+          citizenship: loan.citizenship,
+          isItin: loan.isItin,
+        },
+        tenantId,
+        resolvedKbId,
+      );
+    }
+    const minimum = [...checklistRows[0]!.minimum_docs];
+    const income = [...checklistRows[0]!.income_docs];
+
+    // 4. Fetch + apply engine rules (Task 10 fills in predicate evaluation)
+    const appliedRules: string[] = [];
+    // Placeholder — Task 10 implements applyEngineRules. For now no modifiers run.
+
+    return { resolvedIncomeType, minimum, income, appliedRules, kbVersionId: resolvedKbId };
+  });
 }
