@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { execSync } from "node:child_process";
 import { dirname, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -13,43 +14,12 @@ if (!process.env.DATABASE_URL) {
 }
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { withDb, withTenantTx, closePool } from "../src/db/pool.js";
-import { parseAll, verifyParity } from "../src/ingestion/doc-checklist-parser.js";
+import { withDb, closePool } from "../src/db/pool.js";
 import { resolveRequiredDocs } from "../src/services/doc-requirements.js";
 
 const T = "5d175193-6ee2-4d6a-b16e-bb00bb00bb02"; // dedicated integration test tenant
 const FIXTURE_PATH = "../../../docs/npnqm-source/Document_Requirements_All_Income_Types.md";
 // Note path is 3 levels up — Task 4's correction (same monorepo depth).
-
-async function ingest(kbId: number): Promise<void> {
-  const here = dirname(fileURLToPath(import.meta.url));
-  const md = readFileSync(resolvePath(here, FIXTURE_PATH), "utf8");
-  const parsed = parseAll(md);
-  verifyParity(parsed.scenarios);
-  await withTenantTx(T, async (c) => {
-    for (const s of parsed.scenarios) {
-      await c.query(
-        `INSERT INTO program_doc_checklist (tenant_id, kb_version_id, resolved_income_type, program, minimum_docs, income_docs, raw_min_msg, raw_income_msg)
-         VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8)`,
-        [T, kbId, s.resolved_income_type, s.program, JSON.stringify(s.minimum_docs), JSON.stringify(s.income_docs), s.raw_min_msg, s.raw_income_msg],
-      );
-    }
-    for (const r of parsed.rules) {
-      await c.query(
-        `INSERT INTO program_doc_engine_rules (tenant_id, kb_version_id, rule_name, predicate, effect, description)
-         VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6)`,
-        [T, kbId, r.rule_name, JSON.stringify(r.predicate), JSON.stringify(r.effect), r.description],
-      );
-    }
-    for (const rr of parsed.resolver) {
-      await c.query(
-        `INSERT INTO income_type_resolver (tenant_id, kb_version_id, income_doc_type, borrower_type, citizenship, is_itin, resolved_income_type)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [T, kbId, rr.income_doc_type, rr.borrower_type, rr.citizenship, rr.is_itin, rr.resolved_income_type],
-      );
-    }
-  });
-}
 
 async function cleanup(): Promise<void> {
   await withDb(async (c) => {
@@ -57,7 +27,11 @@ async function cleanup(): Promise<void> {
     await c.query(`DELETE FROM program_doc_engine_rules  WHERE tenant_id = $1`, [T]);
     await c.query(`DELETE FROM income_type_resolver      WHERE tenant_id = $1`, [T]);
     await c.query(`DELETE FROM kb_versions               WHERE tenant_id = $1`, [T]);
-    await c.query(`DELETE FROM tenants                   WHERE id = $1`, [T]);
+    // tenant_audit_log has a no_delete_audit rewrite rule (append-only).
+    // We cannot delete those rows, and the FK from tenant_audit_log →
+    // tenants prevents deleting the tenant row once audit rows exist.
+    // Leave the tenant row in place; the beforeAll INSERT uses
+    // ON CONFLICT (id) DO NOTHING so re-runs are idempotent.
   });
 }
 
@@ -72,14 +46,33 @@ describe("doc-checklist ingest — end-to-end integration (spec §7.2)", () => {
          ON CONFLICT (id) DO NOTHING`,
         [T],
       );
-      const r = await c.query<{ id: number }>(
-        `INSERT INTO kb_versions (tenant_id, version, status, source_documents) VALUES ($1, 1, 'active', '{"kind":"doc_checklist"}'::jsonb) RETURNING id`,
-        [T],
-      );
-      kbId = r.rows[0]!.id;
     });
-    await ingest(kbId);
-  });
+
+    // Exec the actual ingest-doc-checklist.ts CLI (not inline parser inserts).
+    // This covers arg parsing, --version collision check, kb_versions row
+    // creation, and the spec §3.2 exit-code contract.
+    const ADMIN = "11111111-1111-1111-1111-111111111111";
+    const COMPL = "22222222-2222-2222-2222-222222222222";
+    const fixturePath = resolvePath(dirname(fileURLToPath(import.meta.url)), FIXTURE_PATH);
+
+    const ingestOutput = execSync(
+      `pnpm tsx scripts/ingest-doc-checklist.ts --tenant ${T} --version 1 --as ${ADMIN} --file ${fixturePath}`,
+      { cwd: resolvePath(dirname(fileURLToPath(import.meta.url)), "../../.."), encoding: "utf8" },
+    );
+    const match = ingestOutput.match(/kb_versions\.id = (\d+)/);
+    if (!match) throw new Error(`ingest CLI didn't print kb_versions.id: ${ingestOutput}`);
+    kbId = parseInt(match[1]!, 10);
+
+    // Chain through two-key approval to make the version status='active'.
+    execSync(
+      `pnpm tsx scripts/approve-kb.ts --tenant ${T} --version-id ${kbId} --as admin --user-id ${ADMIN} --yes`,
+      { cwd: resolvePath(dirname(fileURLToPath(import.meta.url)), "../../.."), encoding: "utf8" },
+    );
+    execSync(
+      `pnpm tsx scripts/approve-kb.ts --tenant ${T} --version-id ${kbId} --as compliance_officer --user-id ${COMPL} --activate --yes`,
+      { cwd: resolvePath(dirname(fileURLToPath(import.meta.url)), "../../.."), encoding: "utf8" },
+    );
+  }, 120000); // generous timeout since this execs three subprocesses
 
   afterAll(async () => {
     await cleanup();

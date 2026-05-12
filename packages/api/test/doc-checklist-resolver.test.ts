@@ -216,6 +216,26 @@ describe("resolveRequiredDocs — engine-rule predicates", () => {
     expect(r.minimum.map((d) => d.name)).toContain("Field review");
   });
 
+  it("throws on unknown predicate keys (fail-loud, not fail-open)", async () => {
+    await cleanup();
+    const kbId = await seedTenantAndKbVersion("active");
+    await seedHappyPathRows(kbId);
+    // Insert a rule with a predicate containing an unknown key.
+    await withTenantTx(T, async (c) => {
+      await c.query(
+        `INSERT INTO program_doc_engine_rules (tenant_id, kb_version_id, rule_name, predicate, effect, description)
+         VALUES ($1, $2, 'us_credit_optional',
+                 '{"kind": "us_credit_optional", "USCredit": false, "FutureNewKey": "H1B"}'::jsonb,
+                 '{"add_docs": [], "remove_docs": []}'::jsonb,
+                 'rule with unknown predicate key')`,
+        [T, kbId],
+      );
+    });
+    await expect(
+      resolveRequiredDocs(T, kbId, { ...baseLoanContext(), usCredit: false }),
+    ).rejects.toThrow(/unknown predicate key 'FutureNewKey'/);
+  });
+
   it("removes Credit Report when usCredit=false", async () => {
     await cleanup();
     const kbId = await seedTenantAndKbVersion("active");

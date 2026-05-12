@@ -208,7 +208,7 @@ async function main(): Promise<void> {
     await c.query(
       `UPDATE kb_versions
           SET status = 'superseded',
-              activated_at = activated_at
+              superseded_at = now()
         WHERE tenant_id = $1 AND status = 'active'`,
       [tenant.id],
     );

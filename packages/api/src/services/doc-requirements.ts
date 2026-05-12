@@ -170,9 +170,27 @@ export async function resolveRequiredDocs(
   });
 }
 
+// Known predicate keys. New keys require explicit handling in the if-chain
+// below — silently ignoring an unknown key would let a future engine rule
+// fire without its intended gating (fail-open). See spec §2.2.
+const KNOWN_PREDICATE_KEYS = new Set([
+  "kind",                    // discriminator-only, no match logic
+  "LLCOrLegalEntity",
+  "USCredit",
+  "state",
+  "county_in",
+  "occupancy_in",
+  "program_not_in",
+]);
+
 function rulePredicateMatches(predicate: Record<string, unknown>, loan: LoanContext): boolean {
   for (const [key, val] of Object.entries(predicate)) {
-    if (key === "kind") continue; // discriminator-only, no match logic
+    if (!KNOWN_PREDICATE_KEYS.has(key)) {
+      throw new Error(
+        `unknown predicate key '${key}' in engine rule — new keys must be added to KNOWN_PREDICATE_KEYS and rulePredicateMatches. Spec §2.2.`,
+      );
+    }
+    if (key === "kind") continue;
     if (key === "LLCOrLegalEntity" && loan.llcOrLegalEntity !== val) return false;
     if (key === "USCredit" && loan.usCredit !== val) return false;
     if (key === "state" && loan.state !== val) return false;
