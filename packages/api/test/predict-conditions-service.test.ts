@@ -29,6 +29,7 @@ import {
   PredictionNotDismissedError,
   DismissalReasonTooShortError,
   AlertNotFoundError,
+  PredictionConditionCollisionError,
   configurePredictConditionsService,
 } from "../src/services/predict-conditions/index.js";
 import type { Store, Loan } from "@twin/core";
@@ -175,7 +176,7 @@ beforeEach(async () => {
   await cleanupAll();
   // Re-inject stub loans for every loan_id used by the mutation tests.
   if (sharedStore) {
-    for (const loanId of ["L-ACC-1","L-ACC-2","L-DIS-1","L-DIS-2","L-REOPEN-1","L-REOPEN-2","L-CLR-2"]) {
+    for (const loanId of ["L-ACC-1","L-ACC-2","L-ACC-COLLIDE","L-DIS-1","L-DIS-2","L-REOPEN-1","L-REOPEN-2","L-CLR-2"]) {
       sharedStore.dispatch({ type: "InjectLoan", loan: stubLoanForStore(loanId) });
     }
   }
@@ -447,6 +448,22 @@ describe("predict-conditions service — accept()", () => {
 
   it("rejects missing prediction id with PredictionNotFoundError", async () => {
     await expect(accept(T, "00000000-0000-0000-0000-000000000000", "op-x", "operator")).rejects.toBeInstanceOf(PredictionNotFoundError);
+  });
+
+  it("throws PredictionConditionCollisionError when AddCondition silently dedups", async () => {
+    const { predictionIds } = await seedAndRun("L-ACC-COLLIDE");
+    // Pre-seed a Condition on the loan with a description that collides with the
+    // first prediction (Initial Loan Application). The reducer's fuzzy dedup will
+    // refuse to append, so the service must detect this and throw.
+    sharedStore!.dispatch({
+      type: "AddCondition",
+      loanId: "L-ACC-COLLIDE",
+      condition: { category: "PTD", source: "UW", description: "Most recent paystub(s) reflecting 30 days of pay" },
+      actor: { kind: "human", id: "pre-existing" },
+    });
+    await expect(
+      accept(T, predictionIds[0]!, "op-collide", "operator"),
+    ).rejects.toBeInstanceOf(PredictionConditionCollisionError);
   });
 });
 

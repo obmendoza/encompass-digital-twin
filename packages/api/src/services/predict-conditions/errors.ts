@@ -37,3 +37,16 @@ export class AlertNotFoundError extends Error {
     this.name = "AlertNotFoundError";
   }
 }
+
+export class PredictionConditionCollisionError extends Error {
+  constructor(
+    public readonly predictionId: string,
+    public readonly loanId: string,
+    public readonly description: string,
+  ) {
+    super(
+      `prediction ${predictionId} for loan ${loanId} could not mint a new Condition — the store reducer's dedup logic matched an existing condition with overlapping description ('${description.slice(0, 60)}...'). The operator should resolve the duplicate manually before accepting this prediction.`,
+    );
+    this.name = "PredictionConditionCollisionError";
+  }
+}
