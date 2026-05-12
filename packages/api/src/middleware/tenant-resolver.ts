@@ -7,7 +7,13 @@ export function registerTenantResolver(app: FastifyInstance): void {
     const tenantId = (req.headers["x-tenant-id"] as string) ?? DEFAULT_TENANT_ID;
     const userId = (req.headers["x-user-id"] as string) ?? "system";
     const isSuperAdmin = req.headers["x-super-admin"] === "true";
-    const ctx: TenantContext = { tenantId, userId, isSuperAdmin };
+    // This is the legacy header-only resolver (no JWT verification). Whoever
+    // mounts this middleware accepts that the request is trusted; the
+    // x-user-role header is treated as authoritative on that basis.
+    const rawRole = req.headers["x-user-role"];
+    const roleHdr = Array.isArray(rawRole) ? rawRole[0] : rawRole;
+    const role: TenantContext["role"] = roleHdr === "va" ? "va" : "operator";
+    const ctx: TenantContext = { tenantId, userId, isSuperAdmin, role };
     tenantStore.enterWith(ctx);
   });
 }
