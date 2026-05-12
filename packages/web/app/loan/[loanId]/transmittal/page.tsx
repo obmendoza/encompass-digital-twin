@@ -8,6 +8,7 @@ import { TabBar } from "@/components/encompass/TabBar";
 import { RunAgentButton } from "@/components/encompass/RunAgentButton";
 import { RecommendationPanel } from "@/components/encompass/RecommendationPanel";
 import { UWReviewPanel, type VAReviewProps, type SpecialistSignoff, type ConditionAction } from "@/components/encompass/UWReviewPanel";
+import { PredictedConditionsPanel } from "@/components/encompass/PredictedConditionsPanel";
 import { money, pct } from "@/lib/format";
 import { getUser } from "@/lib/auth";
 
@@ -56,6 +57,14 @@ export default async function TransmittalPage({
     }
   } catch {
     latestVAReview = null;
+  }
+
+  let predictionsData: { predictions: unknown[]; alerts: unknown[] } = { predictions: [], alerts: [] };
+  try {
+    const r = await api.getPredictions(loan.id);
+    predictionsData = { predictions: r.predictions, alerts: r.alerts };
+  } catch {
+    // Best-effort; predictions are auxiliary.
   }
 
   const openCount = loan.conditions.filter((c) => c.status === "Open").length;
@@ -132,6 +141,12 @@ export default async function TransmittalPage({
       </Section>
 
       <DecisionBar loanId={loan.id} current={loan.decision} userRole={user?.role} />
+
+      <PredictedConditionsPanel
+        loanId={loan.id}
+        predictions={predictionsData.predictions as never}
+        alerts={predictionsData.alerts as never}
+      />
 
       <div className="mt-2 flex items-center gap-3 p-2 bg-[#f6f8fb] border border-[#6b7a8f]">
         <span className="text-[11px] font-bold text-[#1f4478]">AI Assist:</span>
