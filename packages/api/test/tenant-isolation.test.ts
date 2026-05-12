@@ -126,3 +126,45 @@ describe("tenant isolation — doc-checklist tables (spec §7.3)", () => {
     expect(policy!.qual).toBe(EXPECTED_QUAL);
   });
 });
+
+describe("tenant isolation — predict-conditions tables (spec §8.4)", () => {
+  it("predicted_conditions has FORCE RLS enabled with correct policy", async () => {
+    const r = await withDb(async (c) =>
+      c.query<{ relrowsecurity: boolean; relforcerowsecurity: boolean }>(
+        `SELECT relrowsecurity, relforcerowsecurity FROM pg_class WHERE relname = 'predicted_conditions'`,
+      ),
+    );
+    expect(r.rows[0]!.relrowsecurity).toBe(true);
+    expect(r.rows[0]!.relforcerowsecurity).toBe(true);
+
+    const p = await withDb(async (c) =>
+      c.query<{ polname: string; qual: string }>(
+        `SELECT polname, pg_get_expr(polqual, polrelid) AS qual
+           FROM pg_policy WHERE polrelid = 'predicted_conditions'::regclass`,
+      ),
+    );
+    expect(p.rows).toHaveLength(1);
+    expect(p.rows[0]!.polname).toBe("tenant_isolation_pc");
+    expect(p.rows[0]!.qual).toContain("current_setting('app.current_tenant'");
+  });
+
+  it("prediction_alerts has FORCE RLS enabled with correct policy", async () => {
+    const r = await withDb(async (c) =>
+      c.query<{ relrowsecurity: boolean; relforcerowsecurity: boolean }>(
+        `SELECT relrowsecurity, relforcerowsecurity FROM pg_class WHERE relname = 'prediction_alerts'`,
+      ),
+    );
+    expect(r.rows[0]!.relrowsecurity).toBe(true);
+    expect(r.rows[0]!.relforcerowsecurity).toBe(true);
+
+    const p = await withDb(async (c) =>
+      c.query<{ polname: string; qual: string }>(
+        `SELECT polname, pg_get_expr(polqual, polrelid) AS qual
+           FROM pg_policy WHERE polrelid = 'prediction_alerts'::regclass`,
+      ),
+    );
+    expect(p.rows).toHaveLength(1);
+    expect(p.rows[0]!.polname).toBe("tenant_isolation_pa");
+    expect(p.rows[0]!.qual).toContain("current_setting('app.current_tenant'");
+  });
+});
