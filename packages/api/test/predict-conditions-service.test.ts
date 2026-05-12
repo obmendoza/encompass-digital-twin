@@ -145,7 +145,9 @@ async function cleanupAll(): Promise<void> {
     await c.query(`DELETE FROM program_doc_checklist     WHERE tenant_id = $1`, [T]);
     await c.query(`DELETE FROM program_doc_engine_rules  WHERE tenant_id = $1`, [T]);
     await c.query(`DELETE FROM kb_versions               WHERE tenant_id = $1`, [T]);
-    await c.query(`DELETE FROM tenant_audit_log         WHERE target_tenant_id = $1`, [T]);
+    // Note: tenant_audit_log carries a no_delete_audit RULE (migration 008) that
+    // makes DELETE a silent no-op. Tests must not depend on audit-log isolation —
+    // assertions read ORDER BY created_at DESC LIMIT 1 to get the most recent row.
   });
 }
 
