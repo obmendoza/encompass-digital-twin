@@ -2,5 +2,11 @@
 export * from "./types.js";
 export * from "./errors.js";
 export { categoryInference } from "./category-inference.js";
-export { run } from "./service.js";
-// accept, dismiss, reopenAndAccept, clearAlert land in Tasks 5-6.
+export {
+  run,
+  accept,
+  dismiss,
+  reopenAndAccept,
+  clearAlert,
+  configurePredictConditionsService,
+} from "./service.js";

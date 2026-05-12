@@ -17,6 +17,64 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import { withDb, withTenantTx, closePool } from "../src/db/pool.js";
 import { run } from "../src/services/predict-conditions/service.js";
 import type { LoanContext } from "../src/services/doc-requirements.js";
+import { createStore } from "@twin/core";
+import { scenarios } from "@twin/fixtures";
+import {
+  accept,
+  dismiss,
+  reopenAndAccept,
+  clearAlert,
+  PredictionNotFoundError,
+  PredictionNotPendingError,
+  PredictionNotDismissedError,
+  DismissalReasonTooShortError,
+  AlertNotFoundError,
+  configurePredictConditionsService,
+} from "../src/services/predict-conditions/index.js";
+import type { Store, Loan } from "@twin/core";
+
+function stubLoanForStore(loanId: string): Loan {
+  return {
+    id: loanId,
+    tenantId: T,
+    nqmProgram: "Flex Select",
+    qualifyingMethod: "TraditionalDocs",
+    borrower: { fullName: "Test", ssnMasked: "xxx-xx-0000", dob: "1980-01-01", maritalStatus: "Unmarried" },
+    property: { street: "1", city: "LA", state: "CA", zip: "90001", propertyType: "SFR Det.", units: 1, yearBuilt: 2000 },
+    transaction: {
+      loanPurpose: "Purchase", loanAmount: 100000, salesPrice: 100000, appraisedValue: 100000,
+      ltv: 100, cltv: 100, hcltv: 100, noteRate: 7, term: 360, amortType: "Fixed",
+      lienPosition: 1, occupancy: "Primary", isInvestmentProperty: false, piti: 600,
+    },
+    qualifying: { housingRatio: 0, totalDti: 0, piPayment: 600, qualifyingRate: 7 },
+    qualifyingWorksheet: { method: "TraditionalDocs", derivedMonthlyIncome: 10000 },
+    income: { totalMonthlyIncome: 10000 },
+    assets: { totalLiquid: 0, totalRetirement: 0, reservesMonths: 0 },
+    credit: {
+      repScore: 720, tradelinesOpen: 1, tradelinesTotal: 1, tradelines: [],
+      liabilities: { totalMonthlyPayments: 0, revolvingBalance: 0, installmentBalance: 0, mortgageBalance: 0, collectionsBalance: 0, totalBalance: 0 },
+    },
+    appraisal: {
+      appraisalDate: "2026-01-01", appraiserName: "Test", appraisalType: "Full", appraisedValue: 100000,
+      marketCondition: "Stable", neighborhoodRating: "Average", siteArea: "N/A", grossLivingArea: 1000,
+      roomCount: 4, bedroomCount: 2, bathroomCount: 1, garageSpaces: 1, condition: "Average", comparables: [],
+    },
+    conditions: [], documents: [], decision: "pending",
+    milestones: [{ name: "Submitted to UW", by: "test", at: "2026-01-01T00:00:00.000Z" }],
+    compliance: {
+      qmStatus: "Non-QM", atrCompliant: true, hpml: false, hoepa: false,
+      higherPricedCoveredTransaction: false, stateLicenseRequired: false,
+      stateHighCostTest: "Pass", tridToleranceCure: "None",
+      totalPointsAndFees: 0, pointsAndFeesThreshold: 0, pointsAndFeesPass: true, flags: [],
+    },
+    overlay: {
+      programName: "Flex Select", investorName: "Test", maxLTV: 100, minFICO: 600, maxDTI: 50,
+      minDSCR: null, minReserves: 0, checks: [],
+    },
+  };
+}
+
+let sharedStore: Store | null = null;
 
 const T = "5d175193-6ee2-4d6a-b16e-dd00dd00dd01";
 
@@ -107,10 +165,20 @@ function loanContextFullDocW2(): LoanContext {
 
 beforeAll(async () => {
   await seedTenant();
+  if (!sharedStore) {
+    sharedStore = createStore({ scenarios });
+    configurePredictConditionsService({ store: sharedStore });
+  }
 });
 
 beforeEach(async () => {
   await cleanupAll();
+  // Re-inject stub loans for every loan_id used by the mutation tests.
+  if (sharedStore) {
+    for (const loanId of ["L-ACC-1","L-ACC-2","L-DIS-1","L-DIS-2","L-REOPEN-1","L-REOPEN-2","L-CLR-2"]) {
+      sharedStore.dispatch({ type: "InjectLoan", loan: stubLoanForStore(loanId) });
+    }
+  }
 });
 
 afterAll(async () => {
@@ -335,5 +403,133 @@ describe("predict-conditions service — concurrency", () => {
     expect(parseInt(total.rows[0]!.count, 10)).toBe(1);
     const reusedCount = [a, b].filter((x) => x.reused).length;
     expect(reusedCount).toBe(1);
+  });
+});
+
+// ── Helpers used by mutation tests ───────────────────────────────────────────
+
+async function seedAndRun(loanId: string): Promise<{ predictionIds: string[] }> {
+  const kbId = await seedActiveKbWithMinimalResolver();
+  await seedResolverHappyPath(kbId);
+  await run(T, loanId, loanContextFullDocW2(), "system:loan-ingest");
+  const rows = await withDb(async (c) =>
+    c.query<{ id: string }>(
+      `SELECT id FROM predicted_conditions WHERE tenant_id = $1 AND loan_id = $2 ORDER BY source_list, source_order`,
+      [T, loanId],
+    ),
+  );
+  return { predictionIds: rows.rows.map((r) => r.id) };
+}
+
+describe("predict-conditions service — accept()", () => {
+  it("flips status to accepted, creates a Condition, and links via accepted_condition_id", async () => {
+    const { predictionIds } = await seedAndRun("L-ACC-1");
+    const r = await accept(T, predictionIds[0]!, "op-1", "operator");
+    expect(r.conditionId).toMatch(/^c\d+$/);
+    expect(r.predictionId).toBe(predictionIds[0]);
+
+    const after = await withDb(async (c) =>
+      c.query<{ status: string; acted_role: string; accepted_condition_id: string }>(
+        `SELECT status, acted_role, accepted_condition_id FROM predicted_conditions WHERE id = $1`,
+        [predictionIds[0]],
+      ),
+    );
+    expect(after.rows[0]!.status).toBe("accepted");
+    expect(after.rows[0]!.acted_role).toBe("operator");
+    expect(after.rows[0]!.accepted_condition_id).toBe(r.conditionId);
+  });
+
+  it("rejects non-pending predictions with PredictionNotPendingError", async () => {
+    const { predictionIds } = await seedAndRun("L-ACC-2");
+    await accept(T, predictionIds[0]!, "op-1", "operator");
+    await expect(accept(T, predictionIds[0]!, "op-2", "operator")).rejects.toBeInstanceOf(PredictionNotPendingError);
+  });
+
+  it("rejects missing prediction id with PredictionNotFoundError", async () => {
+    await expect(accept(T, "00000000-0000-0000-0000-000000000000", "op-x", "operator")).rejects.toBeInstanceOf(PredictionNotFoundError);
+  });
+});
+
+describe("predict-conditions service — dismiss()", () => {
+  it("flips status to dismissed and records reason + actor + role", async () => {
+    const { predictionIds } = await seedAndRun("L-DIS-1");
+    await dismiss(T, predictionIds[0]!, "op-1", "operator", "LO already has this doc on file from prior intake");
+
+    const after = await withDb(async (c) =>
+      c.query<{ status: string; dismissal_reason: string; acted_role: string }>(
+        `SELECT status, dismissal_reason, acted_role FROM predicted_conditions WHERE id = $1`,
+        [predictionIds[0]],
+      ),
+    );
+    expect(after.rows[0]!.status).toBe("dismissed");
+    expect(after.rows[0]!.dismissal_reason).toMatch(/LO already has/);
+    expect(after.rows[0]!.acted_role).toBe("operator");
+  });
+
+  it("rejects dismissal reasons shorter than 10 chars", async () => {
+    const { predictionIds } = await seedAndRun("L-DIS-2");
+    await expect(dismiss(T, predictionIds[0]!, "op-1", "operator", "too short")).rejects.toBeInstanceOf(DismissalReasonTooShortError);
+  });
+});
+
+describe("predict-conditions service — reopenAndAccept()", () => {
+  it("flips dismissed → accepted, clears dismissal_reason, creates Condition, captures prior_dismissal_audit_id", async () => {
+    const { predictionIds } = await seedAndRun("L-REOPEN-1");
+    await dismiss(T, predictionIds[0]!, "op-1", "operator", "LO already has this doc on file from prior intake");
+    const r = await reopenAndAccept(T, predictionIds[0]!, "va-7", "va");
+    expect(r.conditionId).toMatch(/^c\d+$/);
+
+    const after = await withDb(async (c) =>
+      c.query<{ status: string; dismissal_reason: string | null; acted_role: string }>(
+        `SELECT status, dismissal_reason, acted_role FROM predicted_conditions WHERE id = $1`,
+        [predictionIds[0]],
+      ),
+    );
+    expect(after.rows[0]!.status).toBe("accepted");
+    expect(after.rows[0]!.dismissal_reason).toBeNull();
+    expect(after.rows[0]!.acted_role).toBe("va");
+
+    // Reopen audit row carries prior_dismissal_audit_id.
+    const audit = await withDb(async (c) =>
+      c.query<{ metadata: Record<string, unknown> }>(
+        `SELECT metadata FROM tenant_audit_log
+          WHERE target_tenant_id = $1 AND action = 'predict_conditions.reopen_and_accept'
+            AND (metadata->>'prediction_id') = $2
+          ORDER BY created_at DESC LIMIT 1`,
+        [T, predictionIds[0]],
+      ),
+    );
+    expect(audit.rows[0]!.metadata.prior_dismissal_audit_id).toBeTruthy();
+  });
+
+  it("rejects non-dismissed predictions with PredictionNotDismissedError", async () => {
+    const { predictionIds } = await seedAndRun("L-REOPEN-2");
+    await expect(reopenAndAccept(T, predictionIds[0]!, "va-7", "va")).rejects.toBeInstanceOf(PredictionNotDismissedError);
+  });
+});
+
+describe("predict-conditions service — clearAlert()", () => {
+  it("flips cleared_at/by on the alert", async () => {
+    // Produce an alert.
+    await run(T, "L-CLR-2", loanContextFullDocW2(), "system:loan-ingest");
+    const alertRow = await withDb(async (c) =>
+      c.query<{ id: string }>(
+        `SELECT id FROM prediction_alerts WHERE tenant_id = $1 AND loan_id = $2`,
+        [T, "L-CLR-2"],
+      ),
+    );
+    await clearAlert(T, alertRow.rows[0]!.id, "op-clr");
+    const after = await withDb(async (c) =>
+      c.query<{ cleared_by: string; cleared_at: string | null }>(
+        `SELECT cleared_by, cleared_at FROM prediction_alerts WHERE id = $1`,
+        [alertRow.rows[0]!.id],
+      ),
+    );
+    expect(after.rows[0]!.cleared_by).toBe("op-clr");
+    expect(after.rows[0]!.cleared_at).not.toBeNull();
+  });
+
+  it("rejects missing alert id with AlertNotFoundError", async () => {
+    await expect(clearAlert(T, "00000000-0000-0000-0000-000000000000", "op-x")).rejects.toBeInstanceOf(AlertNotFoundError);
   });
 });
