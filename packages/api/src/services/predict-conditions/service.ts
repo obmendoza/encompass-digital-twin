@@ -2,6 +2,7 @@
 
 import { createHash, randomUUID } from "node:crypto";
 import { withTenantTx } from "../../db/pool.js";
+import { withStoreSnapshot } from "../../store-db-consistency.js";
 import {
   resolveRequiredDocs,
   NoActiveKbVersionError,
@@ -38,6 +39,16 @@ const REMEDIATION: Record<PredictionAlertErrorClass, string> = {
   IncomeTypeUnresolvedError:
     "No income_type_resolver row for this combination. Either the loan's income_doc_type/borrower_type/citizenship/isItin fields are malformed, or NPNQM's engine doesn't yet cover this combination. Fix the loan fields or contact NPNQM to add an engine row, then re-run /predictions/run.",
 };
+
+// EXPORTED FOR TESTS ONLY. Do not call from production code paths. When set,
+// the next accept() or reopenAndAccept() call throws this error exactly once
+// immediately after dispatching AddCondition, exercising the rollback path
+// without requiring DB-level sabotage. Consumed on read (one-shot reset).
+let __testOnly_throwAfterDispatch: Error | null = null;
+
+export function __testOnly_setThrowAfterDispatch(e: Error | null): void {
+  __testOnly_throwAfterDispatch = e;
+}
 
 function canonicalizeContext(loan: LoanContext): string {
   // Canonical JSON for hashing: sort top-level keys deterministically.
@@ -280,58 +291,68 @@ export async function accept(
     const p = rows[0]!;
     if (p.status !== "pending") throw new PredictionNotPendingError(predictionId, p.status);
 
-    // Mint a Condition via the existing store reducer.
-    const store = getStore();
-    const beforeLoan = store.getState().loans[p.loan_id];
-    if (!beforeLoan) {
-      throw new Error(`loan ${p.loan_id} not in store — cannot dispatch AddCondition`);
-    }
-    const beforeCount = beforeLoan.conditions.length;
-    const description = p.note ? `${p.description} (${p.note})` : p.description;
-    store.dispatch({
-      type: "AddCondition",
-      loanId: p.loan_id,
-      condition: {
-        category: p.category as "PTA" | "PTD" | "PTF" | "PTP",
-        source: "Predicted",
-        description,
-      },
-      actor: { kind: "human", id: actorId },
-    });
-    // Assert the reducer appended exactly one new condition. If dedup fired,
-    // conditions.length will be unchanged and we surface it to the caller.
-    const after = store.getState().loans[p.loan_id]!;
-    if (after.conditions.length !== beforeCount + 1) {
-      throw new PredictionConditionCollisionError(predictionId, p.loan_id, description);
-    }
-    const newCondition = after.conditions[after.conditions.length - 1]!;
-    const conditionId = newCondition.id;
+    // Per-loan serialization. Prevents the rollback-clobbers-concurrent-work
+    // scenario where two parallel accept() calls on different predictions of
+    // the same loan interleave at every await and one closure's rollback
+    // wipes the other's dispatch. Distinct namespace from run()'s 'predict:'
+    // lock so accept and run don't contend on the same loan.
+    await c.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`predict-accept:${p.loan_id}`]);
 
-    await c.query(
-      `UPDATE predicted_conditions
-          SET status = 'accepted',
-              acted_by = $1, acted_at = now(), acted_role = $2,
-              accepted_condition_id = $3
-        WHERE id = $4 AND tenant_id = $5`,
-      [actorId, role, conditionId, predictionId, tenantId],
-    );
-    await c.query(
-      `INSERT INTO tenant_audit_log (target_tenant_id, actor_id, action, reason, metadata)
-       SELECT $1, $2, 'predict_conditions.accept', $3, $4::jsonb
-       WHERE NOT EXISTS (
-         SELECT 1 FROM tenant_audit_log
-          WHERE target_tenant_id = $1 AND actor_id = $2
-            AND action = 'predict_conditions.accept' AND (metadata->>'prediction_id') = $5
-       )`,
-      [
-        tenantId,
-        actorId,
-        `accepted prediction ${predictionId} → condition ${conditionId}`,
-        JSON.stringify({ prediction_id: predictionId, condition_id: conditionId, role }),
-        predictionId,
-      ],
-    );
-    return { conditionId, predictionId };
+    const store = getStore();
+    return withStoreSnapshot(store, p.loan_id, async () => {
+      const beforeLoan = store.getState().loans[p.loan_id];
+      if (!beforeLoan) throw new Error(`loan ${p.loan_id} not in store — cannot dispatch AddCondition`);
+      const beforeCount = beforeLoan.conditions.length;
+      const description = p.note ? `${p.description} (${p.note})` : p.description;
+      store.dispatch({
+        type: "AddCondition",
+        loanId: p.loan_id,
+        condition: {
+          category: p.category as "PTA" | "PTD" | "PTF" | "PTP",
+          source: "Predicted",
+          description,
+        },
+        actor: { kind: "human", id: actorId },
+      });
+      // Test hook: throw immediately after dispatch to exercise rollback.
+      if (__testOnly_throwAfterDispatch) {
+        const e = __testOnly_throwAfterDispatch;
+        __testOnly_throwAfterDispatch = null;
+        throw e;
+      }
+      const after = store.getState().loans[p.loan_id]!;
+      if (after.conditions.length !== beforeCount + 1) {
+        throw new PredictionConditionCollisionError(predictionId, p.loan_id, description);
+      }
+      const newCondition = after.conditions[after.conditions.length - 1]!;
+      const conditionId = newCondition.id;
+
+      await c.query(
+        `UPDATE predicted_conditions
+            SET status = 'accepted',
+                acted_by = $1, acted_at = now(), acted_role = $2,
+                accepted_condition_id = $3
+          WHERE id = $4 AND tenant_id = $5`,
+        [actorId, role, conditionId, predictionId, tenantId],
+      );
+      await c.query(
+        `INSERT INTO tenant_audit_log (target_tenant_id, actor_id, action, reason, metadata)
+         SELECT $1, $2, 'predict_conditions.accept', $3, $4::jsonb
+         WHERE NOT EXISTS (
+           SELECT 1 FROM tenant_audit_log
+            WHERE target_tenant_id = $1 AND actor_id = $2
+              AND action = 'predict_conditions.accept' AND (metadata->>'prediction_id') = $5
+         )`,
+        [
+          tenantId,
+          actorId,
+          `accepted prediction ${predictionId} → condition ${conditionId}`,
+          JSON.stringify({ prediction_id: predictionId, condition_id: conditionId, role }),
+          predictionId,
+        ],
+      );
+      return { conditionId, predictionId };
+    });
   });
 }
 
@@ -406,7 +427,12 @@ export async function reopenAndAccept(
     const p = rows[0]!;
     if (p.status !== "dismissed") throw new PredictionNotDismissedError(predictionId, p.status);
 
-    // Capture prior dismissal audit row id (forward link).
+    // Same per-loan lock as accept() — they share the namespace so concurrent
+    // accept/reopen on the same loan serialize.
+    await c.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`predict-accept:${p.loan_id}`]);
+
+    // Capture prior dismissal audit row id (forward link). Outside the helper
+    // closure because it touches only the audit log, not the store.
     const priorRow = await c.query<{ id: string }>(
       `SELECT id FROM tenant_audit_log
         WHERE target_tenant_id = $1
@@ -417,54 +443,56 @@ export async function reopenAndAccept(
     );
     const priorDismissalAuditId = priorRow.rows[0]?.id ?? null;
 
-    // Mint Condition.
     const store = getStore();
-    const beforeLoan = store.getState().loans[p.loan_id];
-    if (!beforeLoan) {
-      throw new Error(`loan ${p.loan_id} not in store — cannot dispatch AddCondition`);
-    }
-    const beforeCount = beforeLoan.conditions.length;
-    const description = p.note ? `${p.description} (${p.note})` : p.description;
-    store.dispatch({
-      type: "AddCondition",
-      loanId: p.loan_id,
-      condition: { category: p.category as "PTA" | "PTD" | "PTF" | "PTP", source: "Predicted", description },
-      actor: { kind: "human", id: actorId },
-    });
-    // Assert the reducer appended exactly one new condition. If dedup fired,
-    // conditions.length will be unchanged and we surface it to the caller.
-    const afterState = store.getState().loans[p.loan_id]!;
-    if (afterState.conditions.length !== beforeCount + 1) {
-      throw new PredictionConditionCollisionError(predictionId, p.loan_id, description);
-    }
-    const conditionId = afterState.conditions[afterState.conditions.length - 1]!.id;
+    return withStoreSnapshot(store, p.loan_id, async () => {
+      const beforeLoan = store.getState().loans[p.loan_id];
+      if (!beforeLoan) throw new Error(`loan ${p.loan_id} not in store — cannot dispatch AddCondition`);
+      const beforeCount = beforeLoan.conditions.length;
+      const description = p.note ? `${p.description} (${p.note})` : p.description;
+      store.dispatch({
+        type: "AddCondition",
+        loanId: p.loan_id,
+        condition: { category: p.category as "PTA" | "PTD" | "PTF" | "PTP", source: "Predicted", description },
+        actor: { kind: "human", id: actorId },
+      });
+      if (__testOnly_throwAfterDispatch) {
+        const e = __testOnly_throwAfterDispatch;
+        __testOnly_throwAfterDispatch = null;
+        throw e;
+      }
+      const after = store.getState().loans[p.loan_id]!;
+      if (after.conditions.length !== beforeCount + 1) {
+        throw new PredictionConditionCollisionError(predictionId, p.loan_id, description);
+      }
+      const conditionId = after.conditions[after.conditions.length - 1]!.id;
 
-    await c.query(
-      `UPDATE predicted_conditions
-          SET status = 'accepted',
-              acted_by = $1, acted_at = now(), acted_role = $2,
-              accepted_condition_id = $3,
-              dismissal_reason = NULL
-        WHERE id = $4 AND tenant_id = $5`,
-      [actorId, role, conditionId, predictionId, tenantId],
-    );
-    await c.query(
-      `INSERT INTO tenant_audit_log (target_tenant_id, actor_id, action, reason, metadata)
-       SELECT $1, $2, 'predict_conditions.reopen_and_accept', $3, $4::jsonb
-       WHERE NOT EXISTS (
-         SELECT 1 FROM tenant_audit_log
-          WHERE target_tenant_id = $1 AND actor_id = $2
-            AND action = 'predict_conditions.reopen_and_accept' AND (metadata->>'prediction_id') = $5
-       )`,
-      [
-        tenantId,
-        actorId,
-        `reopened and accepted prediction ${predictionId} → condition ${conditionId}`,
-        JSON.stringify({ prediction_id: predictionId, condition_id: conditionId, role, prior_dismissal_audit_id: priorDismissalAuditId }),
-        predictionId,
-      ],
-    );
-    return { conditionId, predictionId };
+      await c.query(
+        `UPDATE predicted_conditions
+            SET status = 'accepted',
+                acted_by = $1, acted_at = now(), acted_role = $2,
+                accepted_condition_id = $3,
+                dismissal_reason = NULL
+          WHERE id = $4 AND tenant_id = $5`,
+        [actorId, role, conditionId, predictionId, tenantId],
+      );
+      await c.query(
+        `INSERT INTO tenant_audit_log (target_tenant_id, actor_id, action, reason, metadata)
+         SELECT $1, $2, 'predict_conditions.reopen_and_accept', $3, $4::jsonb
+         WHERE NOT EXISTS (
+           SELECT 1 FROM tenant_audit_log
+            WHERE target_tenant_id = $1 AND actor_id = $2
+              AND action = 'predict_conditions.reopen_and_accept' AND (metadata->>'prediction_id') = $5
+         )`,
+        [
+          tenantId,
+          actorId,
+          `reopened and accepted prediction ${predictionId} → condition ${conditionId}`,
+          JSON.stringify({ prediction_id: predictionId, condition_id: conditionId, role, prior_dismissal_audit_id: priorDismissalAuditId }),
+          predictionId,
+        ],
+      );
+      return { conditionId, predictionId };
+    });
   });
 }
 

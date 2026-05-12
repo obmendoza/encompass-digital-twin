@@ -9,4 +9,5 @@ export {
   reopenAndAccept,
   clearAlert,
   configurePredictConditionsService,
+  __testOnly_setThrowAfterDispatch,
 } from "./service.js";

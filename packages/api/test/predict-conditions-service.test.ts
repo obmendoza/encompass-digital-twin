@@ -31,6 +31,7 @@ import {
   AlertNotFoundError,
   PredictionConditionCollisionError,
   configurePredictConditionsService,
+  __testOnly_setThrowAfterDispatch,
 } from "../src/services/predict-conditions/index.js";
 import type { Store, Loan } from "@twin/core";
 
@@ -176,12 +177,15 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   await cleanupAll();
-  // Re-inject stub loans for every loan_id used by the mutation tests.
+  // Re-inject stub loans for every loan_id used by the upcoming tests.
   if (sharedStore) {
-    for (const loanId of ["L-ACC-1","L-ACC-2","L-ACC-COLLIDE","L-DIS-1","L-DIS-2","L-REOPEN-1","L-REOPEN-2","L-CLR-2"]) {
+    for (const loanId of ["L-ACC-1","L-ACC-2","L-ACC-COLLIDE","L-ACC-ROLLBACK","L-DIS-1","L-DIS-2","L-REOPEN-1","L-REOPEN-2","L-CLR-2"]) {
       sharedStore.dispatch({ type: "InjectLoan", loan: stubLoanForStore(loanId) });
     }
   }
+  // Defensive reset — the hook is one-shot but a forgotten setter from a
+  // prior failing test would otherwise leak into the next test.
+  __testOnly_setThrowAfterDispatch(null);
 });
 
 afterAll(async () => {
@@ -550,5 +554,45 @@ describe("predict-conditions service — clearAlert()", () => {
 
   it("rejects missing alert id with AlertNotFoundError", async () => {
     await expect(clearAlert(T, "00000000-0000-0000-0000-000000000000", "op-x")).rejects.toBeInstanceOf(AlertNotFoundError);
+  });
+});
+
+describe("predict-conditions service — accept() store-DB consistency", () => {
+  it("reverts the AddCondition dispatch in the store when the post-dispatch step fails", async () => {
+    const { predictionIds } = await seedAndRun("L-ACC-ROLLBACK");
+
+    // Snapshot the loan's condition count before accept().
+    const conditionsBefore = sharedStore!.getState().loans["L-ACC-ROLLBACK"]!.conditions.length;
+
+    // Arm the hook so the next accept() throws right after dispatching AddCondition.
+    __testOnly_setThrowAfterDispatch(new Error("sabotaged after dispatch"));
+    await expect(
+      accept(T, predictionIds[0]!, "op-rb", "operator"),
+    ).rejects.toThrow("sabotaged after dispatch");
+
+    // Store reverted: condition count matches the pre-call snapshot.
+    expect(sharedStore!.getState().loans["L-ACC-ROLLBACK"]!.conditions.length).toBe(conditionsBefore);
+
+    // DB also rolled back: the prediction row is still 'pending'.
+    const row = await withDb(async (c) =>
+      c.query<{ status: string; accepted_condition_id: string | null }>(
+        `SELECT status, accepted_condition_id FROM predicted_conditions WHERE id = $1`,
+        [predictionIds[0]],
+      ),
+    );
+    expect(row.rows[0]!.status).toBe("pending");
+    expect(row.rows[0]!.accepted_condition_id).toBeNull();
+
+    // No predict_conditions.accept audit row was written for this prediction.
+    const audit = await withDb(async (c) =>
+      c.query<{ count: string }>(
+        `SELECT COUNT(*)::text FROM tenant_audit_log
+          WHERE target_tenant_id = $1
+            AND action = 'predict_conditions.accept'
+            AND (metadata->>'prediction_id') = $2`,
+        [T, predictionIds[0]],
+      ),
+    );
+    expect(parseInt(audit.rows[0]!.count, 10)).toBe(0);
   });
 });
