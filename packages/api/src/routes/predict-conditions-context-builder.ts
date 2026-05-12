@@ -30,7 +30,14 @@ export function buildLoanContextFromLoan(loan: Loan): LoanContext {
     llcOrLegalEntity: false,
     occupancy,
     state: loan.property.state,
-    county: loan.property.city,
+    // The Loan type has no county field today; using property.city as a proxy
+    // is wrong because for loans whose city differs from their county,
+    // county_in predicates in doc-engine rules would evaluate against the
+    // city name and quietly miss the rule. Pass an empty string so
+    // county-scoped predicates fail to match — the safer "fail closed"
+    // behavior until proper county data is plumbed through ingestion
+    // (deferred F2; Codex P2 follow-up).
+    county: "",
     usCredit: true,
     program: loan.nqmProgram,
   };

@@ -241,6 +241,13 @@ export const api = {
       `/loans/${loanId}/predictions/${predictionId}/dismiss`,
       { method: "POST", body: JSON.stringify({ reason }) },
     ),
+  // The x-user-role: va header below is honored by the API only on the
+  // internal-service-call bypass (the web server uses x-user-id), so any
+  // caller of this method bypasses the API's VA gate. The server action
+  // actionReopenAndAcceptPrediction enforces the role check using the real
+  // Supabase session BEFORE invoking this — never call this method outside
+  // a server action that has already verified user.role === "va". Codex P1
+  // follow-up.
   reopenAndAcceptPrediction: (loanId: string, predictionId: string) =>
     req<{ conditionId: string; predictionId: string }>(
       `/loans/${loanId}/predictions/${predictionId}/reopen-and-accept`,
