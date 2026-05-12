@@ -15,7 +15,19 @@ import type {
   RunResult,
   RunSource,
   PredictionAlertErrorClass,
+  AcceptResult,
+  DismissResult,
+  ClearAlertResult,
+  PredictedConditionRole,
 } from "./types.js";
+import type { Store } from "@twin/core";
+import {
+  PredictionNotFoundError,
+  PredictionNotPendingError,
+  PredictionNotDismissedError,
+  DismissalReasonTooShortError,
+  AlertNotFoundError,
+} from "./errors.js";
 
 const REMEDIATION: Record<PredictionAlertErrorClass, string> = {
   NoActiveKbVersionError:
@@ -211,5 +223,278 @@ export async function run(
     );
 
     return { runId, predictionCount: items.length, alertCount: 0, reused: false };
+  });
+}
+
+// ── Store dependency injection ───────────────────────────────────────────
+//
+// The accept() and reopenAndAccept() paths need to dispatch an AddCondition
+// action against the in-memory store to mint a real Condition.id. The existing
+// routes import `store` from server.ts via the register*Routes pattern;
+// service functions don't have that wiring today, so we accept the store as
+// an explicit dependency via configurePredictConditionsService() called once
+// at server boot (Task 8 wires this up).
+
+interface PredictConditionsServiceDeps {
+  store: Store;
+}
+
+let serviceDeps: PredictConditionsServiceDeps | null = null;
+
+export function configurePredictConditionsService(deps: PredictConditionsServiceDeps): void {
+  serviceDeps = deps;
+}
+
+function getStore(): Store {
+  if (!serviceDeps) {
+    throw new Error("predict-conditions service not configured — call configurePredictConditionsService(deps) at server boot");
+  }
+  return serviceDeps.store;
+}
+
+// ── accept() ─────────────────────────────────────────────────────────────
+
+export async function accept(
+  tenantId: string,
+  predictionId: string,
+  actorId: string,
+  role: PredictedConditionRole,
+): Promise<AcceptResult> {
+  return withTenantTx(tenantId, async (c) => {
+    const { rows } = await c.query<{
+      id: string;
+      loan_id: string;
+      category: string;
+      description: string;
+      note: string | null;
+      status: string;
+    }>(
+      `SELECT id, loan_id, category, description, note, status
+         FROM predicted_conditions
+        WHERE id = $1 AND tenant_id = $2
+        FOR UPDATE`,
+      [predictionId, tenantId],
+    );
+    if (rows.length === 0) throw new PredictionNotFoundError(predictionId, tenantId);
+    const p = rows[0]!;
+    if (p.status !== "pending") throw new PredictionNotPendingError(predictionId, p.status);
+
+    // Mint a Condition via the existing store reducer.
+    const store = getStore();
+    if (!store.getState().loans[p.loan_id]) {
+      throw new Error(`loan ${p.loan_id} not in store — cannot dispatch AddCondition`);
+    }
+    const description = p.note ? `${p.description} (${p.note})` : p.description;
+    store.dispatch({
+      type: "AddCondition",
+      loanId: p.loan_id,
+      condition: {
+        category: p.category as "PTA" | "PTD" | "PTF" | "PTP",
+        source: "Predicted",
+        description,
+      },
+      actor: { kind: "human", id: actorId },
+    });
+    // The reducer appends to loan.conditions; the new condition is the last one.
+    const after = store.getState().loans[p.loan_id]!;
+    const newCondition = after.conditions[after.conditions.length - 1]!;
+    const conditionId = newCondition.id;
+
+    await c.query(
+      `UPDATE predicted_conditions
+          SET status = 'accepted',
+              acted_by = $1, acted_at = now(), acted_role = $2,
+              accepted_condition_id = $3
+        WHERE id = $4 AND tenant_id = $5`,
+      [actorId, role, conditionId, predictionId, tenantId],
+    );
+    await c.query(
+      `INSERT INTO tenant_audit_log (target_tenant_id, actor_id, action, reason, metadata)
+       SELECT $1, $2, 'predict_conditions.accept', $3, $4::jsonb
+       WHERE NOT EXISTS (
+         SELECT 1 FROM tenant_audit_log
+          WHERE target_tenant_id = $1 AND actor_id = $2
+            AND action = 'predict_conditions.accept' AND (metadata->>'prediction_id') = $5
+       )`,
+      [
+        tenantId,
+        actorId,
+        `accepted prediction ${predictionId} → condition ${conditionId}`,
+        JSON.stringify({ prediction_id: predictionId, condition_id: conditionId, role }),
+        predictionId,
+      ],
+    );
+    return { conditionId, predictionId };
+  });
+}
+
+// ── dismiss() ────────────────────────────────────────────────────────────
+
+export async function dismiss(
+  tenantId: string,
+  predictionId: string,
+  actorId: string,
+  role: PredictedConditionRole,
+  reason: string,
+): Promise<DismissResult> {
+  if (reason.length < 10) throw new DismissalReasonTooShortError(reason.length);
+  return withTenantTx(tenantId, async (c) => {
+    const r = await c.query<{ id: string; status: string }>(
+      `SELECT id, status FROM predicted_conditions WHERE id = $1 AND tenant_id = $2 FOR UPDATE`,
+      [predictionId, tenantId],
+    );
+    if (r.rows.length === 0) throw new PredictionNotFoundError(predictionId, tenantId);
+    if (r.rows[0]!.status !== "pending") throw new PredictionNotPendingError(predictionId, r.rows[0]!.status);
+    await c.query(
+      `UPDATE predicted_conditions
+          SET status = 'dismissed',
+              acted_by = $1, acted_at = now(), acted_role = $2,
+              dismissal_reason = $3
+        WHERE id = $4 AND tenant_id = $5`,
+      [actorId, role, reason, predictionId, tenantId],
+    );
+    await c.query(
+      `INSERT INTO tenant_audit_log (target_tenant_id, actor_id, action, reason, metadata)
+       SELECT $1, $2, 'predict_conditions.dismiss', $3, $4::jsonb
+       WHERE NOT EXISTS (
+         SELECT 1 FROM tenant_audit_log
+          WHERE target_tenant_id = $1 AND actor_id = $2
+            AND action = 'predict_conditions.dismiss' AND (metadata->>'prediction_id') = $5
+       )`,
+      [
+        tenantId,
+        actorId,
+        `dismissed prediction ${predictionId}: ${reason}`,
+        JSON.stringify({ prediction_id: predictionId, role, dismissal_reason: reason }),
+        predictionId,
+      ],
+    );
+    return { predictionId };
+  });
+}
+
+// ── reopenAndAccept() ────────────────────────────────────────────────────
+
+export async function reopenAndAccept(
+  tenantId: string,
+  predictionId: string,
+  actorId: string,
+  role: PredictedConditionRole,
+): Promise<AcceptResult> {
+  return withTenantTx(tenantId, async (c) => {
+    const { rows } = await c.query<{
+      id: string;
+      loan_id: string;
+      category: string;
+      description: string;
+      note: string | null;
+      status: string;
+    }>(
+      `SELECT id, loan_id, category, description, note, status
+         FROM predicted_conditions
+        WHERE id = $1 AND tenant_id = $2 FOR UPDATE`,
+      [predictionId, tenantId],
+    );
+    if (rows.length === 0) throw new PredictionNotFoundError(predictionId, tenantId);
+    const p = rows[0]!;
+    if (p.status !== "dismissed") throw new PredictionNotDismissedError(predictionId, p.status);
+
+    // Capture prior dismissal audit row id (forward link).
+    const priorRow = await c.query<{ id: string }>(
+      `SELECT id FROM tenant_audit_log
+        WHERE target_tenant_id = $1
+          AND action = 'predict_conditions.dismiss'
+          AND (metadata->>'prediction_id') = $2
+        ORDER BY created_at DESC LIMIT 1`,
+      [tenantId, predictionId],
+    );
+    const priorDismissalAuditId = priorRow.rows[0]?.id ?? null;
+
+    // Mint Condition.
+    const store = getStore();
+    if (!store.getState().loans[p.loan_id]) {
+      throw new Error(`loan ${p.loan_id} not in store — cannot dispatch AddCondition`);
+    }
+    const description = p.note ? `${p.description} (${p.note})` : p.description;
+    store.dispatch({
+      type: "AddCondition",
+      loanId: p.loan_id,
+      condition: { category: p.category as "PTA" | "PTD" | "PTF" | "PTP", source: "Predicted", description },
+      actor: { kind: "human", id: actorId },
+    });
+    const afterState = store.getState().loans[p.loan_id]!;
+    const conditionId = afterState.conditions[afterState.conditions.length - 1]!.id;
+
+    await c.query(
+      `UPDATE predicted_conditions
+          SET status = 'accepted',
+              acted_by = $1, acted_at = now(), acted_role = $2,
+              accepted_condition_id = $3,
+              dismissal_reason = NULL
+        WHERE id = $4 AND tenant_id = $5`,
+      [actorId, role, conditionId, predictionId, tenantId],
+    );
+    await c.query(
+      `INSERT INTO tenant_audit_log (target_tenant_id, actor_id, action, reason, metadata)
+       SELECT $1, $2, 'predict_conditions.reopen_and_accept', $3, $4::jsonb
+       WHERE NOT EXISTS (
+         SELECT 1 FROM tenant_audit_log
+          WHERE target_tenant_id = $1 AND actor_id = $2
+            AND action = 'predict_conditions.reopen_and_accept' AND (metadata->>'prediction_id') = $5
+       )`,
+      [
+        tenantId,
+        actorId,
+        `reopened and accepted prediction ${predictionId} → condition ${conditionId}`,
+        JSON.stringify({ prediction_id: predictionId, condition_id: conditionId, role, prior_dismissal_audit_id: priorDismissalAuditId }),
+        predictionId,
+      ],
+    );
+    return { conditionId, predictionId };
+  });
+}
+
+// ── clearAlert() ─────────────────────────────────────────────────────────
+
+export async function clearAlert(
+  tenantId: string,
+  alertId: string,
+  actorId: string,
+): Promise<ClearAlertResult> {
+  return withTenantTx(tenantId, async (c) => {
+    const r = await c.query<{ cleared_at: string | null }>(
+      `UPDATE prediction_alerts
+          SET cleared_by = $1, cleared_at = now()
+        WHERE id = $2 AND tenant_id = $3 AND cleared_at IS NULL
+        RETURNING cleared_at`,
+      [actorId, alertId, tenantId],
+    );
+    if (r.rowCount === 0) {
+      // Either the alert doesn't exist or it's already cleared.
+      const probe = await c.query<{ id: string }>(
+        `SELECT id FROM prediction_alerts WHERE id = $1 AND tenant_id = $2`,
+        [alertId, tenantId],
+      );
+      if (probe.rows.length === 0) throw new AlertNotFoundError(alertId, tenantId);
+      // Already cleared — return idempotently.
+      return { alertId };
+    }
+    await c.query(
+      `INSERT INTO tenant_audit_log (target_tenant_id, actor_id, action, reason, metadata)
+       SELECT $1, $2, 'predict_conditions.alert_clear', $3, $4::jsonb
+       WHERE NOT EXISTS (
+         SELECT 1 FROM tenant_audit_log
+          WHERE target_tenant_id = $1 AND actor_id = $2
+            AND action = 'predict_conditions.alert_clear' AND (metadata->>'alert_id') = $5
+       )`,
+      [
+        tenantId,
+        actorId,
+        `cleared alert ${alertId}`,
+        JSON.stringify({ alert_id: alertId }),
+        alertId,
+      ],
+    );
+    return { alertId };
   });
 }
