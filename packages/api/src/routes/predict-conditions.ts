@@ -69,7 +69,7 @@ export function registerPredictConditionsRoutes(app: FastifyInstance, store: Sto
       const ctx = getTenantContext();
       const role = inferRole(req);
       try {
-        const result = await accept(ctx.tenantId, req.params.predictionId, ctx.userId, role);
+        const result = await accept(ctx.tenantId, req.params.loanId, req.params.predictionId, ctx.userId, role);
         return reply.send(result);
       } catch (e) {
         return mapError(e, reply);
@@ -85,7 +85,7 @@ export function registerPredictConditionsRoutes(app: FastifyInstance, store: Sto
       const parsed = DismissBody.safeParse(req.body);
       if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
       try {
-        const result = await dismiss(ctx.tenantId, req.params.predictionId, ctx.userId, role, parsed.data.reason);
+        const result = await dismiss(ctx.tenantId, req.params.loanId, req.params.predictionId, ctx.userId, role, parsed.data.reason);
         return reply.send(result);
       } catch (e) {
         return mapError(e, reply);
@@ -100,7 +100,7 @@ export function registerPredictConditionsRoutes(app: FastifyInstance, store: Sto
       const role = inferRole(req);
       if (role !== "va") return reply.code(403).send({ error: "reopen-and-accept is VA-only" });
       try {
-        const result = await reopenAndAccept(ctx.tenantId, req.params.predictionId, ctx.userId, role);
+        const result = await reopenAndAccept(ctx.tenantId, req.params.loanId, req.params.predictionId, ctx.userId, role);
         return reply.send(result);
       } catch (e) {
         return mapError(e, reply);
@@ -113,7 +113,7 @@ export function registerPredictConditionsRoutes(app: FastifyInstance, store: Sto
     async (req, reply) => {
       const ctx = getTenantContext();
       try {
-        const result = await clearAlert(ctx.tenantId, req.params.alertId, ctx.userId);
+        const result = await clearAlert(ctx.tenantId, req.params.loanId, req.params.alertId, ctx.userId);
         return reply.send(result);
       } catch (e) {
         return mapError(e, reply);
