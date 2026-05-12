@@ -35,6 +35,8 @@ import { registerOnboardingRoutes } from "./routes/onboarding.js";
 import { registerVARoutes } from "./routes/va.js";
 import { registerVAAdminRoutes } from "./routes/va-admin.js";
 import { registerBpoRoutes } from "./routes/bpo.js";
+import { registerPredictConditionsRoutes } from "./routes/predict-conditions.js";
+import { configurePredictConditionsService } from "./services/predict-conditions/index.js";
 import { startLearningWorker } from "./learning-worker.js";
 import { startVAOutboxDispatcher } from "./services/va-outbox-dispatcher.js";
 import { getDemoTenantId, getTenantType } from "./tenant-cache.js";
@@ -94,6 +96,8 @@ export function buildServer(opts: BuildOpts = {}): { app: FastifyInstance; store
   registerVARoutes(app, store);
   registerVAAdminRoutes(app);
   registerBpoRoutes(app, store);
+  registerPredictConditionsRoutes(app, store);
+  configurePredictConditionsService({ store });
   if (opts.enableWebSocket) registerWsRoutes(app);
 
   app.get("/health", async () => {
