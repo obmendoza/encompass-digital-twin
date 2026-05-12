@@ -91,6 +91,9 @@ CREATE TABLE IF NOT EXISTS predicted_conditions (
   predicted_by           TEXT NOT NULL,
   kb_version_id          INT  NOT NULL REFERENCES kb_versions(id) ON DELETE CASCADE,
   resolved_income_type   TEXT NOT NULL,
+  -- The CHECK below freezes the four-value set for this spec. ConditionCategory
+  -- in @twin/core types must stay in sync; adding a fifth value (e.g. 'PTC')
+  -- requires a future migration to relax this CHECK. See §9 non-goal.
   category               TEXT NOT NULL,
   description            TEXT NOT NULL,
   note                   TEXT NULL,
@@ -352,13 +355,18 @@ POST /api/ingest/demo/loans
         ├─ acquire pg_advisory_xact_lock(hashtext('predict:' || loanId))  -- per-loan serialization
         ├─ build LoanContext from the just-injected Loan
         ├─ compute source_input_hash = sha256(canonical LoanContext)
-        ├─ check for existing pending batch with matching hash:
+        ├─ resolve active kb_version_id (SELECT id FROM kb_versions WHERE tenant_id=$1 AND status='active' LIMIT 1)
+        │   (may return null → resolver will throw NoActiveKbVersionError → alert path)
+        ├─ check for existing pending batch with matching hash AND matching kb_version_id:
         │     SELECT prediction_run_id FROM predicted_conditions
         │       WHERE tenant_id=$1 AND loan_id=$2 AND status='pending'
         │             AND source_input_hash=$3
+        │             AND kb_version_id=$4
         │     LIMIT 1
         │   If found: return { runId: <existing>, reused: true, predictionCount: <existing count>, alertCount: 0 }
-        ├─ DELETE existing pending rows with non-matching hash (re-prediction with new facts)
+        │   (Both predicates required: identical loan facts AND identical KB version. If the
+        │    tenant activated a new KB between runs, kb_version_id will differ → no match → re-emit.)
+        ├─ DELETE existing pending rows with non-matching (hash, kb_version_id) (re-prediction with new facts OR KB activation)
         ├─ try: resolveRequiredDocs(tenantId, null, ctx)
         │    └─ on success: INSERT N rows, write audit row, return { reused: false, ... }
         │    └─ on resolver error: catch + INSERT 1 alert row + write audit row, return { predictionCount: 0, alertCount: 1, ... }
@@ -374,10 +382,23 @@ POST /loans/:loanId/predictions/run
   └─ predictConditionsService.run(tenantId, loanId, source)
         Same flow as 5.1, plus:
         On successful prediction (alertCount === 0), auto-clear active alerts:
+          SELECT id FROM prediction_alerts
+             WHERE tenant_id = $1 AND loan_id = $2 AND cleared_at IS NULL
+             FOR UPDATE
           UPDATE prediction_alerts
              SET cleared_by = 'system:successful-rerun', cleared_at = now()
            WHERE tenant_id = $1 AND loan_id = $2 AND cleared_at IS NULL
+          For each cleared alert: write one tenant_audit_log row:
+             action     = 'predict_conditions.alert_clear'
+             actor_id   = <userId who triggered the rerun>
+             metadata   = {
+               alert_id,
+               cleared_by: 'system:successful-rerun',
+               triggered_by_run_id: <runId of this rerun>
+             }
 ```
+
+**Why `actor_id` is the user who triggered the rerun** (not NULL or 'system'): the operator initiated the action that caused the alert to clear (by either fixing the root cause and re-running, or just re-running and finding the cause was already fixed). They are the responsible actor. An SOC 2 reviewer asking "who cleared this alert?" gets a real user id. The `cleared_by: 'system:successful-rerun'` metadata field discriminates auto-clear from manual `clearAlert()`.
 
 ### 5.3 Accept
 
@@ -395,6 +416,13 @@ POST /loans/:loanId/predictions/:predictionId/accept
               description: prediction.description + (note ? ` (${note})` : ''),
             }
           The reducer assigns conditionId, returns it.
+          
+          (Tradeoff: the note is concatenated to description because the existing
+          Condition shape in @twin/core has no separate notes field. Structured
+          access to "the doc name" vs "the note" is lost once it becomes a
+          Condition. Future Condition schema enhancement could surface the note
+          as a separate field; until then, downstream search/filter must treat
+          the parenthesized suffix as descriptive text. Acceptable for v1.)
        ├─ UPDATE predicted_conditions
             SET status='accepted', acted_by=$userId, acted_at=now(),
                 acted_role=$role, accepted_condition_id=$conditionId
@@ -429,6 +457,12 @@ POST /loans/:loanId/predictions/:predictionId/reopen-and-accept
   └─ withTenantTx:
        ├─ SELECT * FROM predicted_conditions
             WHERE id=$1 AND tenant_id=$2 AND status='dismissed' FOR UPDATE
+       ├─ SELECT id FROM tenant_audit_log
+            WHERE target_tenant_id=$tenantId
+              AND action='predict_conditions.dismiss'
+              AND metadata->>'prediction_id' = $predictionId
+            ORDER BY created_at DESC LIMIT 1
+          → captures prior_dismissal_audit_id for the new audit row
        ├─ dispatch AddCondition (same as 5.3)
        ├─ UPDATE predicted_conditions
             SET status='accepted', acted_by=$userId, acted_at=now(),
@@ -436,29 +470,50 @@ POST /loans/:loanId/predictions/:predictionId/reopen-and-accept
                 dismissal_reason=NULL  -- clear the prior reason since we're reversing
           WHERE id=$1
        ├─ INSERT audit row (predict_conditions.reopen_and_accept)
+            metadata = { prediction_id, condition_id, role: 'va', prior_dismissal_audit_id }
        └─ return { conditionId, predictionId }
 ```
 
+**Audit trail note.** When a VA reopens a dismissed prediction, the prediction row's `acted_by` / `acted_role` are overwritten with the VA's values and `dismissal_reason` is set to NULL. The operator's original dismissal is **only** preserved in the `tenant_audit_log` `predict_conditions.dismiss` entry, and the reopen-and-accept audit row carries `prior_dismissal_audit_id` as a forward link. UI surfaces that need to display "originally dismissed by operator X with reason Y" must join against the audit log, not read from `predicted_conditions` alone.
+
+**Row state contract after reopen.** A reopened-then-accepted prediction is **indistinguishable at the row level** from a never-dismissed prediction that the VA directly accepted. Both have `status='accepted'`, `acted_role='va'`, `dismissal_reason=NULL`, and a populated `accepted_condition_id`. The historical "this was dismissed and then reopened" fact lives only in the audit log. This is by design — the prediction table records *current state*, the audit log records *transition history*. Future readers querying `predicted_conditions` see what the loan looks like now; querying `tenant_audit_log` reveals how it got there.
+
 ### 5.6 VA-claim handoff
 
-The VA review page (`/loan/[loanId]/va/review`) loads predictions server-side alongside the existing loan + history fetch:
+The VA review page (`/loan/[loanId]/va/review`) loads predictions server-side alongside the existing loan + history fetch. **`getLoan` and `vaReviewHistory` are unprotected** — failure on either fails the whole render (loan detail is essential). **`getPredictions` is auxiliary**, but "auxiliary" doesn't mean "silently empty if anything goes wrong":
 
 ```typescript
+type PredictionsFetchState =
+  | { predictions: PredictedCondition[]; alerts: PredictionAlert[]; unavailable: false }
+  | { predictions: []; alerts: []; unavailable: true };
+
 const [loan, history, predictionsResp] = await Promise.all([
   api.getLoan(loanId),
   api.vaReviewHistory(loanId),
-  api.getPredictions(loanId).catch(() => ({ predictions: [], alerts: [] })),
+  api.getPredictions(loanId).catch((err: { status?: number }): PredictionsFetchState => {
+    // 404 = legitimate empty (e.g., feature not yet wired for this tenant/loan).
+    if (err.status === 404) {
+      return { predictions: [], alerts: [], unavailable: false };
+    }
+    // Anything else (5xx, network, auth, parse errors) — surface a degraded
+    // banner so the VA knows the panel is stale, not legitimately empty.
+    console.error("[va-review] predictions fetch failed", { loanId, err });
+    return { predictions: [], alerts: [], unavailable: true };
+  }),
 ]);
 
 <VAReviewWorkspace
   loan={loan}
   predictions={predictionsResp.predictions}
   alerts={predictionsResp.alerts}
+  predictionsUnavailable={predictionsResp.unavailable}
   // existing props ...
 />
 ```
 
-The workspace passes predictions to the new `VAPredictedConditionsPanel` component which renders pending + dismissed sections.
+**Why distinguish 404 from other errors:** a `404` from `GET /loans/:id/predictions` means the loan has no prediction records — legitimate state (e.g., the loan predates this feature). Any other error class indicates a real problem the VA should know about: predictions endpoint is down, auth misconfig, JSON parse failure on a backend change, etc. Silently rendering an empty panel in those cases would mislead the VA into thinking there are no predictions, when really there might be 11 pending ones the predictions service couldn't return.
+
+The workspace passes the state to `VAPredictedConditionsPanel` which renders the degraded banner (see §6.2) when `predictionsUnavailable === true`.
 
 ---
 
@@ -491,12 +546,35 @@ Two new React components + one extension to the existing VA workspace.
 
 Dismiss opens a modal requiring a reason (≥10 chars). Accept fires the server action and updates the panel in place.
 
+**Re-run button gating.** When an active alert has `error_class = 'NoActiveKbVersionError'`, the `[↻ Re-run predictions]` button is disabled with a tooltip: *"Activate a KB version first (scripts/approve-kb.ts --activate). Re-running won't help until then."* Re-running in that state would just produce another alert of the same class. For `KbVersionNotFoundError` and `IncomeTypeUnresolvedError` the button stays enabled — a re-run might succeed (active KB version may have changed, or the operator may have fixed the loan's income_type fields). Only `NoActiveKbVersionError` has a deterministic "can't fix by re-running" property.
+
 When predictions exist on a loan, the existing conditions table renders the new `[Predicted]` source chip alongside `[UW]`, `[Compliance]`, etc. — yellow/amber to distinguish.
 
 ### 6.2 `VAPredictedConditionsPanel` (VA review workspace)
 
 **Location:** `packages/web/components/encompass/VAPredictedConditionsPanel.tsx`
 **Mounted on:** Inside the existing `VAReviewWorkspace` component, as a collapsible section above the six specialist signoff rows.
+
+**Props:**
+```typescript
+interface VAPredictedConditionsPanelProps {
+  predictions: PredictedCondition[];
+  alerts: PredictionAlert[];
+  unavailable: boolean;          // from the §5.6 server-side fetch
+}
+```
+
+When `unavailable === true`, the panel renders ONLY a degraded banner:
+
+```
+┌─ Predicted Conditions ─────────────────────────────────────────┐
+│ ⚠ Predictions temporarily unavailable. Refresh to retry.       │
+│   (See server logs for details. The VA review can proceed —    │
+│    predictions are auxiliary signal, not a blocker.)           │
+└────────────────────────────────────────────────────────────────┘
+```
+
+When `unavailable === false` (the normal path), the panel renders the three-section layout:
 
 ```
 ┌─ Predicted Conditions ─────────────────────────────────────────┐
@@ -516,6 +594,8 @@ When predictions exist on a loan, the existing conditions table renders the new 
 ```
 
 Reopen-and-accept opens a confirmation dialog ("You are overriding the operator's dismissal. Continue?"). Auditable via the audit log.
+
+**Dismissal-reason display caveat (per §5.5).** The operator's dismissal reason shown next to a dismissed prediction is read from `predicted_conditions.dismissal_reason` **at render time**, before any reopen action. Once a VA clicks Reopen+Accept and the server clears the reason, the next page render will show the prediction in the "Operator accepted" section (now an accepted prediction by the VA, with `acted_role='va'`). The original dismissal reason is preserved only in the audit log — the row state itself looks identical to a never-dismissed accepted prediction. UI surfaces that need "originally dismissed by operator X with reason Y" lookups must join against `tenant_audit_log`, not read from `predicted_conditions` alone.
 
 ### 6.3 Server actions
 
@@ -546,7 +626,15 @@ Each calls the corresponding `api.*` method, revalidates `/loan/[loanId]`, and r
 
 ### 7.2 Alert lifecycle
 
-Active → Cleared. Re-clearing a cleared alert is a no-op. Operators clear via the dedicated endpoint after addressing the root cause. Successful re-runs auto-clear all active alerts for the loan.
+Active → Cleared. Re-clearing a cleared alert is a no-op (200 OK, no DB write, no new audit row).
+
+**Two paths to "cleared":**
+
+1. **Manual `clearAlert()`** via `POST /loans/:loanId/predictions/alerts/:alertId/clear` — operator acknowledges the alert without triggering a re-run (e.g., investigating offline, or batching the fix). Audit row: `actor_id = <operator userId>`, `cleared_by = <operator userId>`, metadata `{ alert_id }`.
+
+2. **Auto-clear** via a successful re-run — `predictConditionsService.run()` succeeds with predictions (alertCount=0); any active alerts for the loan are cleared inside the same transaction. Audit row: `actor_id = <userId who triggered the run>`, `cleared_by = 'system:successful-rerun'`, metadata `{ alert_id, triggered_by_run_id }`. The triggering user is the responsible actor because they initiated the action that caused the clear.
+
+**No silent clears.** Every transition from active to cleared produces exactly one `predict_conditions.alert_clear` audit row. UI tabs that show the prior active state will be stale until the next refresh — this is acceptable; the audit trail is the source of truth, not the UI cache.
 
 ### 7.3 Auto-fire swallow-all posture
 
@@ -554,10 +642,13 @@ The ingest-side try/catch swallows **any** exception from `predictConditionsServ
 
 ### 7.4 Idempotency
 
+Matching predicate for "this re-run reuses the existing pending batch" is **both `source_input_hash` AND `kb_version_id`** must match. Either differing forces a new batch.
+
 | Scenario | Behavior |
 |---|---|
-| Auto-fire → re-run with identical LoanContext | `source_input_hash` matches → `reused: true` returned, no new INSERT |
+| Auto-fire → re-run with identical LoanContext, same active KB version | `source_input_hash` matches AND `kb_version_id` matches → `reused: true` returned, no new INSERT |
 | Operator edits loan fields → re-run | `source_input_hash` differs → DELETE existing pending rows → new batch with new `prediction_run_id` |
+| **Tenant activates a new KB version between runs (LoanContext unchanged)** | `source_input_hash` matches but `kb_version_id` differs → DELETE existing pending rows → new batch with new `prediction_run_id` reflecting the new KB's resolver output. KB version changes are exactly when re-prediction is most valuable; the matcher honors that. |
 | Accept 3, dismiss 1, edit loan, re-run | The 3 accepted Conditions stay in `loan.conditions`. The 1 dismissed prediction stays as a tombstone (won't reappear). The 7 remaining pending rows get DELETEd → 11 fresh pending predictions emerge. |
 
 ### 7.5 Concurrency
@@ -568,12 +659,20 @@ Per-loan advisory lock via `pg_advisory_xact_lock(hashtext('predict:' || loanId)
 
 New action enum values written into `tenant_audit_log` (immutable per migration 008):
 
-- `predict_conditions.run` — metadata: `{ run_id, count, source, kb_version_id }`
+- `predict_conditions.run` — metadata: `{ run_id, source, kb_version_id, outcome, count?, alert_class?, reused }`
+  - `outcome`: `'predictions_emitted'` | `'alert_emitted'` | `'reused'`
+  - `count`: number of predictions inserted (present when `outcome='predictions_emitted'`)
+  - `alert_class`: present when `outcome='alert_emitted'` — names which resolver error triggered the alert
+  - `reused`: boolean — true when the idempotency check returned an existing batch unchanged
+  - `kb_version_id` may be null when the run produced a `NoActiveKbVersionError` alert
 - `predict_conditions.accept` — metadata: `{ prediction_id, condition_id, role }`
 - `predict_conditions.dismiss` — metadata: `{ prediction_id, role, dismissal_reason }`
-- `predict_conditions.reopen_and_accept` — metadata: `{ prediction_id, condition_id, role: 'va' }`
+- `predict_conditions.reopen_and_accept` — metadata: `{ prediction_id, condition_id, role: 'va', prior_dismissal_audit_id }`
+  - `prior_dismissal_audit_id`: UUID of the original `predict_conditions.dismiss` audit row, preserved here because the prediction row's `dismissal_reason` is cleared on reopen. Audit-only chain for "originally dismissed by operator X with reason Y" lookups.
 - `predict_conditions.alert` — metadata: `{ alert_id, error_class }`
-- `predict_conditions.alert_clear` — metadata: `{ alert_id, cleared_by }`
+- `predict_conditions.alert_clear` — metadata variants:
+  - Manual clear: `{ alert_id }` with `actor_id = <operator userId>`
+  - Auto-clear: `{ alert_id, cleared_by: 'system:successful-rerun', triggered_by_run_id }` with `actor_id = <userId who triggered the run>`
 
 Pattern matches the kb_versions audit-log discipline shipped in commit `2371b3b`: writes use `INSERT ... SELECT WHERE NOT EXISTS` for dedup-on-replay (migration 008's `no_update_audit` rule blocks `ON CONFLICT DO UPDATE`). The dedup index from §2.1 covers it.
 
@@ -646,15 +745,17 @@ Extend `packages/api/test/tenant-isolation.test.ts` with two new `it` blocks ass
 
 ### 8.6 E2E harness — `scripts/e2e-harness/workflows/W10-predicted-conditions.ts`
 
-One new workflow registered in `ALL_WORKFLOWS`. Steps:
+One new workflow registered in `ALL_WORKFLOWS`. **Runs against a single canonical fixture (`nqm-bankstmt-12mo-clean`) only**, not all 23. Reason: the predicted-doc count is fixture-specific (varies by income type), and the assertions in steps 2 and 4 are value-specific. Applying to all 23 would require computing the expected count per fixture upfront — over-engineering for a regression gate.
 
-1. Ingest a representative fixture loan via `/api/ingest/demo/loans`
-2. Assert `GET /loans/:id/predictions` returns 11 pending predictions within 2s (auto-fire happened)
+Steps:
+
+1. Ingest the `nqm-bankstmt-12mo-clean` fixture loan via `/api/ingest/demo/loans`
+2. Assert `GET /loans/:id/predictions` returns 11 pending predictions within 2s (auto-fire happened — count specific to this fixture's income type)
 3. Accept 8, dismiss 1 (with reason ≥10 chars), leave 2 pending
 4. Assert `loan.conditions.filter(c => c.status === 'Open' && c.source === 'Predicted').length === 8`
 5. Manually re-run after editing one loan field; assert old pending rows replaced; accepted/dismissed history preserved
 
-W10 is deterministic — zero LLM cost — usable as a regression gate across all 23 fixtures.
+W10 is deterministic — zero LLM cost — usable as a regression gate. The cell pattern in the harness is the single-fixture form (same as W6/W7's `_global` pattern); W10 marks the other 22 fixtures as skip-cells with reason `"W10 runs against one canonical fixture only"`.
 
 ---
 
@@ -671,6 +772,7 @@ W10 is deterministic — zero LLM cost — usable as a regression gate across al
 | Auto-rerun on loan edit | Manual re-run endpoint covers it. Auto-rerun requires a change-detection hook; out of scope. |
 | Prediction history UI (viewing prior runs) | YAGNI v1. `prediction_run_id` is in the schema for future use. |
 | New ConditionCategory values | The existing PTA/PTD/PTF/PTP enum is the contract. |
+| **Freezing `predicted_conditions.category` to PTA/PTD/PTF/PTP at the DB layer** | This spec's migration 018 adds a CHECK constraint locking the four values at the DB level. If `ConditionCategory` in `@twin/core` types ever adds a fifth value (e.g. `'PTC'` for Prior-to-Close), an INSERT into `predicted_conditions` with that value will be **accepted at the TypeScript level but rejected at the DB level**. Future work must add a follow-up migration to relax the CHECK; out of scope here. Document the drift risk inline at the column definition (§2.1). |
 | Replacing agent-emitted "Suggested Conditions" | They coexist. Agent fires later; emits its own conditions via StageRecommendation. |
 
 ---
