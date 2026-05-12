@@ -2,3 +2,4 @@
 export * from "./types.js";
 export * from "./errors.js";
 // service.ts + category-inference.ts land in Tasks 3-6 — exports will be added then.
+export { categoryInference } from "./category-inference.js";
