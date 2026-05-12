@@ -220,4 +220,35 @@ export const api = {
       `/loans/${loanId}/va/docs-returned`,
       { method: "POST", body: JSON.stringify({ documents }) },
     ),
+
+  // ─── Predictive Conditions ───────────────────────────────────────
+  getPredictions: (loanId: string) =>
+    req<{ predictions: Array<{ id: string; status: string; description: string; category: string; note: string | null; source_list: string; source_order: number; acted_by: string | null; acted_role: string | null; dismissal_reason: string | null; accepted_condition_id: string | null }>; alerts: Array<{ id: string; error_class: string; remediation_hint: string; cleared_at: string | null }> }>(
+      `/loans/${loanId}/predictions`,
+    ),
+  runPredictions: (loanId: string) =>
+    req<{ runId: string; predictionCount: number; alertCount: number; reused: boolean }>(
+      `/loans/${loanId}/predictions/run`,
+      { method: "POST", body: JSON.stringify({}) },
+    ),
+  acceptPrediction: (loanId: string, predictionId: string) =>
+    req<{ conditionId: string; predictionId: string }>(
+      `/loans/${loanId}/predictions/${predictionId}/accept`,
+      { method: "POST", body: JSON.stringify({}) },
+    ),
+  dismissPrediction: (loanId: string, predictionId: string, reason: string) =>
+    req<{ predictionId: string }>(
+      `/loans/${loanId}/predictions/${predictionId}/dismiss`,
+      { method: "POST", body: JSON.stringify({ reason }) },
+    ),
+  reopenAndAcceptPrediction: (loanId: string, predictionId: string) =>
+    req<{ conditionId: string; predictionId: string }>(
+      `/loans/${loanId}/predictions/${predictionId}/reopen-and-accept`,
+      { method: "POST", body: JSON.stringify({}), headers: { "x-user-role": "va" } },
+    ),
+  clearPredictionAlert: (loanId: string, alertId: string) =>
+    req<{ alertId: string }>(
+      `/loans/${loanId}/predictions/alerts/${alertId}/clear`,
+      { method: "POST", body: JSON.stringify({}) },
+    ),
 };
