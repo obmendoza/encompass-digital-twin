@@ -86,6 +86,7 @@ async function cleanupAll(): Promise<void> {
     await c.query(`DELETE FROM program_doc_checklist     WHERE tenant_id = $1`, [T]);
     await c.query(`DELETE FROM program_doc_engine_rules  WHERE tenant_id = $1`, [T]);
     await c.query(`DELETE FROM kb_versions               WHERE tenant_id = $1`, [T]);
+    await c.query(`DELETE FROM tenant_audit_log         WHERE target_tenant_id = $1`, [T]);
   });
 }
 

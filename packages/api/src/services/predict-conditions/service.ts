@@ -116,6 +116,7 @@ export async function run(
         [tenantId, loanId, ec, JSON.stringify(payload), REMEDIATION[ec]],
       );
       const alertId = alertInsert.rows[0]!.id;
+      const runId = randomUUID();
       // Audit-log row for the alert (dedup-on-replay).
       await c.query(
         `INSERT INTO tenant_audit_log (target_tenant_id, actor_id, action, reason, metadata)
@@ -135,10 +136,10 @@ export async function run(
           tenantId,
           source,
           `prediction run for loan ${loanId} produced alert`,
-          JSON.stringify({ source, outcome: "alert_emitted", alert_class: ec, reused: false, kb_version_id: null }),
+          JSON.stringify({ run_id: runId, source, outcome: "alert_emitted", alert_class: ec, reused: false, kb_version_id: null }),
         ],
       );
-      return { runId: randomUUID(), predictionCount: 0, alertCount: 1, reused: false };
+      return { runId, predictionCount: 0, alertCount: 1, reused: false };
     }
 
     // Happy path — insert N predictions.
