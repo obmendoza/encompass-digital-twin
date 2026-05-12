@@ -268,6 +268,7 @@ function getStore(): Store {
 
 export async function accept(
   tenantId: string,
+  loanId: string,
   predictionId: string,
   actorId: string,
   role: PredictedConditionRole,
@@ -283,10 +284,13 @@ export async function accept(
     }>(
       `SELECT id, loan_id, category, description, note, status
          FROM predicted_conditions
-        WHERE id = $1 AND tenant_id = $2
+        WHERE id = $1 AND tenant_id = $2 AND loan_id = $3
         FOR UPDATE`,
-      [predictionId, tenantId],
+      [predictionId, tenantId, loanId],
     );
+    // Empty result = prediction doesn't exist, belongs to a different tenant,
+    // OR belongs to a different loan in the same tenant. All three collapse to
+    // PredictionNotFoundError so callers can't probe cross-loan existence.
     if (rows.length === 0) throw new PredictionNotFoundError(predictionId, tenantId);
     const p = rows[0]!;
     if (p.status !== "pending") throw new PredictionNotPendingError(predictionId, p.status);
@@ -332,8 +336,8 @@ export async function accept(
             SET status = 'accepted',
                 acted_by = $1, acted_at = now(), acted_role = $2,
                 accepted_condition_id = $3
-          WHERE id = $4 AND tenant_id = $5`,
-        [actorId, role, conditionId, predictionId, tenantId],
+          WHERE id = $4 AND tenant_id = $5 AND loan_id = $6`,
+        [actorId, role, conditionId, predictionId, tenantId, loanId],
       );
       await c.query(
         `INSERT INTO tenant_audit_log (target_tenant_id, actor_id, action, reason, metadata)
@@ -360,6 +364,7 @@ export async function accept(
 
 export async function dismiss(
   tenantId: string,
+  loanId: string,
   predictionId: string,
   actorId: string,
   role: PredictedConditionRole,
@@ -368,9 +373,10 @@ export async function dismiss(
   if (reason.length < 10) throw new DismissalReasonTooShortError(reason.length);
   return withTenantTx(tenantId, async (c) => {
     const r = await c.query<{ id: string; status: string }>(
-      `SELECT id, status FROM predicted_conditions WHERE id = $1 AND tenant_id = $2 FOR UPDATE`,
-      [predictionId, tenantId],
+      `SELECT id, status FROM predicted_conditions WHERE id = $1 AND tenant_id = $2 AND loan_id = $3 FOR UPDATE`,
+      [predictionId, tenantId, loanId],
     );
+    // Empty = doesn't exist / different tenant / different loan (all collapse).
     if (r.rows.length === 0) throw new PredictionNotFoundError(predictionId, tenantId);
     if (r.rows[0]!.status !== "pending") throw new PredictionNotPendingError(predictionId, r.rows[0]!.status);
     await c.query(
@@ -378,8 +384,8 @@ export async function dismiss(
           SET status = 'dismissed',
               acted_by = $1, acted_at = now(), acted_role = $2,
               dismissal_reason = $3
-        WHERE id = $4 AND tenant_id = $5`,
-      [actorId, role, reason, predictionId, tenantId],
+        WHERE id = $4 AND tenant_id = $5 AND loan_id = $6`,
+      [actorId, role, reason, predictionId, tenantId, loanId],
     );
     await c.query(
       `INSERT INTO tenant_audit_log (target_tenant_id, actor_id, action, reason, metadata)
@@ -405,6 +411,7 @@ export async function dismiss(
 
 export async function reopenAndAccept(
   tenantId: string,
+  loanId: string,
   predictionId: string,
   actorId: string,
   role: PredictedConditionRole,
@@ -420,9 +427,10 @@ export async function reopenAndAccept(
     }>(
       `SELECT id, loan_id, category, description, note, status
          FROM predicted_conditions
-        WHERE id = $1 AND tenant_id = $2 FOR UPDATE`,
-      [predictionId, tenantId],
+        WHERE id = $1 AND tenant_id = $2 AND loan_id = $3 FOR UPDATE`,
+      [predictionId, tenantId, loanId],
     );
+    // Empty = doesn't exist / different tenant / different loan (all collapse).
     if (rows.length === 0) throw new PredictionNotFoundError(predictionId, tenantId);
     const p = rows[0]!;
     if (p.status !== "dismissed") throw new PredictionNotDismissedError(predictionId, p.status);
@@ -472,8 +480,8 @@ export async function reopenAndAccept(
                 acted_by = $1, acted_at = now(), acted_role = $2,
                 accepted_condition_id = $3,
                 dismissal_reason = NULL
-          WHERE id = $4 AND tenant_id = $5`,
-        [actorId, role, conditionId, predictionId, tenantId],
+          WHERE id = $4 AND tenant_id = $5 AND loan_id = $6`,
+        [actorId, role, conditionId, predictionId, tenantId, loanId],
       );
       await c.query(
         `INSERT INTO tenant_audit_log (target_tenant_id, actor_id, action, reason, metadata)
@@ -500,6 +508,7 @@ export async function reopenAndAccept(
 
 export async function clearAlert(
   tenantId: string,
+  loanId: string,
   alertId: string,
   actorId: string,
 ): Promise<ClearAlertResult> {
@@ -507,15 +516,17 @@ export async function clearAlert(
     const r = await c.query<{ cleared_at: string | null }>(
       `UPDATE prediction_alerts
           SET cleared_by = $1, cleared_at = now()
-        WHERE id = $2 AND tenant_id = $3 AND cleared_at IS NULL
+        WHERE id = $2 AND tenant_id = $3 AND loan_id = $4 AND cleared_at IS NULL
         RETURNING cleared_at`,
-      [actorId, alertId, tenantId],
+      [actorId, alertId, tenantId, loanId],
     );
     if (r.rowCount === 0) {
-      // Either the alert doesn't exist or it's already cleared.
+      // Empty UPDATE = alert doesn't exist / different tenant / different loan / already cleared.
+      // Probe with the same loan-scoping so a same-tenant cross-loan alertId can't be
+      // discovered via a 200-vs-404 oracle.
       const probe = await c.query<{ id: string }>(
-        `SELECT id FROM prediction_alerts WHERE id = $1 AND tenant_id = $2`,
-        [alertId, tenantId],
+        `SELECT id FROM prediction_alerts WHERE id = $1 AND tenant_id = $2 AND loan_id = $3`,
+        [alertId, tenantId, loanId],
       );
       if (probe.rows.length === 0) throw new AlertNotFoundError(alertId, tenantId);
       // Already cleared — return idempotently.

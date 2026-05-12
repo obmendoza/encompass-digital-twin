@@ -431,7 +431,7 @@ async function seedAndRun(loanId: string): Promise<{ predictionIds: string[] }> 
 describe("predict-conditions service — accept()", () => {
   it("flips status to accepted, creates a Condition, and links via accepted_condition_id", async () => {
     const { predictionIds } = await seedAndRun("L-ACC-1");
-    const r = await accept(T, predictionIds[0]!, "op-1", "operator");
+    const r = await accept(T, "L-ACC-1", predictionIds[0]!, "op-1", "operator");
     expect(r.conditionId).toMatch(/^c\d+$/);
     expect(r.predictionId).toBe(predictionIds[0]);
 
@@ -448,12 +448,31 @@ describe("predict-conditions service — accept()", () => {
 
   it("rejects non-pending predictions with PredictionNotPendingError", async () => {
     const { predictionIds } = await seedAndRun("L-ACC-2");
-    await accept(T, predictionIds[0]!, "op-1", "operator");
-    await expect(accept(T, predictionIds[0]!, "op-2", "operator")).rejects.toBeInstanceOf(PredictionNotPendingError);
+    await accept(T, "L-ACC-2", predictionIds[0]!, "op-1", "operator");
+    await expect(accept(T, "L-ACC-2", predictionIds[0]!, "op-2", "operator")).rejects.toBeInstanceOf(PredictionNotPendingError);
   });
 
   it("rejects missing prediction id with PredictionNotFoundError", async () => {
-    await expect(accept(T, "00000000-0000-0000-0000-000000000000", "op-x", "operator")).rejects.toBeInstanceOf(PredictionNotFoundError);
+    await expect(accept(T, "L-MISSING", "00000000-0000-0000-0000-000000000000", "op-x", "operator")).rejects.toBeInstanceOf(PredictionNotFoundError);
+  });
+
+  it("rejects cross-loan prediction id with PredictionNotFoundError (loan-scope enforcement)", async () => {
+    // Seed a prediction batch for L-ACC-1. Try to accept via a different loanId
+    // (L-ACC-2). The service must refuse because the prediction does not belong
+    // to that loan, even though the tenant is the same. Codex P2 finding.
+    const { predictionIds } = await seedAndRun("L-ACC-1");
+    await expect(
+      accept(T, "L-ACC-2", predictionIds[0]!, "op-x", "operator"),
+    ).rejects.toBeInstanceOf(PredictionNotFoundError);
+    // Confirm the prediction is still pending — service didn't mutate L-ACC-1's
+    // row via the wrong-loan request.
+    const row = await withDb(async (c) =>
+      c.query<{ status: string }>(
+        `SELECT status FROM predicted_conditions WHERE id = $1`,
+        [predictionIds[0]],
+      ),
+    );
+    expect(row.rows[0]!.status).toBe("pending");
   });
 
   it("throws PredictionConditionCollisionError when AddCondition silently dedups", async () => {
@@ -468,7 +487,7 @@ describe("predict-conditions service — accept()", () => {
       actor: { kind: "human", id: "pre-existing" },
     });
     await expect(
-      accept(T, predictionIds[0]!, "op-collide", "operator"),
+      accept(T, "L-ACC-COLLIDE", predictionIds[0]!, "op-collide", "operator"),
     ).rejects.toBeInstanceOf(PredictionConditionCollisionError);
   });
 });
@@ -476,7 +495,7 @@ describe("predict-conditions service — accept()", () => {
 describe("predict-conditions service — dismiss()", () => {
   it("flips status to dismissed and records reason + actor + role", async () => {
     const { predictionIds } = await seedAndRun("L-DIS-1");
-    await dismiss(T, predictionIds[0]!, "op-1", "operator", "LO already has this doc on file from prior intake");
+    await dismiss(T, "L-DIS-1", predictionIds[0]!, "op-1", "operator", "LO already has this doc on file from prior intake");
 
     const after = await withDb(async (c) =>
       c.query<{ status: string; dismissal_reason: string; acted_role: string }>(
@@ -491,15 +510,15 @@ describe("predict-conditions service — dismiss()", () => {
 
   it("rejects dismissal reasons shorter than 10 chars", async () => {
     const { predictionIds } = await seedAndRun("L-DIS-2");
-    await expect(dismiss(T, predictionIds[0]!, "op-1", "operator", "too short")).rejects.toBeInstanceOf(DismissalReasonTooShortError);
+    await expect(dismiss(T, "L-DIS-2", predictionIds[0]!, "op-1", "operator", "too short")).rejects.toBeInstanceOf(DismissalReasonTooShortError);
   });
 });
 
 describe("predict-conditions service — reopenAndAccept()", () => {
   it("flips dismissed → accepted, clears dismissal_reason, creates Condition, captures prior_dismissal_audit_id", async () => {
     const { predictionIds } = await seedAndRun("L-REOPEN-1");
-    await dismiss(T, predictionIds[0]!, "op-1", "operator", "LO already has this doc on file from prior intake");
-    const r = await reopenAndAccept(T, predictionIds[0]!, "va-7", "va");
+    await dismiss(T, "L-REOPEN-1", predictionIds[0]!, "op-1", "operator", "LO already has this doc on file from prior intake");
+    const r = await reopenAndAccept(T, "L-REOPEN-1", predictionIds[0]!, "va-7", "va");
     expect(r.conditionId).toMatch(/^c\d+$/);
 
     const after = await withDb(async (c) =>
@@ -527,7 +546,7 @@ describe("predict-conditions service — reopenAndAccept()", () => {
 
   it("rejects non-dismissed predictions with PredictionNotDismissedError", async () => {
     const { predictionIds } = await seedAndRun("L-REOPEN-2");
-    await expect(reopenAndAccept(T, predictionIds[0]!, "va-7", "va")).rejects.toBeInstanceOf(PredictionNotDismissedError);
+    await expect(reopenAndAccept(T, "L-REOPEN-2", predictionIds[0]!, "va-7", "va")).rejects.toBeInstanceOf(PredictionNotDismissedError);
   });
 });
 
@@ -541,7 +560,7 @@ describe("predict-conditions service — clearAlert()", () => {
         [T, "L-CLR-2"],
       ),
     );
-    await clearAlert(T, alertRow.rows[0]!.id, "op-clr");
+    await clearAlert(T, "L-CLR-2", alertRow.rows[0]!.id, "op-clr");
     const after = await withDb(async (c) =>
       c.query<{ cleared_by: string; cleared_at: string | null }>(
         `SELECT cleared_by, cleared_at FROM prediction_alerts WHERE id = $1`,
@@ -553,7 +572,7 @@ describe("predict-conditions service — clearAlert()", () => {
   });
 
   it("rejects missing alert id with AlertNotFoundError", async () => {
-    await expect(clearAlert(T, "00000000-0000-0000-0000-000000000000", "op-x")).rejects.toBeInstanceOf(AlertNotFoundError);
+    await expect(clearAlert(T, "L-MISSING", "00000000-0000-0000-0000-000000000000", "op-x")).rejects.toBeInstanceOf(AlertNotFoundError);
   });
 });
 
@@ -567,7 +586,7 @@ describe("predict-conditions service — accept() store-DB consistency", () => {
     // Arm the hook so the next accept() throws right after dispatching AddCondition.
     __testOnly_setThrowAfterDispatch(new Error("sabotaged after dispatch"));
     await expect(
-      accept(T, predictionIds[0]!, "op-rb", "operator"),
+      accept(T, "L-ACC-ROLLBACK", predictionIds[0]!, "op-rb", "operator"),
     ).rejects.toThrow("sabotaged after dispatch");
 
     // Store reverted: condition count matches the pre-call snapshot.
