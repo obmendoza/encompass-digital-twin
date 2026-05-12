@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import type { Loan, VASpecialistKind, VASpecialistSignoff, VAConditionAction, VADocRequest } from "@twin/core";
+import { VAPredictedConditionsPanel } from "@/components/encompass/VAPredictedConditionsPanel";
 
 interface SubmitPayload {
   verdict: "concur" | "request_docs";
@@ -18,12 +19,14 @@ interface Props {
   loan: Loan;
   agentRecommendationId: string;
   kbVersion: string;
+  predictions: unknown[];
+  predictionsUnavailable: boolean;
   onSubmit: (payload: SubmitPayload) => Promise<{ ok: true } | { ok: false; error: string }>;
 }
 
 const SPECIALISTS: VASpecialistKind[] = ["doc", "income", "asset", "credit", "property", "compliance"];
 
-export function VAReviewWorkspace({ loan, agentRecommendationId, kbVersion, onSubmit }: Props) {
+export function VAReviewWorkspace({ loan, agentRecommendationId, kbVersion, predictions, predictionsUnavailable, onSubmit }: Props) {
   // Per-specialist signoff state. Default all to "concur" with empty notes.
   const [signoffs, setSignoffs] = useState<Record<VASpecialistKind, { signoff: "concur" | "disagree"; notes: string }>>(
     Object.fromEntries(SPECIALISTS.map((s) => [s, { signoff: "concur" as const, notes: "" }])) as Record<VASpecialistKind, { signoff: "concur" | "disagree"; notes: string }>,
@@ -94,6 +97,12 @@ export function VAReviewWorkspace({ loan, agentRecommendationId, kbVersion, onSu
       <div className="text-[11px] text-[#6b7a8f] mb-3">
         Borrower: {loan.borrower.fullName} · Program: {loan.nqmProgram} · Loan: ${loan.transaction.loanAmount.toLocaleString()}
       </div>
+
+      <VAPredictedConditionsPanel
+        loanId={loan.id}
+        predictions={predictions as never}
+        unavailable={predictionsUnavailable}
+      />
 
       {/* Signoff table */}
       <table className="w-full text-[11px] mb-3 border-collapse">

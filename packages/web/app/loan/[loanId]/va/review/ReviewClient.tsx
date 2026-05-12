@@ -10,15 +10,19 @@ interface Props {
   loanId: string;
   agentRecommendationId: string;
   kbVersion: string;
+  predictions: unknown[];
+  predictionsUnavailable: boolean;
 }
 
-export function ReviewClient({ loan, loanId, agentRecommendationId, kbVersion }: Props) {
+export function ReviewClient({ loan, loanId, agentRecommendationId, kbVersion, predictions, predictionsUnavailable }: Props) {
   const router = useRouter();
   return (
     <VAReviewWorkspace
       loan={loan}
       agentRecommendationId={agentRecommendationId}
       kbVersion={kbVersion}
+      predictions={predictions}
+      predictionsUnavailable={predictionsUnavailable}
       onSubmit={async (payload) => {
         const res = await actionSubmitVAReview(loanId, payload);
         if (!res.ok) return { ok: false, error: res.error };

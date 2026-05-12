@@ -2,13 +2,24 @@ import { api } from "@/lib/api-client";
 import { PriorReviewsPanel } from "@/components/encompass/PriorReviewsPanel";
 import { ReviewClient } from "./ReviewClient";
 
+type PredictionsFetchState =
+  | { predictions: unknown[]; alerts: unknown[]; unavailable: false }
+  | { predictions: []; alerts: []; unavailable: true };
+
 export default async function Page({ params }: { params: Promise<{ loanId: string }> }) {
   const { loanId } = await params;
 
-  // Server-side fetch loan + history in parallel.
-  const [loan, history] = await Promise.all([
+  // Server-side fetch loan + history + predictions in parallel.
+  const [loan, history, predictionsResp] = await Promise.all([
     api.getLoan(loanId).catch(() => null),
     api.vaReviewHistory(loanId).catch(() => ({ reviews: [] as Array<{ id: string; va_id: string; pool_kind: "internal" | "bpo"; verdict: "concur" | "request_docs"; overall_rationale: string; doc_request: unknown; submitted_at: string; review_time_seconds: number }> })),
+    api.getPredictions(loanId).then(
+      (r): PredictionsFetchState => ({ predictions: r.predictions, alerts: r.alerts, unavailable: false }),
+    ).catch((err: { status?: number }): PredictionsFetchState => {
+      if (err.status === 404) return { predictions: [], alerts: [], unavailable: false };
+      console.error("[va-review] predictions fetch failed", { loanId, err });
+      return { predictions: [], alerts: [], unavailable: true };
+    }),
   ]);
 
   if (!loan) {
@@ -44,6 +55,8 @@ export default async function Page({ params }: { params: Promise<{ loanId: strin
         loanId={loanId}
         agentRecommendationId={agentRecommendationId}
         kbVersion={kbVersion}
+        predictions={predictionsResp.predictions}
+        predictionsUnavailable={predictionsResp.unavailable}
       />
     </div>
   );
