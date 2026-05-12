@@ -77,7 +77,7 @@ export interface PendingRecommendation {
 }
 
 export type ConditionCategory = "PTA" | "PTD" | "PTF" | "PTP";
-export type ConditionSource = "UW" | "AUS" | "Compliance" | "Investor";
+export type ConditionSource = "UW" | "AUS" | "Compliance" | "Investor" | "Predicted";
 export type ConditionStatus =
   | "Open" | "Requested" | "Received" | "Cleared" | "Waived";
 
