@@ -4,17 +4,19 @@
 // canonical fixture (nqm-bankstmt-12mo-clean): manual /predictions/run,
 // accept some, dismiss one, assert resulting state.
 //
-// IMPORTANT: This workflow's predicted-count assertion (=== 11) is coupled
-// to the active doc-checklist KB version. If NPNQM regenerates
+// IMPORTANT: This workflow's predicted-count assertion (=== EXPECTED_PENDING)
+// is coupled to the active doc-checklist KB version. If NPNQM regenerates
 // Document_Requirements_All_Income_Types.md and the canonical fixture's
 // predicted-doc count shifts, this assertion will break alongside the
-// doc-checklist integration test. Update the count when re-ingesting.
+// doc-checklist integration test. Update EXPECTED_PENDING here when
+// re-ingesting. Last verified against demo tenant KB version 105 (id 70)
+// on 2026-05-13: 15 predictions for the canonical fixture.
 
 import { http, type HttpOptions } from "../http.js";
 import type { CellResult, WorkflowDef } from "../types.js";
 
 const CANONICAL_FIXTURE = "nqm-bankstmt-12mo-clean";
-const EXPECTED_PENDING = 11;
+const EXPECTED_PENDING = 15;
 
 export const W10: WorkflowDef = {
   id: "W10_predicted_conditions",
