@@ -27,6 +27,7 @@ import {
   PredictionNotDismissedError,
   DismissalReasonTooShortError,
   AlertNotFoundError,
+  PredictionConditionCollisionError,
 } from "./errors.js";
 
 const REMEDIATION: Record<PredictionAlertErrorClass, string> = {
@@ -281,9 +282,11 @@ export async function accept(
 
     // Mint a Condition via the existing store reducer.
     const store = getStore();
-    if (!store.getState().loans[p.loan_id]) {
+    const beforeLoan = store.getState().loans[p.loan_id];
+    if (!beforeLoan) {
       throw new Error(`loan ${p.loan_id} not in store — cannot dispatch AddCondition`);
     }
+    const beforeCount = beforeLoan.conditions.length;
     const description = p.note ? `${p.description} (${p.note})` : p.description;
     store.dispatch({
       type: "AddCondition",
@@ -295,8 +298,12 @@ export async function accept(
       },
       actor: { kind: "human", id: actorId },
     });
-    // The reducer appends to loan.conditions; the new condition is the last one.
+    // Assert the reducer appended exactly one new condition. If dedup fired,
+    // conditions.length will be unchanged and we surface it to the caller.
     const after = store.getState().loans[p.loan_id]!;
+    if (after.conditions.length !== beforeCount + 1) {
+      throw new PredictionConditionCollisionError(predictionId, p.loan_id, description);
+    }
     const newCondition = after.conditions[after.conditions.length - 1]!;
     const conditionId = newCondition.id;
 
@@ -412,9 +419,11 @@ export async function reopenAndAccept(
 
     // Mint Condition.
     const store = getStore();
-    if (!store.getState().loans[p.loan_id]) {
+    const beforeLoan = store.getState().loans[p.loan_id];
+    if (!beforeLoan) {
       throw new Error(`loan ${p.loan_id} not in store — cannot dispatch AddCondition`);
     }
+    const beforeCount = beforeLoan.conditions.length;
     const description = p.note ? `${p.description} (${p.note})` : p.description;
     store.dispatch({
       type: "AddCondition",
@@ -422,7 +431,12 @@ export async function reopenAndAccept(
       condition: { category: p.category as "PTA" | "PTD" | "PTF" | "PTP", source: "Predicted", description },
       actor: { kind: "human", id: actorId },
     });
+    // Assert the reducer appended exactly one new condition. If dedup fired,
+    // conditions.length will be unchanged and we surface it to the caller.
     const afterState = store.getState().loans[p.loan_id]!;
+    if (afterState.conditions.length !== beforeCount + 1) {
+      throw new PredictionConditionCollisionError(predictionId, p.loan_id, description);
+    }
     const conditionId = afterState.conditions[afterState.conditions.length - 1]!.id;
 
     await c.query(
