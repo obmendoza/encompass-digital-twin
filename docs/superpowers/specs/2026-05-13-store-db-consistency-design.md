@@ -39,6 +39,21 @@ New module: `packages/api/src/store-db-consistency.ts`
 ```typescript
 import type { Store } from "@twin/core";
 
+/**
+ * Wrap a store-dispatch-then-DB-write closure so that, if the closure throws
+ * after a store dispatch has already mutated the loan, the loan is restored
+ * to its pre-closure snapshot via InjectLoan. Single source of truth for the
+ * "store-and-DB two-write hazard" (F1, see spec 2026-05-13-store-db-consistency).
+ *
+ * Scope: snapshots ONLY state.loans[loanId]. Dispatches inside the closure
+ * that mutate other store state (action_log, agent state, pipeline cost,
+ * other loans) are NOT reverted. Verify each new caller's dispatches stay
+ * loan-scoped.
+ *
+ * Concurrency: the helper itself does no locking. Callers that race against
+ * other handlers mutating the same loan must serialize externally (per-loan
+ * advisory lock or equivalent). See §8 Risks in the spec.
+ */
 export async function withStoreSnapshot<T>(
   store: Store,
   loanId: string,
@@ -49,6 +64,13 @@ export async function withStoreSnapshot<T>(
     return await fn();
   } catch (e) {
     if (before !== undefined) {
+      // Structured warn so SRE can correlate API errors with store rollbacks.
+      // Not an audit-log row — audit log records intentional state transitions;
+      // a failed-with-rollback is not one. Operational visibility, not compliance.
+      console.warn("[store-db-consistency] rolling back store dispatch due to closure failure", {
+        loanId,
+        error: e instanceof Error ? { name: e.name, message: e.message } : String(e),
+      });
       store.dispatch({ type: "InjectLoan", loan: before });
     }
     throw e;
@@ -59,19 +81,24 @@ export async function withStoreSnapshot<T>(
 **Semantics:**
 
 - The snapshot is captured **before** the closure runs, so it reflects pre-mutation state regardless of how many dispatches the closure performs.
-- The reducer's `InjectLoan` handler already does `structuredClone(loan)` on insert (`packages/core/src/reduce.ts:344`), so the snapshot stays effectively immutable until rollback time, then is re-cloned in.
+- The reducer's `InjectLoan` handler does `structuredClone(loan)` on insert (`packages/core/src/reduce.ts:344`), so the snapshot stays effectively immutable until rollback time, then is re-cloned in.
+- The snapshot captures **only** `state.loans[loanId]`. Dispatches inside the closure that mutate other parts of the store — `action_log`, agent execution state, pipeline cost counters, other loans — are **not** rolled back. For the two current call sites this is exact: `AddCondition` and `StageRecommendation` each mutate only the addressed loan. Future callers must verify their dispatches stay loan-scoped (and document any deviation).
+- The store's `action_log` (the in-memory trail of dispatched actions) **does** retain the failed dispatch and the rollback `InjectLoan`. The helper makes the loan **state** consistent with the DB, not the action history. Downstream consumers of `action_log` (learning engine, admin UIs) will see two entries — the original action then a corrective `InjectLoan` — for every rolled-back attempt. This is consistent with `action_log`'s purpose as "what was dispatched," not "what successfully persisted." A transactional-dispatch primitive that would suppress the failed entry would require a reducer-level change and is explicitly a non-goal (§7).
+- **Reducer ID assignment is inspect-then-pick.** `AddCondition` mints `c${conditions.length + 1}` from the current store state (`packages/core/src/reduce.ts:119`). After a rollback to `[]` and a retry, the next attempt regenerates `c1`. Because `predicted_conditions.accepted_condition_id` is not a foreign key and the collision detector (`PredictionConditionCollisionError`) compares descriptions rather than IDs, ID re-issuance is safe across retries. Implementers extending this helper to actions that mint other IDs must verify the same property.
 - If the loan didn't exist in the store before the closure (`before === undefined`), the helper skips the rollback dispatch. There is no `RemoveLoan` reducer action, and the current call sites do not create new loans inside the closure. This is the only edge case that intentionally does NOT roll back.
+- A closure that throws **before** any dispatch still triggers the rollback path. The rollback is a no-op state-wise (the snapshot equals the current state) but adds one `InjectLoan` entry to `action_log`. Harmless; documented for accurate test expectations.
 - The original exception is re-thrown unchanged after the rollback dispatch. Callers continue to surface the error to the HTTP layer.
 
 **What the helper does NOT do:**
 
 - It does NOT open a DB transaction. The closure is expected to manage its own DB transaction (typically `withTenantTx`). The helper composes inside or outside `withTenantTx` — both are acceptable.
-- It does NOT prevent concurrent dispatches on the same loan. The server is single-threaded for store operations (no parallel handler invocations on the same loan due to advisory locks on the DB side), so the snapshot is a consistent view at function entry.
+- It does NOT prevent concurrent dispatches on the same loan. Two parallel HTTP handlers acting on the same loan can interleave at every `await` boundary. Callers must serialize via per-loan advisory locks or similar (see §3.2 for PC's lock; §8 for the boundary statement).
 - It does NOT attempt nesting safety. If a caller wraps another `withStoreSnapshot` for the same `loanId` inside its closure, the inner snapshot will capture intermediate state. No call site does this today.
+- It does NOT fire hooks. If future store-level lifecycle hooks are introduced (analytics on dispatch, replication, etc.), they will fire on both the failed dispatch **and** the rollback `InjectLoan`. Hook authors must make handlers idempotent or filter on action type to avoid duplicate side effects.
 
 ### 3.2 Call-site changes
 
-**A. PC `accept()` and `reopenAndAccept()`** — wrap the post-SELECT body. The `loan_id` comes from the SELECT result, so the snapshot is captured after `SELECT … FOR UPDATE` validates the prediction but before `AddCondition` is dispatched:
+**A. PC `accept()` and `reopenAndAccept()`** — wrap the post-SELECT body and acquire a per-loan advisory lock so parallel accept/reopen calls on the same loan serialize through the helper. The `loan_id` comes from the SELECT, so both the lock and the snapshot are captured after `SELECT … FOR UPDATE` validates the prediction but before `AddCondition` is dispatched:
 
 ```typescript
 return withTenantTx(tenantId, async (c) => {
@@ -79,6 +106,13 @@ return withTenantTx(tenantId, async (c) => {
   if (rows.length === 0) throw new PredictionNotFoundError(...);
   const p = rows[0]!;
   if (p.status !== "pending") throw new PredictionNotPendingError(...);
+
+  // Per-loan serialization. Prevents the rollback-clobbers-concurrent-work
+  // scenario where two parallel accept() calls on different predictions of
+  // the same loan interleave and one rollback wipes the other's dispatch.
+  // Same shape as predict-conditions run() (lock key: 'predict:' || loanId);
+  // distinct key to avoid contention between accept and run.
+  await c.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`predict-accept:${p.loan_id}`]);
 
   return withStoreSnapshot(store, p.loan_id, async () => {
     // dispatch AddCondition
@@ -90,6 +124,8 @@ return withTenantTx(tenantId, async (c) => {
   });
 });
 ```
+
+The lock is per-loan, not per-prediction. Two accepts on the same loan but different predictions will serialize; two accepts on different loans run in parallel. The lock is released at transaction commit/rollback (xact-scoped).
 
 The existing `PredictionConditionCollisionError` throw (introduced in commit `7695bad`) is now also safely revertible — if it fires after the dispatch, the helper reverts the spurious link to the wrong condition.
 
@@ -113,6 +149,8 @@ app.post("/loans/:loanId/recommendation", async (req, reply) => {
 
 If `routeLoan` throws or the `va_loan_state` INSERT fails, the snapshot reverts the staged recommendation. The 500 reaches the client as today; the store is now consistent with the DB (both at prior state). The legacy "DB disabled" branch is wrapped trivially — the closure never throws there, so the helper is a no-op.
 
+Site B does **not** acquire a per-loan advisory lock in this spec. Rationale: two concurrent `StageRecommendation` requests on the same loan are a UX glitch (only one recommendation survives — the second InjectLoan overwrites the first in the store, the second `ON CONFLICT DO UPDATE` overwrites in the DB), not a data-corruption failure mode. The store and DB end up consistent with whichever request landed last. If future product behavior requires per-loan staging serialization, add the same `pg_advisory_xact_lock(hashtext('stage-rec:' || loanId))` shape. Tracked in §8.
+
 `AcceptRecommendation` and `ClearRecommendation` routes (also in `recommendation.ts`) do NOT need wrapping — they have no DB write after the dispatch.
 
 ### 3.3 Test hook for rollback verification
@@ -120,6 +158,10 @@ If `routeLoan` throws or the `va_loan_state` INSERT fails, the snapshot reverts 
 To exercise the rollback path in tests deterministically, add a module-scoped test hook to `service.ts`:
 
 ```typescript
+// EXPORTED FOR TESTS ONLY. Do not call from production code paths. When set,
+// the next accept() or reopenAndAccept() call throws this error exactly once
+// immediately after dispatching AddCondition, exercising the rollback path
+// without requiring DB-level sabotage. Consumed on read (one-shot reset).
 let __testOnly_throwAfterDispatch: Error | null = null;
 
 export function __testOnly_setThrowAfterDispatch(e: Error | null): void {
@@ -142,12 +184,14 @@ This is the minimum viable mechanism to inject a failure exactly between the dis
 
 ### 4.1 Helper unit tests
 
-`packages/api/test/store-db-consistency.test.ts` (new, 4 cases):
+`packages/api/test/store-db-consistency.test.ts` (new, 6 cases):
 
 1. Closure succeeds → return value passes through, no rollback dispatch happens.
 2. Closure throws after a mutating dispatch → loan is reverted to the pre-closure snapshot; the test asserts on a specific loan field (e.g., `conditions.length` or a marker description).
 3. Closure throws → the same exception is re-thrown to the caller.
 4. Loan absent before closure → on throw, no `InjectLoan` is dispatched (verify by attempting `getState().loans[loanId]` is still `undefined`).
+5. **(C2)** Closure throws after a mutating dispatch → `store.getState().actionLog` contains both the original dispatch action and the corrective `InjectLoan` action, in that order. Documents the action_log retention behavior so consumers don't regress on the assumption that a failed attempt leaves no trace.
+6. **(C3)** Closure throws **before** any dispatch (e.g., the closure does `throw new Error("early")` on its first line) → loan state is unchanged (still equal to the pre-closure snapshot by deep equality) **and** `actionLog` contains exactly one new entry (the spurious `InjectLoan` rollback). Documents the no-op-state / one-action-log-entry behavior.
 
 Tests use `createStore({ scenarios })` directly (same pattern as `predict-conditions-service.test.ts`), no DB, no Fastify. Fast.
 
@@ -199,5 +243,15 @@ Each commit must keep `pnpm --filter @twin/api build` and the API test suite gre
 ## 8. Risks
 
 - **Helper composes inside `withTenantTx`, not the other way around.** If a future caller swaps the nesting, the snapshot would be captured after the DB transaction begins — still correct, but timing changes. The helper is documented to be order-agnostic; flag this in code review for future call sites.
-- **`InjectLoan` clobbers the entire loan.** If a concurrent handler had modified the same loan between the snapshot read and the rollback, that work would be lost. The server is effectively single-threaded for store ops today (no per-loan locking yet); this risk materialises only if/when in-process concurrency on the store is introduced. Out of scope.
-- **Test hook in production code.** The `__testOnly_*` naming and the one-shot reset minimize risk. A production caller invoking the hook would cause the next `accept()` to throw once — recoverable, and unlikely to ship by accident in code review. Stronger alternatives (compile-time conditional, separate test-build entry point) add infrastructure cost disproportionate to the benefit.
+
+- **Concurrency boundary — precise statement.** The helper is safe under per-prediction concurrency only when concurrent operations target **different loans**, because the `InjectLoan` rollback clobbers any cross-prediction store changes on the same loan. The PC call sites address this with `pg_advisory_xact_lock(hashtext('predict-accept:' || loanId))` inside the closure (§3.2 site A), which serializes all `accept()` and `reopenAndAccept()` calls on the same loan. Without that lock, two parallel handlers on different predictions of the same loan can interleave at every `await` (Node.js single-threaded event loop, but every `await c.query(...)` is a yield point), and one closure's rollback can wipe the other's successful dispatch.
+
+  Site B (StageRecommendation) intentionally does **not** acquire a per-loan lock. The race there is a UX glitch (last-writer-wins recommendation), not a corruption — both store and DB converge on the same "last write" state. If product behavior changes to require staging serialization, add the same advisory-lock shape with key `'stage-rec:' || loanId`.
+
+  Future callers of `withStoreSnapshot` must explicitly decide their per-loan concurrency posture: serialize (advisory lock) or accept last-writer-wins (no lock + documented behavior). The helper itself takes no position.
+
+- **Operational visibility of rollback.** Rollbacks emit a structured `console.warn` log line with the loanId and the original error name/message (§3.1). This is operational visibility, not an audit-log entry — `tenant_audit_log` records intentional state transitions, and a failed-with-rollback is not one. An SRE correlating "API 500 on /predictions/.../accept" with "store reverted loan X" uses log search, not the audit log. The line uses console.warn (pino-compatible at the Fastify level) for compatibility with the existing log pipeline.
+
+- **Test hook in production code.** The `__testOnly_*` naming, the one-shot consume-on-read reset, and the in-file "EXPORTED FOR TESTS ONLY" comment minimize risk. A production caller invoking the hook would cause the next `accept()` to throw once — recoverable, and unlikely to ship by accident in code review. Stronger alternatives (compile-time conditional, separate test-build entry point) add infrastructure cost disproportionate to the benefit.
+
+- **`action_log` retains rollback artifacts.** Documented in §3.1 semantics. Consumers of `actionLog` will see two entries per rolled-back attempt (the original dispatch + the corrective `InjectLoan`). A transactional-dispatch primitive that would suppress the failed entry is a non-goal (§7) — that's a reducer-level change with broader consequences than this helper warrants.
