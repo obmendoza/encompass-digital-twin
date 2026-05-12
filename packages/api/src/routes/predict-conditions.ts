@@ -17,44 +17,9 @@ import {
   AlertNotFoundError,
   PredictionConditionCollisionError,
 } from "../services/predict-conditions/index.js";
-import type { LoanContext } from "../services/doc-requirements.js";
+import { buildLoanContextFromLoan as buildLoanContext } from "./predict-conditions-context-builder.js";
 
 const DismissBody = z.object({ reason: z.string() });
-
-function buildLoanContext(loan: ReturnType<Store["getState"]>["loans"][string]): LoanContext {
-  // Map a Loan to the resolver's LoanContext. Fields are derived from the
-  // existing Loan shape; the resolver's tuple is (incomeDocType, borrowerType,
-  // citizenship, isItin) so we'll route on the most common combos for now.
-  // Future work can broaden this mapping as new income types appear.
-  const borrowerType = loan.qualifyingMethod === "TraditionalDocs" ? "W2" : "Self-Employed";
-  const citizenship = "US Citizen"; // default; ITIN/Foreign National branches set differently
-  const incomeDocType =
-    loan.qualifyingMethod === "TraditionalDocs"
-      ? "Full Doc"
-      : loan.qualifyingMethod === "BankStatementDeposits"
-        ? "Bank Stmts: 12 Mo. Personal"
-        : loan.qualifyingMethod === "DSCRCoverage"
-          ? "DSCR / No Ratio DSCR"
-          : "Full Doc";
-  const occupancy: "primary" | "second_home" | "investment" =
-    loan.transaction.occupancy === "Primary"
-      ? "primary"
-      : loan.transaction.occupancy === "Second"
-        ? "second_home"
-        : "investment";
-  return {
-    incomeDocType,
-    borrowerType,
-    citizenship,
-    isItin: false,
-    llcOrLegalEntity: false,
-    occupancy,
-    state: loan.property.state,
-    county: loan.property.city, // No county field on Loan; using city as a proxy for now
-    usCredit: true,
-    program: loan.nqmProgram,
-  };
-}
 
 export function registerPredictConditionsRoutes(app: FastifyInstance, store: Store): void {
   app.get<{ Params: { loanId: string } }>(

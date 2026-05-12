@@ -149,6 +149,19 @@ export function registerIngestionRoutes(app: FastifyInstance, store: Store): voi
             );
           });
 
+          // Best-effort predict-conditions auto-fire (spec §3.3 / §7.3).
+          // Swallow ALL errors — ingest must succeed even if predictions fail.
+          try {
+            const { run: runPredictions } = await import("../services/predict-conditions/index.js");
+            const { buildLoanContextFromLoan } = await import("./predict-conditions-context-builder.js");
+            const ctx = buildLoanContextFromLoan(loan);
+            await runPredictions(tenantId, loanId, ctx, "system:loan-ingest");
+          } catch (err) {
+            // Resolver-error branches already write alerts inside run(); anything
+            // else here is truly unexpected (DB outage, etc.) and is logged-and-swallowed.
+            req.log?.error?.({ err, tenantId, loanId }, "[predict-conditions] unexpected auto-fire error");
+          }
+
           return reply.code(201).send({ loanId, tenantId, status: "queued", estimatedProcessingMinutes: 15 });
         }
       );
