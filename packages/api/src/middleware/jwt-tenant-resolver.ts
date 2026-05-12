@@ -6,6 +6,17 @@ import { isRedisEnabled, getRedisPub } from "../redis.js";
 import { isDbEnabled, withDb } from "../db/pool.js";
 import { DEFAULT_TENANT_ID } from "@twin/core";
 
+/**
+ * Map a string role (from JWT claims or x-user-role header) to the
+ * narrow TenantContext.role union. Only the exact literal "va" yields the
+ * "va" role; anything else collapses to "operator". The DB CHECK on
+ * predicted_conditions.acted_role enforces the same two-value set.
+ */
+function normalizeRole(raw: string | string[] | undefined | null): "operator" | "va" {
+  const v = Array.isArray(raw) ? raw[0] : raw;
+  return v === "va" ? "va" : "operator";
+}
+
 /** Paths that skip authentication entirely */
 const PUBLIC_PATHS = new Set(["/health", "/openapi.json"]);
 
@@ -41,7 +52,12 @@ export function registerJwtTenantResolver(app: FastifyInstance): void {
       const tenantId = (req.headers["x-tenant-id"] as string) || DEFAULT_TENANT_ID;
       const userId = req.headers["x-user-id"] as string;
       const isSuperAdmin = req.headers["x-super-admin"] === "true";
-      tenantStore.enterWith({ tenantId, userId, isSuperAdmin });
+      // x-user-role is honored ONLY on this internal-service-call bypass path
+      // (the caller already proved trust by setting x-user-id). Production
+      // JWT callers below cannot influence this — see the verified-claims
+      // branch which uses claims.role.
+      const role = normalizeRole(req.headers["x-user-role"]);
+      tenantStore.enterWith({ tenantId, userId, isSuperAdmin, role });
       return;
     }
 
@@ -50,7 +66,8 @@ export function registerJwtTenantResolver(app: FastifyInstance): void {
       const tenantId = (req.headers["x-tenant-id"] as string) ?? DEFAULT_TENANT_ID;
       const userId = (req.headers["x-user-id"] as string) ?? "dev-user";
       const isSuperAdmin = req.headers["x-super-admin"] === "true";
-      tenantStore.enterWith({ tenantId, userId, isSuperAdmin });
+      const role = normalizeRole(req.headers["x-user-role"]);
+      tenantStore.enterWith({ tenantId, userId, isSuperAdmin, role });
       return;
     }
 
@@ -65,8 +82,9 @@ export function registerJwtTenantResolver(app: FastifyInstance): void {
         const tenantId = (req.headers["x-tenant-id"] as string) ?? "";
         const userId = (req.headers["x-user-id"] as string) ?? "web-server";
         const isSuperAdmin = req.headers["x-super-admin"] === "true";
+        const role = normalizeRole(req.headers["x-user-role"]);
         if (tenantId) {
-          tenantStore.enterWith({ tenantId, userId, isSuperAdmin });
+          tenantStore.enterWith({ tenantId, userId, isSuperAdmin, role });
           return;
         }
       }
@@ -77,6 +95,7 @@ export function registerJwtTenantResolver(app: FastifyInstance): void {
         let tenantId = (req.headers["x-tenant-id"] as string) ?? "";
         const userId = req.headers["x-user-id"] as string;
         const isSuperAdmin = req.headers["x-super-admin"] === "true";
+        const role = normalizeRole(req.headers["x-user-role"]);
 
         // If no tenant specified, default to demo tenant
         if (!tenantId) {
@@ -89,7 +108,7 @@ export function registerJwtTenantResolver(app: FastifyInstance): void {
         }
 
         if (tenantId) {
-          tenantStore.enterWith({ tenantId, userId, isSuperAdmin });
+          tenantStore.enterWith({ tenantId, userId, isSuperAdmin, role });
           return;
         }
       }
@@ -192,10 +211,13 @@ export function registerJwtTenantResolver(app: FastifyInstance): void {
     }
 
     // ── 8. Set AsyncLocalStorage context ──
+    // Role is server-derived from verified JWT claims. x-user-role on a
+    // JWT-bearing request is ignored — Codex P1 fix.
     tenantStore.enterWith({
       tenantId: effectiveTenantId,
       userId: claims.sub,
       isSuperAdmin: claims.isSuperAdmin,
+      role: normalizeRole(claims.role),
     });
   });
 }

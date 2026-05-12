@@ -104,7 +104,7 @@ export function registerIngestionRoutes(app: FastifyInstance, store: Store): voi
       const { source, externalId, loanData } = parsed.data;
 
       return runInTenantContext(
-        { tenantId, userId: "api-ingest", isSuperAdmin: false },
+        { tenantId, userId: "api-ingest", isSuperAdmin: false, role: "operator" },
         async () => {
           // Idempotency check
           const existing = await withTenantTx(tenantId, async (client) => {

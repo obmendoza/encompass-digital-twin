@@ -74,6 +74,9 @@ async function bpoGuarded<T>(
     tenantId: auth.tenantId,
     userId: auth.smeId,
     isSuperAdmin: false,
+    // BPO actors are not VAs and don't participate in predict-conditions
+    // VA-gated routes; "operator" is the catch-all non-VA value.
+    role: "operator" as const,
   };
   const bpoCtx: BpoContext = {
     tenantId: auth.tenantId,

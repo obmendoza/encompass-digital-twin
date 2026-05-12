@@ -1,4 +1,4 @@
-import type { FastifyInstance, FastifyRequest } from "fastify";
+import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { withTenantTx } from "../db/pool.js";
 import { getTenantContext } from "../tenant-context.js";
@@ -67,7 +67,7 @@ export function registerPredictConditionsRoutes(app: FastifyInstance, store: Sto
     "/loans/:loanId/predictions/:predictionId/accept",
     async (req, reply) => {
       const ctx = getTenantContext();
-      const role = inferRole(req);
+      const role = inferRole(ctx);
       try {
         const result = await accept(ctx.tenantId, req.params.loanId, req.params.predictionId, ctx.userId, role);
         return reply.send(result);
@@ -81,7 +81,7 @@ export function registerPredictConditionsRoutes(app: FastifyInstance, store: Sto
     "/loans/:loanId/predictions/:predictionId/dismiss",
     async (req, reply) => {
       const ctx = getTenantContext();
-      const role = inferRole(req);
+      const role = inferRole(ctx);
       const parsed = DismissBody.safeParse(req.body);
       if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
       try {
@@ -97,7 +97,7 @@ export function registerPredictConditionsRoutes(app: FastifyInstance, store: Sto
     "/loans/:loanId/predictions/:predictionId/reopen-and-accept",
     async (req, reply) => {
       const ctx = getTenantContext();
-      const role = inferRole(req);
+      const role = inferRole(ctx);
       if (role !== "va") return reply.code(403).send({ error: "reopen-and-accept is VA-only" });
       try {
         const result = await reopenAndAccept(ctx.tenantId, req.params.loanId, req.params.predictionId, ctx.userId, role);
@@ -122,13 +122,13 @@ export function registerPredictConditionsRoutes(app: FastifyInstance, store: Sto
   );
 }
 
-function inferRole(req: FastifyRequest): "operator" | "va" {
-  // v1 role inference: optional x-user-role header. The VA workspace client
-  // sets x-user-role: va explicitly to satisfy reopen-and-accept's gate.
-  // (Future work: thread a structured role through the tenant context middleware.)
-  const h = req.headers["x-user-role"];
-  if (Array.isArray(h)) return h[0] === "va" ? "va" : "operator";
-  return h === "va" ? "va" : "operator";
+function inferRole(ctx: ReturnType<typeof getTenantContext>): "operator" | "va" {
+  // Role is read from the tenant context (server-derived from JWT
+  // app_metadata.role on the verified-claims path; from the x-user-role
+  // header only on the internal-service-call bypass — see
+  // middleware/jwt-tenant-resolver.ts). Production JWT callers cannot
+  // spoof this — Codex P1 fix.
+  return ctx.role;
 }
 
 function mapError(e: unknown, reply: import("fastify").FastifyReply): unknown {
