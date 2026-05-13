@@ -27,6 +27,12 @@ export function registerPredictConditionsRoutes(app: FastifyInstance, store: Sto
     async (req, reply) => {
       const { tenantId } = getTenantContext();
       const { loanId } = req.params;
+      // Require the loan to exist for this tenant before issuing the DB read.
+      // Without this, a cross-tenant or non-existent loanId returns an empty
+      // {predictions:[], alerts:[]} which callers can't distinguish from a
+      // legitimate empty result. requireLoanForTenant throws a 404 fastify
+      // error response on mismatch. (Task 7 reviewer I-2.)
+      requireLoanForTenant(store, loanId);
       return withTenantTx(tenantId, async (c) => {
         const predictions = await c.query(
           `SELECT id, tenant_id, loan_id, prediction_run_id, source_input_hash,
@@ -58,8 +64,18 @@ export function registerPredictConditionsRoutes(app: FastifyInstance, store: Sto
       const { loanId } = req.params;
       const loan = requireLoanForTenant(store, loanId);
       const context = buildLoanContext(loan);
-      const result = await run(ctx.tenantId, loanId, context, `system:manual-rerun:${ctx.userId}` as const);
-      return reply.send(result);
+      // Wrap run() in try/catch for symmetry with the other mutation routes.
+      // run() catches its own resolver errors and writes prediction_alerts
+      // rows, so this catch only fires on truly unexpected failures (DB
+      // outage, lost store reference inside the helper, etc.). Mapping
+      // through the shared error handler returns a clean 5xx instead of an
+      // uncaught rejection. (Task 7 reviewer I-1.)
+      try {
+        const result = await run(ctx.tenantId, loanId, context, `system:manual-rerun:${ctx.userId}` as const);
+        return reply.send(result);
+      } catch (e) {
+        return mapError(e, reply);
+      }
     },
   );
 

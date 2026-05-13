@@ -145,4 +145,20 @@ describe("predict-conditions HTTP integration", () => {
     const body = JSON.parse(listRes.body) as { predictions: Array<{ id: string }>; alerts: unknown[] };
     expect(body.predictions.length).toBe(3);
   });
+
+  it("GET /predictions rejects a loan that doesn't exist in the store (Task 7 reviewer I-2)", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: "/loans/INT-NOT-IN-STORE/predictions",
+      headers: headers("operator"),
+    });
+    // requireLoanForTenant throws ActionError("LOAN_NOT_FOUND") which the
+    // global error handler maps to 400, consistent with the other PC
+    // mutation routes. Previously this returned 200 with empty
+    // {predictions:[], alerts:[]} which callers couldn't distinguish from a
+    // legitimate empty result.
+    expect(res.statusCode).toBe(400);
+    const body = JSON.parse(res.body) as { code?: string; error?: string };
+    expect(body.code ?? body.error).toBe("LOAN_NOT_FOUND");
+  });
 });
