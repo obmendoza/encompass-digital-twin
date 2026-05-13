@@ -13,6 +13,7 @@ import {
 } from "../doc-requirements.js";
 import { categoryInference } from "./category-inference.js";
 import { insertAuditDedup } from "./audit-helpers.js";
+import { runPreUnderwriter, type Finding, type KbVersionContext } from "./pre-underwriter.js";
 import type {
   RunResult,
   RunSource,
@@ -186,11 +187,48 @@ export async function run(
       return { runId, predictionCount: 0, alertCount: 1, reused: false };
     }
 
-    // Happy path — insert N predictions, but skip docs that already exist
-    // on this loan in status='accepted' or 'dismissed'. Without this filter,
-    // a re-run after a hash/KB change would re-emit already-acted predictions
-    // as new pending rows, letting users accept the same doc twice and mint
-    // a duplicate Condition. Codex round-4 P2.
+    // Phase A: adapt doc-checklist output to Finding[] and route through the
+    // orchestrator. Phases B/C/D will append matrix/geographic/requirements
+    // findings here before the dedup pass.
+    const docChecklistFindings: Finding[] = [
+      ...docs.minimum.map((d) => ({
+        description: d.name,
+        note: d.note,
+        category: categoryInference(d) as "PTA" | "PTD" | "PTF" | "PTP",
+        sourceList: "minimum" as const,
+        sourceRuleTable: null,
+        sourceRuleId: null,
+        emissionKind: "deterministic" as const,
+      })),
+      ...docs.income.map((d) => ({
+        description: d.name,
+        note: d.note,
+        category: categoryInference(d) as "PTA" | "PTD" | "PTF" | "PTP",
+        sourceList: "income" as const,
+        sourceRuleTable: null,
+        sourceRuleId: null,
+        emissionKind: "deterministic" as const,
+      })),
+    ];
+
+    // Resolve KbVersionContext once: docs.kbVersionId is kb_versions.id;
+    // we also need kb_versions.version for matrix/requirements/geographic
+    // resolver lookups in Phase B/C/D. The orchestrator currently doesn't
+    // use it (Phase A identity wrap) but passing it through now establishes
+    // the contract.
+    const { rows: kbVersionRows } = await c.query<{ version: number }>(
+      `SELECT version FROM kb_versions WHERE id = $1 AND tenant_id = $2`,
+      [docs.kbVersionId, tenantId],
+    );
+    const kbCtx: KbVersionContext = {
+      rowId: docs.kbVersionId,
+      versionNumber: kbVersionRows[0]?.version ?? 0,
+    };
+
+    const findings = await runPreUnderwriter(c, tenantId, kbCtx, docChecklistFindings);
+
+    // Skip already-acted predictions (Codex round-4 fix preserved). Key shape
+    // matches what the new INSERT uses: '<source_list>::<description>'.
     const { rows: actedRows } = await c.query<{ source_list: string; description: string }>(
       `SELECT source_list, description
          FROM predicted_conditions
@@ -200,14 +238,11 @@ export async function run(
     const actedKeys = new Set(actedRows.map((r) => `${r.source_list}::${r.description}`));
 
     const runId = randomUUID();
-    const items: Array<{ list: "minimum" | "income"; doc: DocItem }> = [
-      ...docs.minimum.map((d) => ({ list: "minimum" as const, doc: d })),
-      ...docs.income.map((d) => ({ list: "income" as const, doc: d })),
-    ];
     let skippedActed = 0;
     let insertedCount = 0;
-    for (const { list, doc } of items) {
-      if (actedKeys.has(`${list}::${doc.name}`)) {
+    for (let idx = 0; idx < findings.length; idx++) {
+      const finding = findings[idx]!;
+      if (actedKeys.has(`${finding.sourceList}::${finding.description}`)) {
         skippedActed++;
         continue;
       }
@@ -215,13 +250,15 @@ export async function run(
         `INSERT INTO predicted_conditions
            (tenant_id, loan_id, prediction_run_id, source_input_hash, predicted_by,
             kb_version_id, resolved_income_type, category, description, note,
-            source_list, source_order, status)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'pending')`,
+            source_list, source_order, status,
+            source_rule_table, source_rule_id, emission_kind)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'pending', $13, $14, $15)`,
         [
           tenantId, loanId, runId, sourceInputHash, source,
           docs.kbVersionId, docs.resolvedIncomeType,
-          categoryInference(doc), doc.name, doc.note,
-          list, doc.order,
+          finding.category, finding.description, finding.note,
+          finding.sourceList, idx,
+          finding.sourceRuleTable, finding.sourceRuleId, finding.emissionKind,
         ],
       );
       insertedCount++;
@@ -264,6 +301,14 @@ export async function run(
           count: insertedCount,
           skipped_acted: skippedActed,
           reused: false,
+          by_source: {
+            minimum: findings.filter((f) => f.sourceList === "minimum").length,
+            income: findings.filter((f) => f.sourceList === "income").length,
+            matrix: findings.filter((f) => f.sourceList === "matrix").length,
+            requirements_deterministic: findings.filter((f) => f.sourceList === "requirements" && f.emissionKind === "deterministic").length,
+            requirements_llm: findings.filter((f) => f.sourceList === "requirements" && f.emissionKind === "llm").length,
+            geographic: findings.filter((f) => f.sourceList === "geographic").length,
+          },
         }),
       ],
     );
