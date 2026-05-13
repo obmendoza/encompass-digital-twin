@@ -346,7 +346,15 @@ export async function accept(
     const store = getStore();
     return withStoreSnapshot(store, p.loan_id, async () => {
       const beforeLoan = store.getState().loans[p.loan_id];
-      if (!beforeLoan) throw new Error(`loan ${p.loan_id} not in store — cannot dispatch AddCondition`);
+      // Store is keyed by loan_id only; check tenantId on the loan to defend
+      // against cross-tenant collisions in the shared in-memory map
+      // (e.g., ingested QL-${externalId} values colliding across tenants).
+      // Without this check, the DB row could belong to tenant A while the
+      // store entry under the same loan_id is tenant B's, and AddCondition
+      // would be dispatched against tenant B. Codex round-5 P2 follow-up.
+      if (!beforeLoan || beforeLoan.tenantId !== tenantId) {
+        throw new Error(`loan ${p.loan_id} not in store for tenant ${tenantId} — cannot dispatch AddCondition`);
+      }
       const beforeCount = beforeLoan.conditions.length;
       const description = p.note ? `${p.description} (${p.note})` : p.description;
       store.dispatch({
@@ -495,7 +503,15 @@ export async function reopenAndAccept(
     const store = getStore();
     return withStoreSnapshot(store, p.loan_id, async () => {
       const beforeLoan = store.getState().loans[p.loan_id];
-      if (!beforeLoan) throw new Error(`loan ${p.loan_id} not in store — cannot dispatch AddCondition`);
+      // Store is keyed by loan_id only; check tenantId on the loan to defend
+      // against cross-tenant collisions in the shared in-memory map
+      // (e.g., ingested QL-${externalId} values colliding across tenants).
+      // Without this check, the DB row could belong to tenant A while the
+      // store entry under the same loan_id is tenant B's, and AddCondition
+      // would be dispatched against tenant B. Codex round-5 P2 follow-up.
+      if (!beforeLoan || beforeLoan.tenantId !== tenantId) {
+        throw new Error(`loan ${p.loan_id} not in store for tenant ${tenantId} — cannot dispatch AddCondition`);
+      }
       const beforeCount = beforeLoan.conditions.length;
       const description = p.note ? `${p.description} (${p.note})` : p.description;
       store.dispatch({

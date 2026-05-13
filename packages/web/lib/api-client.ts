@@ -226,36 +226,35 @@ export const api = {
     req<{ predictions: Array<{ id: string; status: string; description: string; category: string; note: string | null; source_list: string; source_order: number; acted_by: string | null; acted_role: string | null; dismissal_reason: string | null; accepted_condition_id: string | null }>; alerts: Array<{ id: string; error_class: string; remediation_hint: string; cleared_at: string | null }> }>(
       `/loans/${loanId}/predictions`,
     ),
-  runPredictions: (loanId: string) =>
+  // The `actorId` parameter on the five mutation methods below sets
+  // x-user-id so the API records the REAL operator/VA in audit rows and
+  // acted_by/cleared_by columns (rather than the req() default
+  // "web-server"). Both actorId and role MUST be derived from the real
+  // Supabase session by the calling server action (via getUser()), never
+  // accepted from client input. Codex round-5 follow-up.
+  runPredictions: (loanId: string, actorId: string) =>
     req<{ runId: string; predictionCount: number; alertCount: number; reused: boolean }>(
       `/loans/${loanId}/predictions/run`,
-      { method: "POST", body: JSON.stringify({}) },
+      { method: "POST", body: JSON.stringify({}), headers: { "x-user-id": actorId } },
     ),
-  // The `role` parameter on the three mutation methods below tells the API
-  // which acted_role to record in the audit log. The API honors x-user-role
-  // only on its internal-service-call bypass (where the web server uses
-  // x-user-id), so the value here MUST be derived from the real session by
-  // the calling server action (via getUser()), never accepted from client
-  // input. The api-client itself does no auth — server actions are the
-  // boundary. Codex round-3 follow-up.
-  acceptPrediction: (loanId: string, predictionId: string, role: "operator" | "va") =>
+  acceptPrediction: (loanId: string, predictionId: string, role: "operator" | "va", actorId: string) =>
     req<{ conditionId: string; predictionId: string }>(
       `/loans/${loanId}/predictions/${predictionId}/accept`,
-      { method: "POST", body: JSON.stringify({}), headers: { "x-user-role": role } },
+      { method: "POST", body: JSON.stringify({}), headers: { "x-user-role": role, "x-user-id": actorId } },
     ),
-  dismissPrediction: (loanId: string, predictionId: string, reason: string, role: "operator" | "va") =>
+  dismissPrediction: (loanId: string, predictionId: string, reason: string, role: "operator" | "va", actorId: string) =>
     req<{ predictionId: string }>(
       `/loans/${loanId}/predictions/${predictionId}/dismiss`,
-      { method: "POST", body: JSON.stringify({ reason }), headers: { "x-user-role": role } },
+      { method: "POST", body: JSON.stringify({ reason }), headers: { "x-user-role": role, "x-user-id": actorId } },
     ),
-  reopenAndAcceptPrediction: (loanId: string, predictionId: string) =>
+  reopenAndAcceptPrediction: (loanId: string, predictionId: string, actorId: string) =>
     req<{ conditionId: string; predictionId: string }>(
       `/loans/${loanId}/predictions/${predictionId}/reopen-and-accept`,
-      { method: "POST", body: JSON.stringify({}), headers: { "x-user-role": "va" } },
+      { method: "POST", body: JSON.stringify({}), headers: { "x-user-role": "va", "x-user-id": actorId } },
     ),
-  clearPredictionAlert: (loanId: string, alertId: string) =>
+  clearPredictionAlert: (loanId: string, alertId: string, actorId: string) =>
     req<{ alertId: string }>(
       `/loans/${loanId}/predictions/alerts/${alertId}/clear`,
-      { method: "POST", body: JSON.stringify({}) },
+      { method: "POST", body: JSON.stringify({}), headers: { "x-user-id": actorId } },
     ),
 };
