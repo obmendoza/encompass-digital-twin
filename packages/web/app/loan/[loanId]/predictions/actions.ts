@@ -30,8 +30,15 @@ export async function actionRunPredictions(loanId: string): Promise<Result<{ run
 }
 
 export async function actionAcceptPrediction(loanId: string, predictionId: string): Promise<Result<{ conditionId: string; predictionId: string }>> {
+  // Server-derived role. The api-client sends x-user-role to the API so the
+  // audit row records the right acted_role; reading the real Supabase session
+  // here keeps client input out of the role-determination path. Codex
+  // round-1 P2 follow-up (VA actions were being audited as operator because
+  // accept/dismiss did not forward the role).
+  const user = await getUser();
+  const role: "operator" | "va" = user?.role === "va" ? "va" : "operator";
   try {
-    const r = await api.acceptPrediction(loanId, predictionId);
+    const r = await api.acceptPrediction(loanId, predictionId, role);
     revalidatePath(`/loan/${loanId}`, "layout");
     return { ok: true, ...r };
   } catch (e) {
@@ -40,8 +47,15 @@ export async function actionAcceptPrediction(loanId: string, predictionId: strin
 }
 
 export async function actionDismissPrediction(loanId: string, predictionId: string, reason: string): Promise<Result<{ predictionId: string }>> {
+  // Same role-derivation as actionAcceptPrediction. Particularly important
+  // because the VA panel's "operator dismissed" bucket is filtered on
+  // acted_role === "operator" — without this, VA-dismissed predictions
+  // would land in that bucket and the VA could "Reopen + Accept" their own
+  // prior dismissal as if it were an operator override.
+  const user = await getUser();
+  const role: "operator" | "va" = user?.role === "va" ? "va" : "operator";
   try {
-    const r = await api.dismissPrediction(loanId, predictionId, reason);
+    const r = await api.dismissPrediction(loanId, predictionId, reason, role);
     revalidatePath(`/loan/${loanId}`, "layout");
     return { ok: true, ...r };
   } catch (e) {
