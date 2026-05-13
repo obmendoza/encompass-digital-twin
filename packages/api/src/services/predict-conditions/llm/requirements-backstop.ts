@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { redactText } from "../../../learning/pii-redactor.js";
 import type { LoanContext } from "../../doc-requirements.js";
 import type { Finding } from "../pre-underwriter.js";
 import type { RequirementRow } from "../resolvers/requirements-resolver.js";
@@ -31,6 +32,10 @@ export interface BackstopResult {
   backstopTruncated: number;
   /** Optional cost metadata. */
   cost?: { input_tokens: number; output_tokens: number; model: string };
+  /** Whether PII redaction was applied to the loan payload before sending to the LLM. */
+  redactionApplied: boolean;
+  /** PII types detected and redacted (empty when redactionApplied is false). */
+  redactionTypes: string[];
 }
 
 interface RawLlmFinding {
@@ -113,10 +118,10 @@ export async function requirementsLlmBackstop(input: BackstopInput): Promise<Bac
   const dropCounters = { schema: 0, hallucinatedId: 0, belowConfidence: 0, ungrounded: 0, outputCap: 0 };
 
   if (!process.env.ANTHROPIC_API_KEY) {
-    return { findings: [], skipReason: "no_api_key", dropCounters, backstopTruncated: 0 };
+    return { findings: [], skipReason: "no_api_key", dropCounters, backstopTruncated: 0, redactionApplied: false, redactionTypes: [] };
   }
   if (input.unhandledRequirements.length === 0) {
-    return { findings: [], skipReason: "empty_bucket", dropCounters, backstopTruncated: 0 };
+    return { findings: [], skipReason: "empty_bucket", dropCounters, backstopTruncated: 0, redactionApplied: false, redactionTypes: [] };
   }
 
   // Bucket truncation (spec §5.3 MAX_BACKSTOP_BUCKET).
@@ -131,9 +136,13 @@ export async function requirementsLlmBackstop(input: BackstopInput): Promise<Bac
     }
   }
 
+  // Redact the loan payload before sending to the LLM (spec §310, §328).
+  const loanJson = JSON.stringify(input.loan);
+  const { redacted: redactedLoan, types: redactionTypes } = redactText(loanJson);
+
   // Construct the dynamic prompt suffix.
   const userMessage = [
-    `LOAN (redacted): ${JSON.stringify(input.loan)}`,
+    `LOAN (redacted): ${redactedLoan}`,
     "",
     "PROGRAM RULES (unhandled by deterministic resolver):",
     ...bucket.map(r => `- rule_id: ${r.id}; key: "${r.requirement_key}"; value: ${typeof r.requirement_value === "string" ? JSON.stringify(r.requirement_value) : JSON.stringify(r.requirement_value)}`),
@@ -143,7 +152,10 @@ export async function requirementsLlmBackstop(input: BackstopInput): Promise<Bac
     ...input.alreadyEmitted.map(f => `- "${f.description}" (from ${f.sourceList})`),
   ].join("\n");
 
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  const client = new Anthropic({
+    apiKey: process.env.ANTHROPIC_API_KEY,
+    defaultHeaders: { "anthropic-ddr": "true" },
+  });
   let resp;
   try {
     resp = await client.messages.create({
@@ -158,14 +170,14 @@ export async function requirementsLlmBackstop(input: BackstopInput): Promise<Bac
     });
   } catch (err) {
     console.warn("[requirements-backstop] llm call failed", { err: err instanceof Error ? err.message : String(err) });
-    return { findings: [], skipReason: "llm_error", dropCounters, backstopTruncated };
+    return { findings: [], skipReason: "llm_error", dropCounters, backstopTruncated, redactionApplied: redactionTypes.length > 0, redactionTypes };
   }
 
   // Extract tool_use block.
   type AnthropicContentBlock = { type: string; name?: string; input?: { findings?: RawLlmFinding[] } };
   const toolUse = (resp.content as AnthropicContentBlock[]).find((b) => b.type === "tool_use" && b.name === "emit_predictions");
   if (!toolUse) {
-    return { findings: [], skipReason: "llm_error", dropCounters, backstopTruncated };
+    return { findings: [], skipReason: "llm_error", dropCounters, backstopTruncated, redactionApplied: redactionTypes.length > 0, redactionTypes };
   }
   const rawFindings: RawLlmFinding[] = Array.isArray(toolUse.input?.findings) ? toolUse.input!.findings! : [];
 
@@ -240,5 +252,7 @@ export async function requirementsLlmBackstop(input: BackstopInput): Promise<Bac
       output_tokens: resp.usage?.output_tokens ?? 0,
       model: resp.model ?? MODEL_DEFAULT,
     },
+    redactionApplied: redactionTypes.length > 0,
+    redactionTypes,
   };
 }

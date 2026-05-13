@@ -9,10 +9,8 @@ vi.mock("@anthropic-ai/sdk", () => ({
   },
 }));
 
-// Mock the redactor + compliance-checker.
-vi.mock("../src/learning/pii-redactor.js", () => ({
-  redactSamples: (s: unknown[]) => ({ redacted: s, manifests: [] }),
-}));
+// Note: pii-redactor is pure (no I/O) — no mock needed; the real implementation
+// is used so SSN-redaction tests work without re-implementing the logic here.
 vi.mock("../src/learning/compliance-checker.js", () => ({
   runComplianceChecks: () => ({ ok: true, blockers: [] }),
   determineVisibility: () => "tenant",
@@ -168,5 +166,39 @@ describe("requirementsLlmBackstop — post-call validation pipeline (spec §5.3 
       activeDocChecklist: [], alreadyEmitted: [],
     });
     expect(out.backstopTruncated).toBe(10);  // 30 - 20 cap
+  });
+
+  it("redacts SSN-shaped substrings in the loan JSON before sending to the LLM", async () => {
+    process.env.ANTHROPIC_API_KEY = "test-key";
+    mockCreate.mockResolvedValue(toolUseResponse([]));
+    // Inject an SSN-shaped value into the loan JSON by adding a custom field
+    // (LoanContext is cast to unknown so extra fields pass the JSON.stringify).
+    const loanWithSsn = { ...baseLoan, __test_ssn: "999-99-9999" } as unknown as typeof baseLoan;
+    const out = await requirementsLlmBackstop({
+      loan: loanWithSsn, unhandledRequirements: [bucketRow],
+      activeDocChecklist: [], alreadyEmitted: [],
+    });
+    // Verify the user message sent to the LLM via mock.calls.
+    expect(mockCreate).toHaveBeenCalledOnce();
+    const callArgs = mockCreate.mock.calls[0]![0] as { messages: Array<{ role: string; content: string }> };
+    const userMsg = callArgs.messages.find((m) => m.role === "user");
+    expect(userMsg?.content).toBeDefined();
+    expect(userMsg?.content).not.toContain("999-99-9999");
+    expect(userMsg?.content).toContain("[REDACTED_SSN]");
+    // The result carries the redaction signal.
+    expect(out.redactionApplied).toBe(true);
+    expect(out.redactionTypes.some(t => t.startsWith("SSN"))).toBe(true);
+  });
+
+  it("returns redactionApplied=false and empty redactionTypes when no API key", async () => {
+    const prev = process.env.ANTHROPIC_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+    const out = await requirementsLlmBackstop({
+      loan: baseLoan, unhandledRequirements: [bucketRow],
+      activeDocChecklist: [], alreadyEmitted: [],
+    });
+    expect(out.redactionApplied).toBe(false);
+    expect(out.redactionTypes).toEqual([]);
+    if (prev !== undefined) process.env.ANTHROPIC_API_KEY = prev;
   });
 });
