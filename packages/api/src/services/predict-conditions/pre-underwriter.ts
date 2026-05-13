@@ -141,9 +141,9 @@ export async function runPreUnderwriter(
   // field still wired to the F2-deferred fallback is surfaced so ops/compliance
   // can see PC v2's coverage gap.
   const hardcodedFields: string[] = [];
-  if (loan.isItin === false) hardcodedFields.push("isItin");
-  if (loan.llcOrLegalEntity === false) hardcodedFields.push("llcOrLegalEntity");
-  if (loan.county === "") hardcodedFields.push("county");
+  if (loan.isItin === undefined) hardcodedFields.push("isItin");
+  if (loan.llcOrLegalEntity === undefined) hardcodedFields.push("llcOrLegalEntity");
+  if (loan.county === undefined) hardcodedFields.push("county");
 
   return {
     findings: dedupFindings([

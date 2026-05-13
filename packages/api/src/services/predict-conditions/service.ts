@@ -228,22 +228,23 @@ export async function run(
     const orchestratorResult = await runPreUnderwriter(c, tenantId, kbCtx, docChecklistFindings, loan);
     const findings = orchestratorResult.findings;
 
-    // Skip already-acted predictions (Codex round-4 fix preserved). Key shape
-    // matches what the new INSERT uses: '<source_list>::<description>'.
-    const { rows: actedRows } = await c.query<{ source_list: string; description: string }>(
-      `SELECT source_list, description
+    // Skip already-acted predictions (Codex round-4 fix preserved). Key shape:
+    // '<source_list>::<source_rule_id>::<description>' to avoid false collisions
+    // between findings from different rules that share the same description text.
+    const { rows: actedRows } = await c.query<{ source_list: string; source_rule_id: string | null; description: string }>(
+      `SELECT source_list, source_rule_id, description
          FROM predicted_conditions
         WHERE tenant_id = $1 AND loan_id = $2 AND status IN ('accepted', 'dismissed')`,
       [tenantId, loanId],
     );
-    const actedKeys = new Set(actedRows.map((r) => `${r.source_list}::${r.description}`));
+    const actedKeys = new Set(actedRows.map((r) => `${r.source_list}::${r.source_rule_id ?? ""}::${r.description}`));
 
     const runId = randomUUID();
     let skippedActed = 0;
     let insertedCount = 0;
     for (let idx = 0; idx < findings.length; idx++) {
       const finding = findings[idx]!;
-      if (actedKeys.has(`${finding.sourceList}::${finding.description}`)) {
+      if (actedKeys.has(`${finding.sourceList}::${finding.sourceRuleId ?? ""}::${finding.description}`)) {
         skippedActed++;
         continue;
       }
@@ -310,7 +311,7 @@ export async function run(
             requirements_llm: findings.filter((f) => f.sourceList === "requirements" && f.emissionKind === "llm").length,
             geographic: findings.filter((f) => f.sourceList === "geographic").length,
           },
-          ...(orchestratorResult.llm && orchestratorResult.llm.findings.length > 0
+          ...(orchestratorResult.llm !== null
             ? {
                 llm: {
                   input_tokens: orchestratorResult.llm.cost?.input_tokens,
@@ -323,11 +324,12 @@ export async function run(
                   dropped_below_confidence: orchestratorResult.llm.dropCounters.belowConfidence,
                   dropped_ungrounded: orchestratorResult.llm.dropCounters.ungrounded,
                   dropped_output_cap: orchestratorResult.llm.dropCounters.outputCap,
+                  skip_reason: orchestratorResult.llm.skipReason,
+                  redaction_applied: orchestratorResult.llm.redactionApplied,
+                  redaction_types: orchestratorResult.llm.redactionTypes,
                 },
               }
-            : orchestratorResult.llm?.skipReason
-              ? { llm_skipped: orchestratorResult.llm.skipReason }
-              : {}),
+            : {}),
           hardcoded_fields: orchestratorResult.hardcodedFields,
         }),
       ],
