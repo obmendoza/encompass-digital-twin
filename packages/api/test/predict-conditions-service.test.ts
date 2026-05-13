@@ -343,6 +343,104 @@ describe("predict-conditions service — idempotency", () => {
     );
     expect(parseInt(accepted.rows[0]!.count, 10)).toBe(1);
   });
+
+  it("skips already-accepted/dismissed docs when re-emitting a batch (Codex round 4)", async () => {
+    const kbId = await seedActiveKbWithMinimalResolver();
+    await seedResolverHappyPath(kbId);
+
+    const first = await run(T, "L-IDEM-4", loanContextFullDocW2(), "system:loan-ingest");
+    expect(first.predictionCount).toBe(3);
+
+    // Capture the accepted prediction's description so we can assert later
+    // that it is NOT re-emitted as a fresh pending row.
+    const acceptedTarget = await withDb(async (c) =>
+      c.query<{ description: string; source_list: string }>(
+        `SELECT description, source_list FROM predicted_conditions
+          WHERE tenant_id = $1 AND loan_id = $2 AND source_list = 'minimum' AND source_order = 1`,
+        [T, "L-IDEM-4"],
+      ),
+    );
+    const acceptedDesc = acceptedTarget.rows[0]!.description;
+    const acceptedList = acceptedTarget.rows[0]!.source_list;
+
+    // Flip that prediction to accepted directly (simulating accept() without
+    // dragging the store/dispatch path into this test).
+    await withDb(async (c) =>
+      c.query(
+        `UPDATE predicted_conditions
+            SET status = 'accepted',
+                acted_by = 'op-1', acted_at = now(), acted_role = 'operator',
+                accepted_condition_id = 'fake-cond-id'
+          WHERE tenant_id = $1 AND loan_id = $2 AND source_list = $3 AND description = $4`,
+        [T, "L-IDEM-4", acceptedList, acceptedDesc],
+      ),
+    );
+
+    // Re-run with a mutated hash so the idempotency check misses and the
+    // resolver is invoked again. The resolver returns the same 3 docs, but
+    // run() should now skip the already-accepted one.
+    const mutated = { ...loanContextFullDocW2(), state: "TX" };
+    const second = await run(T, "L-IDEM-4", mutated, "system:manual-rerun:user-skip");
+
+    // 2 new pending rows (3 docs minus the 1 already-accepted), not 3.
+    expect(second.predictionCount).toBe(2);
+
+    // Pending rows do NOT include the accepted description.
+    const pendingMatch = await withDb(async (c) =>
+      c.query<{ count: string }>(
+        `SELECT COUNT(*)::text FROM predicted_conditions
+          WHERE tenant_id = $1 AND loan_id = $2 AND status = 'pending'
+            AND source_list = $3 AND description = $4`,
+        [T, "L-IDEM-4", acceptedList, acceptedDesc],
+      ),
+    );
+    expect(parseInt(pendingMatch.rows[0]!.count, 10)).toBe(0);
+
+    // Total pending = 2 (skipped 1), accepted = 1, total rows on loan = 3.
+    const totals = await withDb(async (c) =>
+      c.query<{ status: string; count: string }>(
+        `SELECT status, COUNT(*)::text AS count FROM predicted_conditions
+          WHERE tenant_id = $1 AND loan_id = $2 GROUP BY status`,
+        [T, "L-IDEM-4"],
+      ),
+    );
+    const byStatus = Object.fromEntries(totals.rows.map((r) => [r.status, parseInt(r.count, 10)]));
+    expect(byStatus["accepted"]).toBe(1);
+    expect(byStatus["pending"]).toBe(2);
+  });
+
+  it("writes a predict_conditions.run audit row on reused-batch return (Codex round 4)", async () => {
+    const kbId = await seedActiveKbWithMinimalResolver();
+    await seedResolverHappyPath(kbId);
+
+    // First run inserts the batch and writes its own audit row.
+    const first = await run(T, "L-IDEM-5", loanContextFullDocW2(), "system:loan-ingest");
+    expect(first.reused).toBe(false);
+
+    // Second run with the same context hits the idempotency early-return path.
+    const second = await run(T, "L-IDEM-5", loanContextFullDocW2(), "system:manual-rerun:user-reused");
+    expect(second.reused).toBe(true);
+    expect(second.runId).toBe(first.runId);
+
+    // The reused path now writes its own audit row with outcome='reused' and
+    // actor_id = the rerun-triggering source. Fetch the latest predict_conditions.run
+    // audit row scoped by the rerun actor — it must exist.
+    const audit = await withDb(async (c) =>
+      c.query<{ actor_id: string; metadata: Record<string, unknown> }>(
+        `SELECT actor_id, metadata FROM tenant_audit_log
+          WHERE target_tenant_id = $1
+            AND action = 'predict_conditions.run'
+            AND actor_id = $2
+          ORDER BY created_at DESC LIMIT 1`,
+        [T, "system:manual-rerun:user-reused"],
+      ),
+    );
+    expect(audit.rows).toHaveLength(1);
+    expect(audit.rows[0]!.metadata.outcome).toBe("reused");
+    expect(audit.rows[0]!.metadata.reused).toBe(true);
+    expect(audit.rows[0]!.metadata.run_id).toBe(first.runId);
+    expect(audit.rows[0]!.metadata.count).toBe(first.predictionCount);
+  });
 });
 
 describe("predict-conditions service — auto-clear alerts on successful re-run", () => {

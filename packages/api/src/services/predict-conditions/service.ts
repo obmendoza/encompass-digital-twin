@@ -99,6 +99,26 @@ export async function run(
       );
       const existing = existingRows[0];
       if (existing && existing.count > 0) {
+        // Write an audit row so the reused-run path is still traceable.
+        // Codex round-4 P2: the previous early return left a compliance gap
+        // where repeated manual reruns had no record of who triggered them.
+        await c.query(
+          `INSERT INTO tenant_audit_log (target_tenant_id, actor_id, action, reason, metadata)
+           VALUES ($1, $2, 'predict_conditions.run', $3, $4::jsonb)`,
+          [
+            tenantId,
+            source,
+            `reused pending prediction batch for loan ${loanId}`,
+            JSON.stringify({
+              run_id: existing.prediction_run_id,
+              source,
+              kb_version_id: activeKbId,
+              outcome: "reused",
+              count: existing.count,
+              reused: true,
+            }),
+          ],
+        );
         return { runId: existing.prediction_run_id, predictionCount: existing.count, alertCount: 0, reused: true };
       }
     }
@@ -166,13 +186,31 @@ export async function run(
       return { runId, predictionCount: 0, alertCount: 1, reused: false };
     }
 
-    // Happy path — insert N predictions.
+    // Happy path — insert N predictions, but skip docs that already exist
+    // on this loan in status='accepted' or 'dismissed'. Without this filter,
+    // a re-run after a hash/KB change would re-emit already-acted predictions
+    // as new pending rows, letting users accept the same doc twice and mint
+    // a duplicate Condition. Codex round-4 P2.
+    const { rows: actedRows } = await c.query<{ source_list: string; description: string }>(
+      `SELECT source_list, description
+         FROM predicted_conditions
+        WHERE tenant_id = $1 AND loan_id = $2 AND status IN ('accepted', 'dismissed')`,
+      [tenantId, loanId],
+    );
+    const actedKeys = new Set(actedRows.map((r) => `${r.source_list}::${r.description}`));
+
     const runId = randomUUID();
     const items: Array<{ list: "minimum" | "income"; doc: DocItem }> = [
       ...docs.minimum.map((d) => ({ list: "minimum" as const, doc: d })),
       ...docs.income.map((d) => ({ list: "income" as const, doc: d })),
     ];
+    let skippedActed = 0;
+    let insertedCount = 0;
     for (const { list, doc } of items) {
+      if (actedKeys.has(`${list}::${doc.name}`)) {
+        skippedActed++;
+        continue;
+      }
       await c.query(
         `INSERT INTO predicted_conditions
            (tenant_id, loan_id, prediction_run_id, source_input_hash, predicted_by,
@@ -186,6 +224,7 @@ export async function run(
           list, doc.order,
         ],
       );
+      insertedCount++;
     }
 
     // Auto-clear any active alerts for this loan, with audit rows per alert.
@@ -215,26 +254,28 @@ export async function run(
       );
     }
 
-    // Audit row for the run itself.
+    // Audit row for the run itself. `count` reflects rows actually inserted
+    // (already-acted docs are excluded — see skippedActed).
     await c.query(
       `INSERT INTO tenant_audit_log (target_tenant_id, actor_id, action, reason, metadata)
        VALUES ($1, $2, 'predict_conditions.run', $3, $4::jsonb)`,
       [
         tenantId,
         source,
-        `predicted ${items.length} conditions for loan ${loanId}`,
+        `predicted ${insertedCount} conditions for loan ${loanId}${skippedActed > 0 ? ` (skipped ${skippedActed} already-acted)` : ""}`,
         JSON.stringify({
           run_id: runId,
           source,
           kb_version_id: docs.kbVersionId,
           outcome: "predictions_emitted",
-          count: items.length,
+          count: insertedCount,
+          skipped_acted: skippedActed,
           reused: false,
         }),
       ],
     );
 
-    return { runId, predictionCount: items.length, alertCount: 0, reused: false };
+    return { runId, predictionCount: insertedCount, alertCount: 0, reused: false };
   });
 }
 
