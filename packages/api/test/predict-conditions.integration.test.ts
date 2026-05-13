@@ -69,6 +69,19 @@ beforeAll(async () => {
           ]),
         ],
       );
+      // Permissive matrix tier so the Phase-B resolver finds a match and emits
+      // no violations for the INT-1 loan (FICO 720, LTV 100, $100K, SFR Det.).
+      await tx.query(
+        `INSERT INTO program_matrix_tiers
+           (tenant_id, kb_version, program, occupancy, min_fico, max_fico,
+            max_loan_amount, max_ltv_purchase, max_ltv_cashout, max_ltv_rate_term,
+            property_types, source_doc_hash, extraction_run_id)
+         VALUES ($1, $2, 'Flex Select', 'primary', 600, 800,
+                 999999, 105, 105, 105, ARRAY['SFR Det.'], 'hash',
+                 '00000000-0000-0000-0000-000000000099')
+         ON CONFLICT DO NOTHING`,
+        [T, v],
+      );
     });
   });
   const built = buildServer({});
@@ -84,6 +97,8 @@ afterAll(async () => {
     await c.query(`DELETE FROM prediction_alerts       WHERE tenant_id = $1`, [T]);
     await c.query(`DELETE FROM income_type_resolver    WHERE tenant_id = $1`, [T]);
     await c.query(`DELETE FROM program_doc_checklist   WHERE tenant_id = $1`, [T]);
+    await c.query(`DELETE FROM program_matrix_tiers    WHERE tenant_id = $1`, [T]);
+    await c.query(`DELETE FROM geographic_restrictions WHERE tenant_id = $1`, [T]);
     await c.query(`DELETE FROM kb_versions             WHERE tenant_id = $1`, [T]);
   });
   await closePool();

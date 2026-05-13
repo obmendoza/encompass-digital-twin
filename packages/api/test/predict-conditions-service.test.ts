@@ -138,6 +138,31 @@ async function seedResolverHappyPath(kbId: number): Promise<void> {
   });
 }
 
+async function seedMatrixAndGeoFor(_kbId: number, kbVersion: number): Promise<void> {
+  await withTenantTx(T, async (c) => {
+    // One matrix tier covering FICO 700-740, Flex Select / primary, with a
+    // strict $300K max so a $500K loan triggers the loan-amount finding.
+    await c.query(
+      `INSERT INTO program_matrix_tiers
+         (tenant_id, kb_version, program, occupancy, min_fico, max_fico,
+          max_loan_amount, max_ltv_purchase, max_ltv_cashout, max_ltv_rate_term,
+          property_types, source_doc_hash, extraction_run_id)
+       VALUES ($1, $2, 'Flex Select', 'primary', 700, 740,
+               300000, 80, 75, 80, ARRAY['SFR Det.'], 'hash', '00000000-0000-0000-0000-000000000099')
+       ON CONFLICT DO NOTHING`,
+      [T, kbVersion],
+    );
+    // One geographic restriction for CA that always applies (no filters).
+    await c.query(
+      `INSERT INTO geographic_restrictions
+         (tenant_id, kb_version, state, restriction, source_doc_hash, extraction_run_id)
+       VALUES ($1, $2, 'CA', 'Per-Diem Interest Disclosure', 'hash', '00000000-0000-0000-0000-000000000099')
+       ON CONFLICT DO NOTHING`,
+      [T, kbVersion],
+    );
+  });
+}
+
 async function cleanupAll(): Promise<void> {
   await withDb(async (c) => {
     await c.query(`DELETE FROM predicted_conditions      WHERE tenant_id = $1`, [T]);
@@ -145,6 +170,8 @@ async function cleanupAll(): Promise<void> {
     await c.query(`DELETE FROM income_type_resolver      WHERE tenant_id = $1`, [T]);
     await c.query(`DELETE FROM program_doc_checklist     WHERE tenant_id = $1`, [T]);
     await c.query(`DELETE FROM program_doc_engine_rules  WHERE tenant_id = $1`, [T]);
+    await c.query(`DELETE FROM program_matrix_tiers      WHERE tenant_id = $1`, [T]);
+    await c.query(`DELETE FROM geographic_restrictions   WHERE tenant_id = $1`, [T]);
     await c.query(`DELETE FROM kb_versions               WHERE tenant_id = $1`, [T]);
     // Note: tenant_audit_log carries a no_delete_audit RULE (migration 008) that
     // makes DELETE a silent no-op. Tests must not depend on audit-log isolation —
@@ -179,7 +206,7 @@ beforeEach(async () => {
   await cleanupAll();
   // Re-inject stub loans for every loan_id used by the upcoming tests.
   if (sharedStore) {
-    for (const loanId of ["L-ACC-1","L-ACC-2","L-ACC-COLLIDE","L-ACC-ROLLBACK","L-DIS-1","L-DIS-2","L-REOPEN-1","L-REOPEN-2","L-CLR-2"]) {
+    for (const loanId of ["L-ACC-1","L-ACC-2","L-ACC-COLLIDE","L-ACC-ROLLBACK","L-DIS-1","L-DIS-2","L-REOPEN-1","L-REOPEN-2","L-CLR-2","L-PHASE-B"]) {
       sharedStore.dispatch({ type: "InjectLoan", loan: stubLoanForStore(loanId) });
     }
   }
@@ -671,6 +698,48 @@ describe("predict-conditions service — clearAlert()", () => {
 
   it("rejects missing alert id with AlertNotFoundError", async () => {
     await expect(clearAlert(T, "L-MISSING", "00000000-0000-0000-0000-000000000000", "op-x")).rejects.toBeInstanceOf(AlertNotFoundError);
+  });
+});
+
+describe("predict-conditions service — pre-underwriter Phase B (matrix + geographic)", () => {
+  it("emits matrix + geographic findings alongside doc-checklist for an over-cap loan", async () => {
+    const kbId = await seedActiveKbWithMinimalResolver();
+    await seedResolverHappyPath(kbId);
+    // kbVersion was set to MAX(version)+1 inside the helper; re-query.
+    const { rows: kbRow } = await withDb((c) =>
+      c.query<{ version: number }>(`SELECT version FROM kb_versions WHERE id = $1`, [kbId]),
+    );
+    await seedMatrixAndGeoFor(kbId, kbRow[0]!.version);
+
+    // Run with a loanContext whose ltv/loanAmount trip multiple checks.
+    const loanCtx = loanContextFullDocW2();
+    loanCtx.repFico = 720;
+    loanCtx.ltv = 85;
+    loanCtx.loanAmount = 500000;
+    loanCtx.loanPurpose = "Purchase";
+    loanCtx.propertyType = "SFR Det.";
+
+    await run(T, "L-PHASE-B", loanCtx, "system:loan-ingest");
+
+    const rows = await withDb((c) =>
+      c.query<{ source_list: string; description: string; source_rule_table: string | null; emission_kind: string }>(
+        `SELECT source_list, description, source_rule_table, emission_kind
+           FROM predicted_conditions
+          WHERE tenant_id = $1 AND loan_id = $2
+          ORDER BY source_list, source_order`,
+        [T, "L-PHASE-B"],
+      ),
+    );
+    const bySource = new Map<string, typeof rows.rows>();
+    for (const r of rows.rows) {
+      if (!bySource.has(r.source_list)) bySource.set(r.source_list, []);
+      bySource.get(r.source_list)!.push(r);
+    }
+    expect((bySource.get("minimum") ?? []).length).toBeGreaterThan(0);
+    expect((bySource.get("matrix") ?? []).length).toBeGreaterThan(0);
+    expect((bySource.get("geographic") ?? []).length).toBeGreaterThan(0);
+    expect(bySource.get("matrix")![0]!.source_rule_table).toBe("program_matrix_tiers");
+    expect(rows.rows.every(r => r.emission_kind === "deterministic")).toBe(true);
   });
 });
 

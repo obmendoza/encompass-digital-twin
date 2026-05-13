@@ -60,7 +60,7 @@ export async function resolveMatrixFindings(
       category: "PTA",
       sourceList: "matrix",
       sourceRuleTable: "program_matrix_tiers",
-      sourceRuleId: "",
+      sourceRuleId: null,
       emissionKind: "deterministic",
     });
     return findings;

@@ -8,6 +8,9 @@
 
 import type pg from "pg";
 import { normalizeConditionDescription } from "@twin/core";
+import type { LoanContext } from "../doc-requirements.js";
+import { resolveMatrixFindings } from "./resolvers/matrix-resolver.js";
+import { resolveGeographicFindings } from "./resolvers/geographic-resolver.js";
 
 export interface KbVersionContext {
   /** kb_versions.id — used for predicted_conditions.kb_version_id FK. */
@@ -97,17 +100,24 @@ export function dedupFindings(findings: readonly Finding[]): Finding[] {
 }
 
 /**
- * Stub for runPreUnderwriter — wired in Task 5 once the resolvers ship.
- * For now it's an internal placeholder so the orchestrator module exists
- * and the dedup helper is exported and tested.
+ * Orchestrator. Takes the doc-checklist findings (PC v1 output, adapted
+ * to Finding[] by the service layer) and appends matrix + geographic
+ * findings (Phase B; requirements lands in Phase C/D). Returns the
+ * deduped, priority-ordered Finding[] for the service layer to emit
+ * as predicted_conditions rows.
  */
 export async function runPreUnderwriter(
-  _c: pg.PoolClient,
-  _tenantId: string,
-  _kbCtx: KbVersionContext,
-  _findings: readonly Finding[],
+  c: pg.PoolClient,
+  tenantId: string,
+  kbCtx: KbVersionContext,
+  docChecklistFindings: readonly Finding[],
+  loan: LoanContext,
 ): Promise<Finding[]> {
-  // Phase A: identity wrap — return the input findings deduped. Phases
-  // B/C/D will compose actual resolver calls into this function.
-  return dedupFindings(_findings);
+  const matrixFindings = await resolveMatrixFindings(c, tenantId, kbCtx, loan);
+  const geoFindings = await resolveGeographicFindings(c, tenantId, kbCtx, loan);
+  return dedupFindings([
+    ...docChecklistFindings,
+    ...matrixFindings,
+    ...geoFindings,
+  ]);
 }

@@ -225,7 +225,7 @@ export async function run(
       versionNumber: kbVersionRows[0]?.version ?? 0,
     };
 
-    const findings = await runPreUnderwriter(c, tenantId, kbCtx, docChecklistFindings);
+    const findings = await runPreUnderwriter(c, tenantId, kbCtx, docChecklistFindings, loan);
 
     // Skip already-acted predictions (Codex round-4 fix preserved). Key shape
     // matches what the new INSERT uses: '<source_list>::<description>'.
