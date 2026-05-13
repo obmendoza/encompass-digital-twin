@@ -12,6 +12,7 @@ import {
   type DocItem,
 } from "../doc-requirements.js";
 import { categoryInference } from "./category-inference.js";
+import { insertAuditDedup } from "./audit-helpers.js";
 import type {
   RunResult,
   RunSource,
@@ -162,16 +163,15 @@ export async function run(
       const alertId = alertInsert.rows[0]!.id;
       const runId = randomUUID();
       // Audit-log row for the alert (dedup-on-replay).
-      await c.query(
-        `INSERT INTO tenant_audit_log (target_tenant_id, actor_id, action, reason, metadata)
-         SELECT $1, $2, 'predict_conditions.alert', $3, $4::jsonb
-         WHERE NOT EXISTS (
-           SELECT 1 FROM tenant_audit_log
-            WHERE target_tenant_id = $1 AND actor_id = $2
-              AND action = 'predict_conditions.alert' AND (metadata->>'alert_id') = $5
-         )`,
-        [tenantId, source, `${ec} during predict-conditions run on loan ${loanId}`, JSON.stringify({ alert_id: alertId, error_class: ec }), alertId],
-      );
+      await insertAuditDedup(c, {
+        tenantId,
+        actorId: source,
+        action: "predict_conditions.alert",
+        reason: `${ec} during predict-conditions run on loan ${loanId}`,
+        metadata: { alert_id: alertId, error_class: ec },
+        dedupMetadataKey: "alert_id",
+        dedupValue: alertId,
+      });
       // Audit row for the run itself.
       await c.query(
         `INSERT INTO tenant_audit_log (target_tenant_id, actor_id, action, reason, metadata)
@@ -236,22 +236,15 @@ export async function run(
       [tenantId, loanId],
     );
     for (const a of alertsToClear) {
-      await c.query(
-        `INSERT INTO tenant_audit_log (target_tenant_id, actor_id, action, reason, metadata)
-         SELECT $1, $2, 'predict_conditions.alert_clear', $3, $4::jsonb
-         WHERE NOT EXISTS (
-           SELECT 1 FROM tenant_audit_log
-            WHERE target_tenant_id = $1 AND actor_id = $2
-              AND action = 'predict_conditions.alert_clear' AND (metadata->>'alert_id') = $5
-         )`,
-        [
-          tenantId,
-          source,
-          `auto-cleared alert ${a.id} on successful re-run`,
-          JSON.stringify({ alert_id: a.id, cleared_by: "system:successful-rerun", triggered_by_run_id: runId }),
-          a.id,
-        ],
-      );
+      await insertAuditDedup(c, {
+        tenantId,
+        actorId: source,
+        action: "predict_conditions.alert_clear",
+        reason: `auto-cleared alert ${a.id} on successful re-run`,
+        metadata: { alert_id: a.id, cleared_by: "system:successful-rerun", triggered_by_run_id: runId },
+        dedupMetadataKey: "alert_id",
+        dedupValue: a.id,
+      });
     }
 
     // Audit row for the run itself. `count` reflects rows actually inserted
@@ -388,22 +381,15 @@ export async function accept(
           WHERE id = $4 AND tenant_id = $5 AND loan_id = $6`,
         [actorId, role, conditionId, predictionId, tenantId, loanId],
       );
-      await c.query(
-        `INSERT INTO tenant_audit_log (target_tenant_id, actor_id, action, reason, metadata)
-         SELECT $1, $2, 'predict_conditions.accept', $3, $4::jsonb
-         WHERE NOT EXISTS (
-           SELECT 1 FROM tenant_audit_log
-            WHERE target_tenant_id = $1 AND actor_id = $2
-              AND action = 'predict_conditions.accept' AND (metadata->>'prediction_id') = $5
-         )`,
-        [
-          tenantId,
-          actorId,
-          `accepted prediction ${predictionId} → condition ${conditionId}`,
-          JSON.stringify({ prediction_id: predictionId, condition_id: conditionId, role }),
-          predictionId,
-        ],
-      );
+      await insertAuditDedup(c, {
+        tenantId,
+        actorId,
+        action: "predict_conditions.accept",
+        reason: `accepted prediction ${predictionId} → condition ${conditionId}`,
+        metadata: { prediction_id: predictionId, condition_id: conditionId, role },
+        dedupMetadataKey: "prediction_id",
+        dedupValue: predictionId,
+      });
       return { conditionId, predictionId };
     });
   });
@@ -436,22 +422,15 @@ export async function dismiss(
         WHERE id = $4 AND tenant_id = $5 AND loan_id = $6`,
       [actorId, role, reason, predictionId, tenantId, loanId],
     );
-    await c.query(
-      `INSERT INTO tenant_audit_log (target_tenant_id, actor_id, action, reason, metadata)
-       SELECT $1, $2, 'predict_conditions.dismiss', $3, $4::jsonb
-       WHERE NOT EXISTS (
-         SELECT 1 FROM tenant_audit_log
-          WHERE target_tenant_id = $1 AND actor_id = $2
-            AND action = 'predict_conditions.dismiss' AND (metadata->>'prediction_id') = $5
-       )`,
-      [
-        tenantId,
-        actorId,
-        `dismissed prediction ${predictionId}: ${reason}`,
-        JSON.stringify({ prediction_id: predictionId, role, dismissal_reason: reason }),
-        predictionId,
-      ],
-    );
+    await insertAuditDedup(c, {
+      tenantId,
+      actorId,
+      action: "predict_conditions.dismiss",
+      reason: `dismissed prediction ${predictionId}: ${reason}`,
+      metadata: { prediction_id: predictionId, role, dismissal_reason: reason },
+      dedupMetadataKey: "prediction_id",
+      dedupValue: predictionId,
+    });
     return { predictionId };
   });
 }
@@ -540,22 +519,15 @@ export async function reopenAndAccept(
           WHERE id = $4 AND tenant_id = $5 AND loan_id = $6`,
         [actorId, role, conditionId, predictionId, tenantId, loanId],
       );
-      await c.query(
-        `INSERT INTO tenant_audit_log (target_tenant_id, actor_id, action, reason, metadata)
-         SELECT $1, $2, 'predict_conditions.reopen_and_accept', $3, $4::jsonb
-         WHERE NOT EXISTS (
-           SELECT 1 FROM tenant_audit_log
-            WHERE target_tenant_id = $1 AND actor_id = $2
-              AND action = 'predict_conditions.reopen_and_accept' AND (metadata->>'prediction_id') = $5
-         )`,
-        [
-          tenantId,
-          actorId,
-          `reopened and accepted prediction ${predictionId} → condition ${conditionId}`,
-          JSON.stringify({ prediction_id: predictionId, condition_id: conditionId, role, prior_dismissal_audit_id: priorDismissalAuditId }),
-          predictionId,
-        ],
-      );
+      await insertAuditDedup(c, {
+        tenantId,
+        actorId,
+        action: "predict_conditions.reopen_and_accept",
+        reason: `reopened and accepted prediction ${predictionId} → condition ${conditionId}`,
+        metadata: { prediction_id: predictionId, condition_id: conditionId, role, prior_dismissal_audit_id: priorDismissalAuditId },
+        dedupMetadataKey: "prediction_id",
+        dedupValue: predictionId,
+      });
       return { conditionId, predictionId };
     });
   });
@@ -589,22 +561,15 @@ export async function clearAlert(
       // Already cleared — return idempotently.
       return { alertId };
     }
-    await c.query(
-      `INSERT INTO tenant_audit_log (target_tenant_id, actor_id, action, reason, metadata)
-       SELECT $1, $2, 'predict_conditions.alert_clear', $3, $4::jsonb
-       WHERE NOT EXISTS (
-         SELECT 1 FROM tenant_audit_log
-          WHERE target_tenant_id = $1 AND actor_id = $2
-            AND action = 'predict_conditions.alert_clear' AND (metadata->>'alert_id') = $5
-       )`,
-      [
-        tenantId,
-        actorId,
-        `cleared alert ${alertId}`,
-        JSON.stringify({ alert_id: alertId }),
-        alertId,
-      ],
-    );
+    await insertAuditDedup(c, {
+      tenantId,
+      actorId,
+      action: "predict_conditions.alert_clear",
+      reason: `cleared alert ${alertId}`,
+      metadata: { alert_id: alertId },
+      dedupMetadataKey: "alert_id",
+      dedupValue: alertId,
+    });
     return { alertId };
   });
 }
