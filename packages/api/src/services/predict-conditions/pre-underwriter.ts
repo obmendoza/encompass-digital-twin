@@ -12,6 +12,7 @@ import type { LoanContext } from "../doc-requirements.js";
 import { resolveMatrixFindings } from "./resolvers/matrix-resolver.js";
 import { resolveGeographicFindings } from "./resolvers/geographic-resolver.js";
 import { resolveRequirementFindings } from "./resolvers/requirements-resolver.js";
+import { requirementsLlmBackstop, type BackstopResult } from "./llm/requirements-backstop.js";
 
 export interface KbVersionContext {
   /** kb_versions.id — used for predicted_conditions.kb_version_id FK. */
@@ -29,6 +30,12 @@ export interface Finding {
   sourceRuleTable: "program_matrix_tiers" | "program_requirements" | "geographic_restrictions" | null;
   sourceRuleId: string | null;
   emissionKind: "deterministic" | "llm";
+}
+
+export interface OrchestratorResult {
+  findings: Finding[];
+  llm: BackstopResult | null;
+  hardcodedFields: string[];
 }
 
 /**
@@ -103,9 +110,9 @@ export function dedupFindings(findings: readonly Finding[]): Finding[] {
 /**
  * Orchestrator. Takes the doc-checklist findings (PC v1 output, adapted
  * to Finding[] by the service layer) and appends matrix, geographic, and
- * requirements findings (Phase C; LLM backstop lands in Task 11). Returns
- * the deduped, priority-ordered Finding[] for the service layer to emit
- * as predicted_conditions rows.
+ * requirements findings (deterministic Stage A + LLM backstop Stage B).
+ * Returns OrchestratorResult { findings, llm, hardcodedFields } for the
+ * service layer to emit as predicted_conditions rows and audit metadata.
  */
 export async function runPreUnderwriter(
   c: pg.PoolClient,
@@ -113,18 +120,40 @@ export async function runPreUnderwriter(
   kbCtx: KbVersionContext,
   docChecklistFindings: readonly Finding[],
   loan: LoanContext,
-): Promise<Finding[]> {
+): Promise<OrchestratorResult> {
   const matrixFindings = await resolveMatrixFindings(c, tenantId, kbCtx, loan);
   const geoFindings = await resolveGeographicFindings(c, tenantId, kbCtx, loan);
-  const { findings: reqFindings, unhandledRows: _unhandledForBackstop } =
+  const { findings: reqDeterministicFindings, unhandledRows } =
     await resolveRequirementFindings(c, tenantId, kbCtx, loan);
-  // _unhandledForBackstop is wired into the LLM backstop in Task 11. Until
-  // then it's collected and discarded; coverage of the long-tail program_
-  // requirements rows is deterministic-only.
-  return dedupFindings([
-    ...docChecklistFindings,
-    ...matrixFindings,
-    ...geoFindings,
-    ...reqFindings,
-  ]);
+
+  // LLM backstop (Stage B). May return empty findings if disabled / no
+  // bucket / error. Passes the doc-checklist + Phase B + Stage A findings
+  // as `alreadyEmitted` so the model sees the full picture and doesn't
+  // re-emit covered docs.
+  const backstop = await requirementsLlmBackstop({
+    loan,
+    unhandledRequirements: unhandledRows,
+    activeDocChecklist: docChecklistFindings,
+    alreadyEmitted: [...matrixFindings, ...geoFindings, ...reqDeterministicFindings],
+  });
+
+  // Hardcoded-fields surfacing for audit (spec §4.4 + §6.4 Risk #5b). Any
+  // field still wired to the F2-deferred fallback is surfaced so ops/compliance
+  // can see PC v2's coverage gap.
+  const hardcodedFields: string[] = [];
+  if (loan.isItin === false) hardcodedFields.push("isItin");
+  if (loan.llcOrLegalEntity === false) hardcodedFields.push("llcOrLegalEntity");
+  if (loan.county === "") hardcodedFields.push("county");
+
+  return {
+    findings: dedupFindings([
+      ...docChecklistFindings,
+      ...matrixFindings,
+      ...geoFindings,
+      ...reqDeterministicFindings,
+      ...backstop.findings,
+    ]),
+    llm: backstop,
+    hardcodedFields,
+  };
 }

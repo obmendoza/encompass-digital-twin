@@ -225,7 +225,8 @@ export async function run(
       versionNumber: kbVersionRows[0]?.version ?? 0,
     };
 
-    const findings = await runPreUnderwriter(c, tenantId, kbCtx, docChecklistFindings, loan);
+    const orchestratorResult = await runPreUnderwriter(c, tenantId, kbCtx, docChecklistFindings, loan);
+    const findings = orchestratorResult.findings;
 
     // Skip already-acted predictions (Codex round-4 fix preserved). Key shape
     // matches what the new INSERT uses: '<source_list>::<description>'.
@@ -309,6 +310,25 @@ export async function run(
             requirements_llm: findings.filter((f) => f.sourceList === "requirements" && f.emissionKind === "llm").length,
             geographic: findings.filter((f) => f.sourceList === "geographic").length,
           },
+          ...(orchestratorResult.llm && orchestratorResult.llm.findings.length > 0
+            ? {
+                llm: {
+                  input_tokens: orchestratorResult.llm.cost?.input_tokens,
+                  output_tokens: orchestratorResult.llm.cost?.output_tokens,
+                  model: orchestratorResult.llm.cost?.model,
+                  bucket_size: orchestratorResult.llm.findings.length,
+                  backstop_truncated: orchestratorResult.llm.backstopTruncated,
+                  dropped_schema: orchestratorResult.llm.dropCounters.schema,
+                  dropped_hallucinated_id: orchestratorResult.llm.dropCounters.hallucinatedId,
+                  dropped_below_confidence: orchestratorResult.llm.dropCounters.belowConfidence,
+                  dropped_ungrounded: orchestratorResult.llm.dropCounters.ungrounded,
+                  dropped_output_cap: orchestratorResult.llm.dropCounters.outputCap,
+                },
+              }
+            : orchestratorResult.llm?.skipReason
+              ? { llm_skipped: orchestratorResult.llm.skipReason }
+              : {}),
+          hardcoded_fields: orchestratorResult.hardcodedFields,
         }),
       ],
     );
