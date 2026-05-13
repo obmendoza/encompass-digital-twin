@@ -384,6 +384,8 @@ Tool schema:
 
 **Compliance + ZDR:** reuses `runComplianceChecks` from `learning/compliance-checker.ts` on the redacted prompt; sets `anthropic-ddr` headers (same pattern as `insight-generator.ts`).
 
+**Amendment 2026-05-14 (post-review):** The `runComplianceChecks` call is **deferred**. That function's signature accepts a `SpecificChange` (path + value, used for guideline-change proposals) and its checks — threshold_reasonableness, fair-lending disparate-impact — apply to *changing a guideline*, not to evaluating loan documents against an existing guideline. Forcing PC findings through it would require synthetic `path` values that bypass the checks anyway. Coverage for PC-finding compliance comes from the existing two-key approval workflow on the guidelines themselves (already enforced upstream). If a future need arises (e.g., LLM emits a finding whose description targets a sensitive borrower attribute), introduce a dedicated PC compliance check rather than overloading `runComplianceChecks`.
+
 **Failure modes:**
 - LLM call fails (network/timeout/rate-limit/parse error): log + skip backstop. Deterministic findings still emit. Audit metadata records `requirements_llm: 0, requirements_llm_error: '<class>'`.
 - Anthropic key absent: skip backstop entirely. One-time startup warn.
