@@ -22,7 +22,19 @@ export function buildLoanContextFromLoan(loan: Loan): LoanContext {
       : loan.transaction.occupancy === "Second"
         ? "second_home"
         : "investment";
+  // Map Loan.transaction.loanPurpose (Loan-domain literal) to LoanContext's
+  // narrower PC v2 union. Unrecognized values fall through to undefined so
+  // resolvers skip+warn rather than emit findings against a phantom purpose.
+  const loanPurpose: LoanContext["loanPurpose"] =
+    loan.transaction.loanPurpose === "Purchase"
+      ? "Purchase"
+      : loan.transaction.loanPurpose === "Refi-RT"
+        ? "Rate & Term Refinance"
+        : loan.transaction.loanPurpose === "Refi-CO"
+          ? "Cash-Out Refinance"
+          : undefined;
   return {
+    // ── PC v1 fields (unchanged) ──
     incomeDocType,
     borrowerType,
     citizenship,
@@ -40,5 +52,14 @@ export function buildLoanContextFromLoan(loan: Loan): LoanContext {
     county: "",
     usCredit: true,
     program: loan.nqmProgram,
+    // ── PC v2 additions ──
+    repFico: loan.credit.repScore ?? undefined,
+    ltv: loan.transaction.ltv,
+    loanAmount: loan.transaction.loanAmount,
+    loanPurpose,
+    propertyType: loan.property.propertyType,
+    dti: loan.qualifying.totalDti,
+    reservesMonths: loan.assets.reservesMonths,
+    noteRate: loan.transaction.noteRate,
   };
 }

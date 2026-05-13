@@ -28,6 +28,15 @@ export interface LoanContext {
   county: string;
   usCredit: boolean;
   program: string;
+  // ── PC v2 additions (optional; resolvers skip+warn when absent) ──
+  repFico?: number;
+  ltv?: number;
+  loanAmount?: number;
+  loanPurpose?: "Purchase" | "Rate & Term Refinance" | "Cash-Out Refinance";
+  propertyType?: string;
+  dti?: number;
+  reservesMonths?: number;
+  noteRate?: number;
 }
 
 export interface ResolveResult {
