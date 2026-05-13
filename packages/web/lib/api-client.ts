@@ -231,23 +231,23 @@ export const api = {
       `/loans/${loanId}/predictions/run`,
       { method: "POST", body: JSON.stringify({}) },
     ),
-  acceptPrediction: (loanId: string, predictionId: string) =>
+  // The `role` parameter on the three mutation methods below tells the API
+  // which acted_role to record in the audit log. The API honors x-user-role
+  // only on its internal-service-call bypass (where the web server uses
+  // x-user-id), so the value here MUST be derived from the real session by
+  // the calling server action (via getUser()), never accepted from client
+  // input. The api-client itself does no auth — server actions are the
+  // boundary. Codex round-3 follow-up.
+  acceptPrediction: (loanId: string, predictionId: string, role: "operator" | "va") =>
     req<{ conditionId: string; predictionId: string }>(
       `/loans/${loanId}/predictions/${predictionId}/accept`,
-      { method: "POST", body: JSON.stringify({}) },
+      { method: "POST", body: JSON.stringify({}), headers: { "x-user-role": role } },
     ),
-  dismissPrediction: (loanId: string, predictionId: string, reason: string) =>
+  dismissPrediction: (loanId: string, predictionId: string, reason: string, role: "operator" | "va") =>
     req<{ predictionId: string }>(
       `/loans/${loanId}/predictions/${predictionId}/dismiss`,
-      { method: "POST", body: JSON.stringify({ reason }) },
+      { method: "POST", body: JSON.stringify({ reason }), headers: { "x-user-role": role } },
     ),
-  // The x-user-role: va header below is honored by the API only on the
-  // internal-service-call bypass (the web server uses x-user-id), so any
-  // caller of this method bypasses the API's VA gate. The server action
-  // actionReopenAndAcceptPrediction enforces the role check using the real
-  // Supabase session BEFORE invoking this — never call this method outside
-  // a server action that has already verified user.role === "va". Codex P1
-  // follow-up.
   reopenAndAcceptPrediction: (loanId: string, predictionId: string) =>
     req<{ conditionId: string; predictionId: string }>(
       `/loans/${loanId}/predictions/${predictionId}/reopen-and-accept`,

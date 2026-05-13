@@ -153,9 +153,9 @@ export function PredictedConditionsPanel({ loanId, predictions, alerts }: Props)
         <span>Accepted ({acceptedCount}) · Dismissed ({dismissedCount})</span>
         <button
           className="enc-btn text-[9px] ml-auto"
-          disabled={pending || !!noKbAlert}
+          disabled={pending}
           onClick={handleRerun}
-          title={noKbAlert ? "Activate a KB version first (scripts/approve-kb.ts --activate). Re-running won't help until then." : ""}
+          title={noKbAlert ? "If a KB version was activated since the last attempt, this re-run will succeed and the alert will auto-clear. Otherwise it will produce another alert." : ""}
         >
           {pending ? "Working..." : "Re-run predictions"}
         </button>
