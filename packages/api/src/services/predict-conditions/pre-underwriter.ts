@@ -11,6 +11,7 @@ import { normalizeConditionDescription } from "@twin/core";
 import type { LoanContext } from "../doc-requirements.js";
 import { resolveMatrixFindings } from "./resolvers/matrix-resolver.js";
 import { resolveGeographicFindings } from "./resolvers/geographic-resolver.js";
+import { resolveRequirementFindings } from "./resolvers/requirements-resolver.js";
 
 export interface KbVersionContext {
   /** kb_versions.id — used for predicted_conditions.kb_version_id FK. */
@@ -101,9 +102,9 @@ export function dedupFindings(findings: readonly Finding[]): Finding[] {
 
 /**
  * Orchestrator. Takes the doc-checklist findings (PC v1 output, adapted
- * to Finding[] by the service layer) and appends matrix + geographic
- * findings (Phase B; requirements lands in Phase C/D). Returns the
- * deduped, priority-ordered Finding[] for the service layer to emit
+ * to Finding[] by the service layer) and appends matrix, geographic, and
+ * requirements findings (Phase C; LLM backstop lands in Task 11). Returns
+ * the deduped, priority-ordered Finding[] for the service layer to emit
  * as predicted_conditions rows.
  */
 export async function runPreUnderwriter(
@@ -115,9 +116,15 @@ export async function runPreUnderwriter(
 ): Promise<Finding[]> {
   const matrixFindings = await resolveMatrixFindings(c, tenantId, kbCtx, loan);
   const geoFindings = await resolveGeographicFindings(c, tenantId, kbCtx, loan);
+  const { findings: reqFindings, unhandledRows: _unhandledForBackstop } =
+    await resolveRequirementFindings(c, tenantId, kbCtx, loan);
+  // _unhandledForBackstop is wired into the LLM backstop in Task 11. Until
+  // then it's collected and discarded; coverage of the long-tail program_
+  // requirements rows is deterministic-only.
   return dedupFindings([
     ...docChecklistFindings,
     ...matrixFindings,
     ...geoFindings,
+    ...reqFindings,
   ]);
 }
