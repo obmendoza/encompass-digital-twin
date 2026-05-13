@@ -20,7 +20,8 @@ import { http, type HttpOptions } from "../http.js";
 import type { CellResult, WorkflowDef } from "../types.js";
 
 const CANONICAL_FIXTURE = "nqm-bankstmt-12mo-clean";
-const EXPECTED_PENDING = 15;
+const EXPECTED_PENDING_MIN = 15;
+const EXPECTED_PENDING_MAX = 35;  // PC v2 adds matrix + geo + requirements findings on top of doc-checklist
 
 /**
  * Pre-cleanup for W10. The predict-conditions service treats existing pending
@@ -120,15 +121,30 @@ export const W10: WorkflowDef = {
       );
     }
 
-    // 2. List predictions. Expect EXPECTED_PENDING pending.
-    type ListResp = { predictions: Array<{ id: string; status: string }>; alerts: unknown[] };
+    // 2. List predictions. Expect pending count in range [EXPECTED_PENDING_MIN, EXPECTED_PENDING_MAX].
+    type ListResp = { predictions: Array<{ id: string; status: string; source_list?: string }>; alerts: unknown[] };
     const list = await http.get<ListResp>(apiOpts, `/loans/${fixture.loanId}/predictions`);
     const pending = list.predictions.filter((p) => p.status === "pending");
     assertions.push({
-      name: "pending_count",
-      expected: String(EXPECTED_PENDING),
+      name: "pending_count_in_range",
+      expected: `${EXPECTED_PENDING_MIN}-${EXPECTED_PENDING_MAX}`,
       actual: String(pending.length),
-      ok: pending.length === EXPECTED_PENDING,
+      ok: pending.length >= EXPECTED_PENDING_MIN && pending.length <= EXPECTED_PENDING_MAX,
+    });
+
+    // PC v2: assert that predictions include rows from multiple sources.
+    // Doc-checklist (minimum/income) should still be present from PC v1.
+    // Matrix/geographic/requirements rows depend on the demo tenant's
+    // ingested rules, but the canonical fixture's profile should trigger
+    // at least one PC v2 source.
+    type ListResp2 = { predictions: Array<{ id: string; status: string; source_list?: string }>; alerts: unknown[] };
+    const listV2 = await http.get<ListResp2>(apiOpts, `/loans/${fixture.loanId}/predictions`);
+    const sources = new Set(listV2.predictions.map((p) => p.source_list ?? "unknown"));
+    assertions.push({
+      name: "pc_v2_sources_present",
+      expected: "at least one of: matrix, geographic, requirements",
+      actual: Array.from(sources).join(","),
+      ok: sources.has("matrix") || sources.has("geographic") || sources.has("requirements"),
     });
 
     if (pending.length < 9) {
