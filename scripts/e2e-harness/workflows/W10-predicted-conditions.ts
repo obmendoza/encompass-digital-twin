@@ -12,11 +12,55 @@
 // re-ingesting. Last verified against demo tenant KB version 105 (id 70)
 // on 2026-05-13: 15 predictions for the canonical fixture.
 
+import pg from "pg";
+import { readFileSync } from "node:fs";
+import { dirname, resolve as resolvePath } from "node:path";
+import { fileURLToPath } from "node:url";
 import { http, type HttpOptions } from "../http.js";
 import type { CellResult, WorkflowDef } from "../types.js";
 
 const CANONICAL_FIXTURE = "nqm-bankstmt-12mo-clean";
 const EXPECTED_PENDING = 15;
+
+/**
+ * Pre-cleanup for W10. The predict-conditions service treats existing pending
+ * batches as idempotent (spec §7.4 reuses them; accepted/dismissed survive
+ * across re-runs), so a second W10 run on dirty state would see fewer than 9
+ * pending predictions and fail PREDICTIONS_INSUFFICIENT. W10 is the only
+ * harness workflow with DB-coupled state, so we tolerate one direct pg
+ * dependency here rather than adding a destructive REST endpoint or
+ * widening /world/reset.
+ *
+ * Reads DATABASE_URL from packages/api/.env if not already in the process
+ * env (matches the pattern used by api integration tests).
+ */
+async function cleanupPredictConditionsState(tenantId: string, loanId: string): Promise<void> {
+  if (!process.env.DATABASE_URL) {
+    const here = dirname(fileURLToPath(import.meta.url));
+    try {
+      const envPath = resolvePath(here, "../../../packages/api/.env");
+      for (const line of readFileSync(envPath, "utf8").split("\n")) {
+        const m = line.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/);
+        if (m && !process.env[m[1]]) process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
+      }
+    } catch {
+      // No .env file or unreadable — assume process env is already configured.
+    }
+  }
+  if (!process.env.DATABASE_URL) {
+    // No DB configured. The workflow itself will then surface
+    // PREDICTIONS_RUN_FAILED or similar; we just skip cleanup.
+    return;
+  }
+  const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+  await client.connect();
+  try {
+    await client.query(`DELETE FROM predicted_conditions WHERE tenant_id = $1 AND loan_id = $2`, [tenantId, loanId]);
+    await client.query(`DELETE FROM prediction_alerts WHERE tenant_id = $1 AND loan_id = $2`, [tenantId, loanId]);
+  } finally {
+    await client.end();
+  }
+}
 
 export const W10: WorkflowDef = {
   id: "W10_predicted_conditions",
@@ -28,7 +72,22 @@ export const W10: WorkflowDef = {
     const apiOpts: HttpOptions = { baseUrl: ctx.apiUrl };
     const assertions: Array<{ name: string; expected: string; actual: string; ok: boolean }> = [];
 
-    // 0. Load fixture into world_state.
+    // 0a. Purge any predicted_conditions/prediction_alerts left over from
+    //     a prior W10 run on this loan. Without this, run() reuses the
+    //     pending batch (spec §7.4) and accepted/dismissed rows persist,
+    //     leaving fewer than 9 pending → PREDICTIONS_INSUFFICIENT.
+    const tenantId = process.env.DEMO_TENANT_ID ?? "";
+    if (tenantId) {
+      try {
+        await cleanupPredictConditionsState(tenantId, fixture.loanId);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        assertions.push({ name: "pre_cleanup", expected: "ok", actual: msg, ok: false });
+        return finalize(fixture, start, "fail", "P1", assertions, {}, "PRE_CLEANUP_FAILED", msg);
+      }
+    }
+
+    // 0b. Load fixture into world_state.
     await http.post(apiOpts, "/world/reset");
     await http.post(apiOpts, "/world/load-scenario", { scenarioId: fixture.id });
 
