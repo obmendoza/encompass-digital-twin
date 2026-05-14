@@ -531,6 +531,7 @@ Adapter unit tests must cover all five. The W11 e2e workflow exercises the happy
 | PC v2 re-fire amplification on batched docs (R2) | Debounce via `pc_v2_refire_debounce` (§5.4.2): every `AddDocument` upserts `ready_at = NOW() + 30s`; the periodic drain runs PC v2 once per loan. 15-doc batches → 1 PC v2 run (was: 15 runs at full LLM cost). |
 | `loan_context_extras` upsert silently destructive of operator edits (R3) | First-write-wins via `ON CONFLICT (tenant_id, loan_id) DO NOTHING` (§4.1 step 4). Re-ingest cannot overwrite extras. A future admin endpoint owns updates and can reason about provenance (`adapter` vs `operator` vs `pc_v2_inferred`); listed in §13. |
 | Payload echo via 500 response (C1) | `validateLoan`/`validateDocument` failures return `{ error_class, details: [{field, code}] }` — category-coded, never raw payload fragments. Adapter exceptions return `{ adapter_type, error_id }`; stack + payload-bearing message live server-side only, keyed by `error_id` for correlation. |
+| PII redaction owner — assumption invalidated by real samples | Spec 1 §6 assumed pre-redacted inputs. Real NPNQM portal payloads carry unmasked SSN. **Mitigation owner moved to Spec 1.5 §6**: `redactPayloadMiddleware` is a Fastify `preHandler` applied to all `/api/ingest/*` endpoints (loan + documents + analysis-output). Pino redact config covers SSN + DOB paths. See `2026-05-15-portal-analysis-output-ingestion.md` §6. |
 
 ---
 

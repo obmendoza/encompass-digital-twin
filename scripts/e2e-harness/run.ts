@@ -18,8 +18,9 @@ import { W8 } from "./workflows/W8-multi-tenant-rls.js";
 import { W9 } from "./workflows/W9-va-review.js";
 import { W10 } from "./workflows/W10-predicted-conditions.js";
 import { W11 } from "./workflows/W11-npnqm-ingest.js";
+import { W12 } from "./workflows/W12-portal-analysis.js";
 
-const ALL_WORKFLOWS: WorkflowDef[] = [W1, W2, W3, W4, W5, W6, W7, W8, W9, W10, W11];
+const ALL_WORKFLOWS: WorkflowDef[] = [W1, W2, W3, W4, W5, W6, W7, W8, W9, W10, W11, W12];
 const GLOBAL_WORKFLOWS = new Set(["W6_kb_ingest_twokey", "W7_pattern_detection"]);
 const CANARY_FIXTURE_ID = "nqm-bankstmt-12mo-clean";
 
