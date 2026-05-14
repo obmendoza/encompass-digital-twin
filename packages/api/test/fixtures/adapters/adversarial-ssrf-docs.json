@@ -1,0 +1,46 @@
+{
+  "source": "test-adversarial",
+  "externalLoanId": "TEST-LOAN-1",
+  "documents": [
+    {
+      "attachmentId": "doc-aws-metadata",
+      "attachmentName": "metadata-attack",
+      "attachmentType": "Other",
+      "downloadUrl": "http://169.254.169.254/latest/meta-data/iam/security-credentials/",
+      "sizeBytes": 100,
+      "mime": "application/octet-stream"
+    },
+    {
+      "attachmentId": "doc-rfc1918",
+      "attachmentName": "internal-attack",
+      "attachmentType": "Other",
+      "downloadUrl": "http://10.0.0.1/internal",
+      "sizeBytes": 100,
+      "mime": "application/octet-stream"
+    },
+    {
+      "attachmentId": "doc-file-scheme",
+      "attachmentName": "file-attack",
+      "attachmentType": "Other",
+      "downloadUrl": "file:///etc/passwd",
+      "sizeBytes": 100,
+      "mime": "application/octet-stream"
+    },
+    {
+      "attachmentId": "doc-cleartext",
+      "attachmentName": "cleartext",
+      "attachmentType": "Other",
+      "downloadUrl": "http://attacker.example.com/payload",
+      "sizeBytes": 100,
+      "mime": "application/octet-stream"
+    },
+    {
+      "attachmentId": "doc-redirect",
+      "attachmentName": "redirect-attempt",
+      "attachmentType": "Other",
+      "downloadUrl": "https://allowed-host.example.com/redirect",
+      "sizeBytes": 100,
+      "mime": "application/octet-stream"
+    }
+  ]
+}

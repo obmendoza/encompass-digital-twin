@@ -1,0 +1,55 @@
+{
+  "source": "npnqm-portal",
+  "externalLoanId": "NPNQM-CASE-7821",
+  "documents": [
+    {
+      "attachmentId": "ATT-001",
+      "attachmentName": "BankStmt_Sept2025.pdf",
+      "attachmentType": "BankStatement",
+      "downloadUrl": "https://docs.npnqm-portal.example.com/secure/att-001",
+      "sizeBytes": 245000,
+      "mime": "application/pdf",
+      "contentHash": "sha256:abc123def456"
+    },
+    {
+      "attachmentId": "ATT-002",
+      "attachmentName": "BankStmt_Aug2025.pdf",
+      "attachmentType": "BankStatement",
+      "downloadUrl": "https://docs.npnqm-portal.example.com/secure/att-002",
+      "sizeBytes": 251000,
+      "mime": "application/pdf"
+    },
+    {
+      "attachmentId": "ATT-003",
+      "attachmentName": "PayStub_Recent.pdf",
+      "attachmentType": "PayStub",
+      "downloadUrl": "https://docs.npnqm-portal.example.com/secure/att-003",
+      "sizeBytes": 89000,
+      "mime": "application/pdf"
+    },
+    {
+      "attachmentId": "ATT-004",
+      "attachmentName": "TaxReturn_2024.pdf",
+      "attachmentType": "TaxReturn",
+      "downloadUrl": "https://docs.npnqm-portal.example.com/secure/att-004",
+      "sizeBytes": 1240000,
+      "mime": "application/pdf"
+    },
+    {
+      "attachmentId": "ATT-005",
+      "attachmentName": "DriversLicense.jpg",
+      "attachmentType": "ID",
+      "downloadUrl": "https://docs.npnqm-portal.example.com/secure/att-005",
+      "sizeBytes": 320000,
+      "mime": "image/jpeg"
+    },
+    {
+      "attachmentId": "ATT-006",
+      "attachmentName": "HOI_Policy.pdf",
+      "attachmentType": "Insurance",
+      "downloadUrl": "https://docs.npnqm-portal.example.com/secure/att-006",
+      "sizeBytes": 156000,
+      "mime": "application/pdf"
+    }
+  ]
+}

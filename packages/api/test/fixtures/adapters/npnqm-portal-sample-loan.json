@@ -1,0 +1,36 @@
+{
+  "source": "npnqm-portal",
+  "externalId": "NPNQM-CASE-7821",
+  "loanData": {
+    "borrowerCaseId": "NPNQM-CASE-7821",
+    "selectedProgram": "Flex Select",
+    "primaryBorrower": {
+      "name": "David Kim"
+    },
+    "borrower": {
+      "fullName": "David Kim",
+      "ssnMasked": "xxx-xx-9876",
+      "dob": "1979-09-22",
+      "maritalStatus": "Married",
+      "isItin": false,
+      "entityType": "Individual",
+      "fico": 718
+    },
+    "loanPurpose": "Refi-CO",
+    "loanAmount": 380000,
+    "salesPrice": 0,
+    "appraisedValue": 540000,
+    "ltv": 70.37,
+    "cltv": 70.37,
+    "hcltv": 70.37,
+    "noteRate": 7.625,
+    "term": 360,
+    "amortType": "Fixed",
+    "occupancy": "Primary",
+    "piti": 3520,
+    "totalDti": 41.5,
+    "reservesMonths": 6,
+    "propertyType": "SFR Det.",
+    "propertyCounty": "Multnomah County"
+  }
+}
