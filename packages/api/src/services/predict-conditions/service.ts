@@ -12,6 +12,8 @@ import {
   type DocItem,
 } from "../doc-requirements.js";
 import { categoryInference } from "./category-inference.js";
+import { insertAuditDedup } from "./audit-helpers.js";
+import { runPreUnderwriter, type Finding, type KbVersionContext } from "./pre-underwriter.js";
 import type {
   RunResult,
   RunSource,
@@ -50,6 +52,18 @@ export function __testOnly_setThrowAfterDispatch(e: Error | null): void {
   __testOnly_throwAfterDispatch = e;
 }
 
+/**
+ * Schema version of the predict-conditions input domain. Bumping invalidates
+ * all prior idempotency hashes — any loan with a pending batch from an older
+ * schema will re-run instead of being reused. Increment when adding a new
+ * resolver source so deployed v(N-1) batches don't gate the new sources off.
+ *
+ *   v1: doc-checklist only (minimum + income from program_doc_checklist)
+ *   v2: + matrix (program_matrix_tiers) + geographic (geographic_restrictions)
+ *       + requirements (program_requirements, deterministic + LLM backstop)
+ */
+const PC_SCHEMA_VERSION = 2;
+
 function canonicalizeContext(loan: LoanContext): string {
   // Canonical JSON for hashing: sort top-level keys deterministically.
   const sorted: Record<string, unknown> = {};
@@ -60,7 +74,10 @@ function canonicalizeContext(loan: LoanContext): string {
 }
 
 function hashInput(loan: LoanContext): string {
-  return createHash("sha256").update(canonicalizeContext(loan)).digest("hex");
+  return createHash("sha256")
+    .update(`v${PC_SCHEMA_VERSION}\0`)
+    .update(canonicalizeContext(loan))
+    .digest("hex");
 }
 
 interface PendingMatch {
@@ -162,16 +179,15 @@ export async function run(
       const alertId = alertInsert.rows[0]!.id;
       const runId = randomUUID();
       // Audit-log row for the alert (dedup-on-replay).
-      await c.query(
-        `INSERT INTO tenant_audit_log (target_tenant_id, actor_id, action, reason, metadata)
-         SELECT $1, $2, 'predict_conditions.alert', $3, $4::jsonb
-         WHERE NOT EXISTS (
-           SELECT 1 FROM tenant_audit_log
-            WHERE target_tenant_id = $1 AND actor_id = $2
-              AND action = 'predict_conditions.alert' AND (metadata->>'alert_id') = $5
-         )`,
-        [tenantId, source, `${ec} during predict-conditions run on loan ${loanId}`, JSON.stringify({ alert_id: alertId, error_class: ec }), alertId],
-      );
+      await insertAuditDedup(c, {
+        tenantId,
+        actorId: source,
+        action: "predict_conditions.alert",
+        reason: `${ec} during predict-conditions run on loan ${loanId}`,
+        metadata: { alert_id: alertId, error_class: ec },
+        dedupMetadataKey: "alert_id",
+        dedupValue: alertId,
+      });
       // Audit row for the run itself.
       await c.query(
         `INSERT INTO tenant_audit_log (target_tenant_id, actor_id, action, reason, metadata)
@@ -186,28 +202,64 @@ export async function run(
       return { runId, predictionCount: 0, alertCount: 1, reused: false };
     }
 
-    // Happy path — insert N predictions, but skip docs that already exist
-    // on this loan in status='accepted' or 'dismissed'. Without this filter,
-    // a re-run after a hash/KB change would re-emit already-acted predictions
-    // as new pending rows, letting users accept the same doc twice and mint
-    // a duplicate Condition. Codex round-4 P2.
-    const { rows: actedRows } = await c.query<{ source_list: string; description: string }>(
-      `SELECT source_list, description
+    // Phase A: adapt doc-checklist output to Finding[] and route through the
+    // orchestrator. Phases B/C/D will append matrix/geographic/requirements
+    // findings here before the dedup pass.
+    const docChecklistFindings: Finding[] = [
+      ...docs.minimum.map((d) => ({
+        description: d.name,
+        note: d.note,
+        category: categoryInference(d) as "PTA" | "PTD" | "PTF" | "PTP",
+        sourceList: "minimum" as const,
+        sourceRuleTable: null,
+        sourceRuleId: null,
+        emissionKind: "deterministic" as const,
+      })),
+      ...docs.income.map((d) => ({
+        description: d.name,
+        note: d.note,
+        category: categoryInference(d) as "PTA" | "PTD" | "PTF" | "PTP",
+        sourceList: "income" as const,
+        sourceRuleTable: null,
+        sourceRuleId: null,
+        emissionKind: "deterministic" as const,
+      })),
+    ];
+
+    // Resolve KbVersionContext once: docs.kbVersionId is kb_versions.id;
+    // we also need kb_versions.version for matrix/requirements/geographic
+    // resolver lookups in Phase B/C/D. The orchestrator currently doesn't
+    // use it (Phase A identity wrap) but passing it through now establishes
+    // the contract.
+    const { rows: kbVersionRows } = await c.query<{ version: number }>(
+      `SELECT version FROM kb_versions WHERE id = $1 AND tenant_id = $2`,
+      [docs.kbVersionId, tenantId],
+    );
+    const kbCtx: KbVersionContext = {
+      rowId: docs.kbVersionId,
+      versionNumber: kbVersionRows[0]?.version ?? 0,
+    };
+
+    const orchestratorResult = await runPreUnderwriter(c, tenantId, kbCtx, docChecklistFindings, loan);
+    const findings = orchestratorResult.findings;
+
+    // Skip already-acted predictions (Codex round-4 fix preserved). Key shape:
+    // '<source_list>::<source_rule_id>::<description>' to avoid false collisions
+    // between findings from different rules that share the same description text.
+    const { rows: actedRows } = await c.query<{ source_list: string; source_rule_id: string | null; description: string }>(
+      `SELECT source_list, source_rule_id, description
          FROM predicted_conditions
         WHERE tenant_id = $1 AND loan_id = $2 AND status IN ('accepted', 'dismissed')`,
       [tenantId, loanId],
     );
-    const actedKeys = new Set(actedRows.map((r) => `${r.source_list}::${r.description}`));
+    const actedKeys = new Set(actedRows.map((r) => `${r.source_list}::${r.source_rule_id ?? ""}::${r.description}`));
 
     const runId = randomUUID();
-    const items: Array<{ list: "minimum" | "income"; doc: DocItem }> = [
-      ...docs.minimum.map((d) => ({ list: "minimum" as const, doc: d })),
-      ...docs.income.map((d) => ({ list: "income" as const, doc: d })),
-    ];
     let skippedActed = 0;
     let insertedCount = 0;
-    for (const { list, doc } of items) {
-      if (actedKeys.has(`${list}::${doc.name}`)) {
+    for (let idx = 0; idx < findings.length; idx++) {
+      const finding = findings[idx]!;
+      if (actedKeys.has(`${finding.sourceList}::${finding.sourceRuleId ?? ""}::${finding.description}`)) {
         skippedActed++;
         continue;
       }
@@ -215,13 +267,15 @@ export async function run(
         `INSERT INTO predicted_conditions
            (tenant_id, loan_id, prediction_run_id, source_input_hash, predicted_by,
             kb_version_id, resolved_income_type, category, description, note,
-            source_list, source_order, status)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'pending')`,
+            source_list, source_order, status,
+            source_rule_table, source_rule_id, emission_kind)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'pending', $13, $14, $15)`,
         [
           tenantId, loanId, runId, sourceInputHash, source,
           docs.kbVersionId, docs.resolvedIncomeType,
-          categoryInference(doc), doc.name, doc.note,
-          list, doc.order,
+          finding.category, finding.description, finding.note,
+          finding.sourceList, idx,
+          finding.sourceRuleTable, finding.sourceRuleId, finding.emissionKind,
         ],
       );
       insertedCount++;
@@ -236,22 +290,15 @@ export async function run(
       [tenantId, loanId],
     );
     for (const a of alertsToClear) {
-      await c.query(
-        `INSERT INTO tenant_audit_log (target_tenant_id, actor_id, action, reason, metadata)
-         SELECT $1, $2, 'predict_conditions.alert_clear', $3, $4::jsonb
-         WHERE NOT EXISTS (
-           SELECT 1 FROM tenant_audit_log
-            WHERE target_tenant_id = $1 AND actor_id = $2
-              AND action = 'predict_conditions.alert_clear' AND (metadata->>'alert_id') = $5
-         )`,
-        [
-          tenantId,
-          source,
-          `auto-cleared alert ${a.id} on successful re-run`,
-          JSON.stringify({ alert_id: a.id, cleared_by: "system:successful-rerun", triggered_by_run_id: runId }),
-          a.id,
-        ],
-      );
+      await insertAuditDedup(c, {
+        tenantId,
+        actorId: source,
+        action: "predict_conditions.alert_clear",
+        reason: `auto-cleared alert ${a.id} on successful re-run`,
+        metadata: { alert_id: a.id, cleared_by: "system:successful-rerun", triggered_by_run_id: runId },
+        dedupMetadataKey: "alert_id",
+        dedupValue: a.id,
+      });
     }
 
     // Audit row for the run itself. `count` reflects rows actually inserted
@@ -271,6 +318,34 @@ export async function run(
           count: insertedCount,
           skipped_acted: skippedActed,
           reused: false,
+          by_source: {
+            minimum: findings.filter((f) => f.sourceList === "minimum").length,
+            income: findings.filter((f) => f.sourceList === "income").length,
+            matrix: findings.filter((f) => f.sourceList === "matrix").length,
+            requirements_deterministic: findings.filter((f) => f.sourceList === "requirements" && f.emissionKind === "deterministic").length,
+            requirements_llm: findings.filter((f) => f.sourceList === "requirements" && f.emissionKind === "llm").length,
+            geographic: findings.filter((f) => f.sourceList === "geographic").length,
+          },
+          ...(orchestratorResult.llm !== null
+            ? {
+                llm: {
+                  input_tokens: orchestratorResult.llm.cost?.input_tokens,
+                  output_tokens: orchestratorResult.llm.cost?.output_tokens,
+                  model: orchestratorResult.llm.cost?.model,
+                  bucket_size: orchestratorResult.llm.findings.length,
+                  backstop_truncated: orchestratorResult.llm.backstopTruncated,
+                  dropped_schema: orchestratorResult.llm.dropCounters.schema,
+                  dropped_hallucinated_id: orchestratorResult.llm.dropCounters.hallucinatedId,
+                  dropped_below_confidence: orchestratorResult.llm.dropCounters.belowConfidence,
+                  dropped_ungrounded: orchestratorResult.llm.dropCounters.ungrounded,
+                  dropped_output_cap: orchestratorResult.llm.dropCounters.outputCap,
+                  skip_reason: orchestratorResult.llm.skipReason,
+                  redaction_applied: orchestratorResult.llm.redactionApplied,
+                  redaction_types: orchestratorResult.llm.redactionTypes,
+                },
+              }
+            : {}),
+          hardcoded_fields: orchestratorResult.hardcodedFields,
         }),
       ],
     );
@@ -388,22 +463,15 @@ export async function accept(
           WHERE id = $4 AND tenant_id = $5 AND loan_id = $6`,
         [actorId, role, conditionId, predictionId, tenantId, loanId],
       );
-      await c.query(
-        `INSERT INTO tenant_audit_log (target_tenant_id, actor_id, action, reason, metadata)
-         SELECT $1, $2, 'predict_conditions.accept', $3, $4::jsonb
-         WHERE NOT EXISTS (
-           SELECT 1 FROM tenant_audit_log
-            WHERE target_tenant_id = $1 AND actor_id = $2
-              AND action = 'predict_conditions.accept' AND (metadata->>'prediction_id') = $5
-         )`,
-        [
-          tenantId,
-          actorId,
-          `accepted prediction ${predictionId} → condition ${conditionId}`,
-          JSON.stringify({ prediction_id: predictionId, condition_id: conditionId, role }),
-          predictionId,
-        ],
-      );
+      await insertAuditDedup(c, {
+        tenantId,
+        actorId,
+        action: "predict_conditions.accept",
+        reason: `accepted prediction ${predictionId} → condition ${conditionId}`,
+        metadata: { prediction_id: predictionId, condition_id: conditionId, role },
+        dedupMetadataKey: "prediction_id",
+        dedupValue: predictionId,
+      });
       return { conditionId, predictionId };
     });
   });
@@ -436,22 +504,15 @@ export async function dismiss(
         WHERE id = $4 AND tenant_id = $5 AND loan_id = $6`,
       [actorId, role, reason, predictionId, tenantId, loanId],
     );
-    await c.query(
-      `INSERT INTO tenant_audit_log (target_tenant_id, actor_id, action, reason, metadata)
-       SELECT $1, $2, 'predict_conditions.dismiss', $3, $4::jsonb
-       WHERE NOT EXISTS (
-         SELECT 1 FROM tenant_audit_log
-          WHERE target_tenant_id = $1 AND actor_id = $2
-            AND action = 'predict_conditions.dismiss' AND (metadata->>'prediction_id') = $5
-       )`,
-      [
-        tenantId,
-        actorId,
-        `dismissed prediction ${predictionId}: ${reason}`,
-        JSON.stringify({ prediction_id: predictionId, role, dismissal_reason: reason }),
-        predictionId,
-      ],
-    );
+    await insertAuditDedup(c, {
+      tenantId,
+      actorId,
+      action: "predict_conditions.dismiss",
+      reason: `dismissed prediction ${predictionId}: ${reason}`,
+      metadata: { prediction_id: predictionId, role, dismissal_reason: reason },
+      dedupMetadataKey: "prediction_id",
+      dedupValue: predictionId,
+    });
     return { predictionId };
   });
 }
@@ -540,22 +601,15 @@ export async function reopenAndAccept(
           WHERE id = $4 AND tenant_id = $5 AND loan_id = $6`,
         [actorId, role, conditionId, predictionId, tenantId, loanId],
       );
-      await c.query(
-        `INSERT INTO tenant_audit_log (target_tenant_id, actor_id, action, reason, metadata)
-         SELECT $1, $2, 'predict_conditions.reopen_and_accept', $3, $4::jsonb
-         WHERE NOT EXISTS (
-           SELECT 1 FROM tenant_audit_log
-            WHERE target_tenant_id = $1 AND actor_id = $2
-              AND action = 'predict_conditions.reopen_and_accept' AND (metadata->>'prediction_id') = $5
-         )`,
-        [
-          tenantId,
-          actorId,
-          `reopened and accepted prediction ${predictionId} → condition ${conditionId}`,
-          JSON.stringify({ prediction_id: predictionId, condition_id: conditionId, role, prior_dismissal_audit_id: priorDismissalAuditId }),
-          predictionId,
-        ],
-      );
+      await insertAuditDedup(c, {
+        tenantId,
+        actorId,
+        action: "predict_conditions.reopen_and_accept",
+        reason: `reopened and accepted prediction ${predictionId} → condition ${conditionId}`,
+        metadata: { prediction_id: predictionId, condition_id: conditionId, role, prior_dismissal_audit_id: priorDismissalAuditId },
+        dedupMetadataKey: "prediction_id",
+        dedupValue: predictionId,
+      });
       return { conditionId, predictionId };
     });
   });
@@ -589,22 +643,15 @@ export async function clearAlert(
       // Already cleared — return idempotently.
       return { alertId };
     }
-    await c.query(
-      `INSERT INTO tenant_audit_log (target_tenant_id, actor_id, action, reason, metadata)
-       SELECT $1, $2, 'predict_conditions.alert_clear', $3, $4::jsonb
-       WHERE NOT EXISTS (
-         SELECT 1 FROM tenant_audit_log
-          WHERE target_tenant_id = $1 AND actor_id = $2
-            AND action = 'predict_conditions.alert_clear' AND (metadata->>'alert_id') = $5
-       )`,
-      [
-        tenantId,
-        actorId,
-        `cleared alert ${alertId}`,
-        JSON.stringify({ alert_id: alertId }),
-        alertId,
-      ],
-    );
+    await insertAuditDedup(c, {
+      tenantId,
+      actorId,
+      action: "predict_conditions.alert_clear",
+      reason: `cleared alert ${alertId}`,
+      metadata: { alert_id: alertId },
+      dedupMetadataKey: "alert_id",
+      dedupValue: alertId,
+    });
     return { alertId };
   });
 }

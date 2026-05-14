@@ -21,13 +21,25 @@ export interface LoanContext {
   incomeDocType: string;
   borrowerType: "W2" | "Self-Employed";
   citizenship: "US Citizen" | "Foreign Nationals";
-  isItin: boolean;
-  llcOrLegalEntity: boolean;
+  /** undefined = value not yet available (F2-deferred); context-builder emits undefined until real ingestion is wired. */
+  isItin: boolean | undefined;
+  /** undefined = value not yet available (F2-deferred); context-builder emits undefined until real ingestion is wired. */
+  llcOrLegalEntity: boolean | undefined;
   occupancy: "primary" | "second_home" | "investment";
   state: string;
-  county: string;
+  /** undefined = value not yet available (F2-deferred); context-builder emits undefined until real ingestion is wired. */
+  county: string | undefined;
   usCredit: boolean;
   program: string;
+  // ── PC v2 additions (optional; resolvers skip+warn when absent) ──
+  repFico?: number;
+  ltv?: number;
+  loanAmount?: number;
+  loanPurpose?: "Purchase" | "Rate & Term Refinance" | "Cash-Out Refinance";
+  propertyType?: string;
+  dti?: number;
+  reservesMonths?: number;
+  noteRate?: number;
 }
 
 export interface ResolveResult {
@@ -58,7 +70,7 @@ export class IncomeTypeUnresolvedError extends Error {
       incomeDocType: string;
       borrowerType: string;
       citizenship: string;
-      isItin: boolean;
+      isItin: boolean | undefined;
     },
     public readonly tenantId: string,
     public readonly kbVersionId: number,

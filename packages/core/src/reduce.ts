@@ -1,5 +1,6 @@
 import type { Action, Loan, LoggedAction, Milestone, Scenario, WorldState } from "./types.js";
 import { ActionError } from "./errors.js";
+import { normalizeConditionDescription } from "./normalize-condition-description.js";
 
 export type ScenarioResolver = (scenarioId: string) => Scenario | undefined;
 
@@ -107,10 +108,12 @@ export function reduce(
         throw new ActionError("ACTION_FORBIDDEN_IN_DECISION_STATE",
           `cannot add conditions on a denied loan`, { loanId: action.loanId, decision: l0.decision });
       }
-      // Dedup: skip if a similar condition already exists (normalize + first 30 chars)
-      const normDesc = action.condition.description.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 30);
+      // Dedup: skip if a similar condition already exists (normalize + first 30 chars).
+      // normalizeConditionDescription is the shared helper consumed by both this
+      // collision detector and the PC v2 orchestrator's dedup logic.
+      const normDesc = normalizeConditionDescription(action.condition.description);
       const isDupe = l0.conditions.some((existing) => {
-        const normExisting = existing.description.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 30);
+        const normExisting = normalizeConditionDescription(existing.description);
         return normDesc === normExisting || (normDesc.length > 10 && normExisting.includes(normDesc.slice(0, 20)));
       });
       if (isDupe) {
