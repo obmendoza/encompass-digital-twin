@@ -52,6 +52,12 @@ function mkFinding(rule: RequirementRow, description: string, category: Finding[
   };
 }
 
+const LOAN_PURPOSE_ALIASES: Record<string, readonly string[]> = {
+  "Purchase": ["purchase"],
+  "Rate & Term Refinance": ["rate & term refinance", "rate-and-term", "rate & term", "rate and term", "rate/term", "rate-term"],
+  "Cash-Out Refinance": ["cash-out refinance", "cash-out", "cash out refinance", "cash out"],
+};
+
 /**
  * Per-row handler dispatch. Pure function (no I/O). Returns 0..n findings
  * plus an `unhandled` flag the orchestrator uses to collect rows for the
@@ -128,7 +134,12 @@ export function handleRequirement(loan: LoanContext, rule: RequirementRow): Hand
         return { findings: [], unhandled: false };
       }
       const hay = value.toLowerCase();
-      if (!hay.includes(loan.loanPurpose.toLowerCase())) {
+      // Permitted-purpose strings in program_requirements vary in wording.
+      // Map each canonical LoanContext purpose to its common prose aliases
+      // so prose like "Purchase, Rate & Term Refinance and Cash-Out" is
+      // recognized as permitting our canonical "Cash-Out Refinance".
+      const aliases = LOAN_PURPOSE_ALIASES[loan.loanPurpose] ?? [loan.loanPurpose.toLowerCase()];
+      if (!aliases.some((a) => hay.includes(a))) {
         return { findings: [mkFinding(rule, `Loan purpose '${loan.loanPurpose}' not in program's permitted list (${value}) — program-change request`, "PTA")], unhandled: false };
       }
       return { findings: [], unhandled: false };

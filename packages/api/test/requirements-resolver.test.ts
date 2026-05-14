@@ -100,6 +100,19 @@ describe("handleRequirement — Exceptions / Loan Purpose / Interest Only", () =
       { id: RULE_ID, requirement_key: "Loan Purpose", requirement_value: "Purchase, Rate & Term Refinance and Cash-Out" });
     expect(out.findings).toEqual([]);
   });
+  it("Loan Purpose: Cash-Out Refinance matches prose using short alias 'Cash-Out' (bug repro)", () => {
+    // Program prose commonly uses "Cash-Out" rather than the canonical
+    // "Cash-Out Refinance". The prior includes() check emitted a false-positive
+    // not-permitted finding; the alias map must suppress it.
+    const out = handleRequirement(loan({ loanPurpose: "Cash-Out Refinance" }),
+      { id: RULE_ID, requirement_key: "Loan Purpose", requirement_value: "Purchase, Rate & Term Refinance and Cash-Out" });
+    expect(out.findings).toEqual([]);
+  });
+  it("Loan Purpose: Rate & Term Refinance matches abbreviated prose 'Rate & Term'", () => {
+    const out = handleRequirement(loan({ loanPurpose: "Rate & Term Refinance" }),
+      { id: RULE_ID, requirement_key: "Loan Purpose", requirement_value: "Purchase and Rate & Term" });
+    expect(out.findings).toEqual([]);
+  });
 });
 
 describe("handleRequirement — unknown key", () => {
