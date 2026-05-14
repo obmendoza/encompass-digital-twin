@@ -24,6 +24,7 @@ import { registerSystemCheckRoutes } from "./routes/system-check.js";
 import { registerTenantRoutes } from "./routes/tenants.js";
 import { registerGuidelineRoutes } from "./routes/guidelines.js";
 import { registerIngestionRoutes } from "./routes/ingestion.js";
+import { registerDocumentsIngestRoutes } from "./routes/documents-ingest.js";
 import { registerWsRoutes, getWsClientCount } from "./routes/ws.js";
 import { buildOpenApiSpec } from "./openapi.js";
 import * as persistence from "./persistence.js";
@@ -36,9 +37,11 @@ import { registerVARoutes } from "./routes/va.js";
 import { registerVAAdminRoutes } from "./routes/va-admin.js";
 import { registerBpoRoutes } from "./routes/bpo.js";
 import { registerPredictConditionsRoutes } from "./routes/predict-conditions.js";
+import { registerAdminIngestionMappingsRoutes } from "./routes/admin-ingestion-mappings.js";
 import { configurePredictConditionsService } from "./services/predict-conditions/index.js";
 import { startLearningWorker } from "./learning-worker.js";
 import { startVAOutboxDispatcher } from "./services/va-outbox-dispatcher.js";
+import { startDocFetchDispatcher } from "./doc-fetch-dispatcher.js";
 import { getDemoTenantId, getTenantType } from "./tenant-cache.js";
 
 export interface BuildOpts {
@@ -89,6 +92,7 @@ export function buildServer(opts: BuildOpts = {}): { app: FastifyInstance; store
   registerTenantRoutes(app);
   registerGuidelineRoutes(app);
   registerIngestionRoutes(app, store);
+  registerDocumentsIngestRoutes(app);
   registerLearningMetricsRoutes(app);
   registerPatternRoutes(app);
   registerApiKeyRoutes(app);
@@ -97,6 +101,7 @@ export function buildServer(opts: BuildOpts = {}): { app: FastifyInstance; store
   registerVAAdminRoutes(app);
   registerBpoRoutes(app, store);
   registerPredictConditionsRoutes(app, store);
+  registerAdminIngestionMappingsRoutes(app);
   configurePredictConditionsService({ store });
   if (opts.enableWebSocket) registerWsRoutes(app);
 
@@ -163,6 +168,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     }
 
     const { app, store } = buildServer({ enableWebSocket: true });
+
+    // Wire doc-fetch dispatcher (needs store reference; must come after buildServer)
+    startDocFetchDispatcher(store);
 
     // Load demo fixture loans with real demo tenant UUID
     if (DEMO_TENANT_ID) {

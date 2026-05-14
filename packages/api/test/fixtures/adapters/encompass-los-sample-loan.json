@@ -1,0 +1,51 @@
+{
+  "source": "encompass-los",
+  "externalId": "ENC-SAMPLE-001",
+  "loanData": {
+    "loanNumber": "ENC-SAMPLE-001",
+    "programName": "Flex Select",
+    "borrower": {
+      "fullName": "Maria Rodriguez",
+      "ssnMasked": "xxx-xx-4521",
+      "dob": "1985-03-12",
+      "maritalStatus": "Married",
+      "taxpayerIdType": "SSN",
+      "entityType": "Individual"
+    },
+    "transaction": {
+      "loanPurpose": "Purchase",
+      "loanAmount": 525000,
+      "salesPrice": 660000,
+      "appraisedValue": 660000,
+      "ltv": 79.55,
+      "cltv": 79.55,
+      "hcltv": 79.55,
+      "noteRate": 7.375,
+      "term": 360,
+      "amortType": "Fixed",
+      "lienPosition": 1,
+      "occupancy": "Primary",
+      "isInvestmentProperty": false,
+      "piti": 4150
+    },
+    "credit": {
+      "representativeScore": 742
+    },
+    "property": {
+      "street": "1847 Elm Street",
+      "city": "Bellevue",
+      "state": "WA",
+      "zip": "98004",
+      "county": "King County",
+      "propertyType": "SFR Det.",
+      "units": 1,
+      "yearBuilt": 1998
+    },
+    "qualifying": {
+      "totalDti": 38.2
+    },
+    "assets": {
+      "reservesMonths": 8
+    }
+  }
+}

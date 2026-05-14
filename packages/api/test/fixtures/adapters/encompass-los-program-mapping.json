@@ -1,0 +1,40 @@
+{
+  "source": "encompass-los",
+  "externalId": "ENC-PROG-MAP-001",
+  "loanData": {
+    "loanNumber": "ENC-PROG-MAP-001",
+    "programName": "FlexSelect_NPNQM",
+    "borrower": {
+      "fullName": "Test Borrower",
+      "ssnMasked": "xxx-xx-0000",
+      "dob": "1990-01-01",
+      "maritalStatus": "Unmarried",
+      "taxpayerIdType": "SSN",
+      "entityType": "Individual"
+    },
+    "transaction": {
+      "loanPurpose": "Purchase",
+      "loanAmount": 500000,
+      "salesPrice": 625000,
+      "appraisedValue": 625000,
+      "ltv": 80,
+      "cltv": 80,
+      "hcltv": 80,
+      "noteRate": 7.25,
+      "term": 360,
+      "amortType": "Fixed",
+      "lienPosition": 1,
+      "occupancy": "Primary",
+      "isInvestmentProperty": false,
+      "piti": 3800
+    },
+    "credit": {
+      "representativeScore": 720
+    },
+    "property": {
+      "state": "TX",
+      "county": "Travis County",
+      "propertyType": "SFR Det."
+    }
+  }
+}
