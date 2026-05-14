@@ -40,6 +40,7 @@ import { registerPredictConditionsRoutes } from "./routes/predict-conditions.js"
 import { configurePredictConditionsService } from "./services/predict-conditions/index.js";
 import { startLearningWorker } from "./learning-worker.js";
 import { startVAOutboxDispatcher } from "./services/va-outbox-dispatcher.js";
+import { startDocFetchDispatcher } from "./doc-fetch-dispatcher.js";
 import { getDemoTenantId, getTenantType } from "./tenant-cache.js";
 
 export interface BuildOpts {
@@ -165,6 +166,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     }
 
     const { app, store } = buildServer({ enableWebSocket: true });
+
+    // Wire doc-fetch dispatcher (needs store reference; must come after buildServer)
+    startDocFetchDispatcher(store);
 
     // Load demo fixture loans with real demo tenant UUID
     if (DEMO_TENANT_ID) {

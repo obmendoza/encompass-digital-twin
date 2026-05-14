@@ -1,6 +1,11 @@
-import { withDb, withTenantTx } from "./db/pool.js";
+import { createClient } from "@supabase/supabase-js";
+import { withDb, withTenantTx, isDbEnabled } from "./db/pool.js";
+import { withStoreSnapshot } from "./store-db-consistency.js";
+import { safeFetch } from "./ingestion/fetch-security.js";
+import { enqueueRefire } from "./ingestion/refire-debounce.js";
 import type { safeFetch as SafeFetchFn } from "./ingestion/fetch-security.js";
 import type { enqueueRefire as EnqueueRefireFn } from "./ingestion/refire-debounce.js";
+import { AdapterConfigSchema } from "@twin/core";
 import type { AdapterConfig, Store } from "@twin/core";
 
 export interface FetchBatchDeps {
@@ -134,4 +139,100 @@ async function markFetched(row: PendingRow): Promise<void> {
       [row.tenant_id, row.external_id],
     );
   });
+}
+
+// ── Boot-time dispatcher ─────────────────────────────────────────────────────
+
+const ADVISORY_LOCK = 45;
+const POLL_INTERVAL_MS = 5_000;
+const BATCH_SIZE = 10;
+
+export function startDocFetchDispatcher(store: Store): void {
+  if (!isDbEnabled() || process.env.NODE_ENV === "test") return;
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_KEY) {
+    console.warn("[doc-fetch] SUPABASE_URL / SUPABASE_SERVICE_KEY not set — dispatcher inactive");
+    return;
+  }
+  console.log(`[doc-fetch] starting dispatcher (lock ${ADVISORY_LOCK}, poll ${POLL_INTERVAL_MS}ms)`);
+  const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_KEY!);
+
+  const deps: FetchBatchDeps = {
+    safeFetch,
+    uploadToStorage: async (key, bytes, contentType) => {
+      const { error } = await supabase.storage.from("loan-documents").upload(key, bytes, {
+        contentType: contentType ?? "application/octet-stream",
+        upsert: true,
+      });
+      if (error) throw new Error(`supabase storage upload failed: ${error.message}`);
+      const { data } = supabase.storage.from("loan-documents").getPublicUrl(key);
+      return { key, url: data.publicUrl };
+    },
+    dispatchAddDocument: async (_storeRef, tenantId, loanId, documentId, fileName, fileUrl, fileSize, mimeType) => {
+      // _storeRef is null per the worker's per-row call; close over real `store` here.
+      void tenantId; void fileUrl; void fileSize; void mimeType; void documentId;
+      await withStoreSnapshot(store, loanId, async () => {
+        store.dispatch({
+          type: "AddDocument",
+          loanId,
+          doc: { name: fileName, docType: "Other" },
+          actor: { kind: "system", id: "doc-fetch-worker" },
+        });
+      });
+    },
+    enqueueRefire,
+    loadAdapterConfig: async (tenantId, _loanId) => {
+      const result = await withTenantTx(tenantId, async (c) => {
+        const { rows } = await c.query<{ adapter_config: unknown }>(
+          `SELECT adapter_config FROM ingestion_mappings WHERE tenant_id=$1 AND active=true LIMIT 1`,
+          [tenantId],
+        );
+        return rows[0]?.adapter_config ?? {};
+      });
+      return AdapterConfigSchema.parse(result);
+    },
+  };
+
+  // Lazy imports for tick handlers — keep startup cheap.
+  let _drainRefires: typeof import("./ingestion/refire-debounce.js")["drainReadyRefires"] | null = null;
+  let _runPredictions: ((tenantId: string, loanId: string, ctx: unknown, source: string) => Promise<unknown>) | null = null;
+  let _buildCtx: ((loan: unknown) => Promise<unknown>) | null = null;
+
+  setInterval(() => {
+    void (async () => {
+      try {
+        // Acquire + work + release all on one pool connection (session advisory lock).
+        await withDb(async (c) => {
+          const { rows } = await c.query<{ got: boolean }>(
+            `SELECT pg_try_advisory_lock($1) AS got`,
+            [ADVISORY_LOCK],
+          );
+          if (!rows[0]!.got) return;
+          try {
+            await processOneFetchBatch(deps, BATCH_SIZE);
+
+            // Drain ready refires inline.
+            if (!_drainRefires) _drainRefires = (await import("./ingestion/refire-debounce.js")).drainReadyRefires;
+            if (!_runPredictions) _runPredictions = (await import("./services/predict-conditions/index.js")).run as never;
+            if (!_buildCtx) _buildCtx = (await import("./routes/predict-conditions-context-builder.js")).buildLoanContextFromLoan as never;
+            const ready = await _drainRefires(50);
+            for (const r of ready) {
+              try {
+                const state = store.getState() as { loans: Record<string, unknown> };
+                const loan = state.loans[r.loanId];
+                if (!loan) continue;
+                const ctx = await _buildCtx(loan);
+                await _runPredictions(r.tenantId, r.loanId, ctx, "system:loan-ingest");
+              } catch (e) {
+                console.error(`[doc-fetch] refire failed for ${r.loanId}:`, (e as Error).message);
+              }
+            }
+          } finally {
+            await c.query(`SELECT pg_advisory_unlock($1)`, [ADVISORY_LOCK]);
+          }
+        });
+      } catch (e) {
+        console.error("[doc-fetch] tick failed:", (e as Error).message);
+      }
+    })();
+  }, POLL_INTERVAL_MS);
 }
