@@ -226,3 +226,42 @@ describe("predict-conditions HTTP integration", () => {
     expect(sources.has("matrix")).toBe(true);
   });
 });
+
+describe("predict-conditions HTTP integration — two-source coexistence (Spec 1.5)", () => {
+  it("portal-llm rows and PC v2 rows coexist with distinct source_list values", async () => {
+    // Insert a portal-llm row directly (simulating an analysis-output ingest).
+    await withDb(async (c) => {
+      await c.query(
+        `INSERT INTO predicted_conditions
+           (id, tenant_id, loan_id, prediction_run_id, source_list, description, category, status,
+            source_input_hash, kb_version_id, source_rule_table, source_rule_id, emission_kind,
+            portal_metadata, analysis_hash)
+         VALUES (gen_random_uuid(), $1, 'INT-1', gen_random_uuid(), 'portal-llm',
+                 'Credit Report — portal-emitted', 'PTA', 'pending',
+                 'hash', NULL, NULL, NULL, 'deterministic',
+                 '{"priority":"P0","severity":"SOFT-STOP","document_category":"Credit"}'::jsonb,
+                 'test-hash')`,
+        [T],
+      );
+    });
+    // Run PC v2 — it should emit its own rows alongside without wiping the portal-llm row.
+    await app.inject({ method: "POST", url: "/loans/INT-1/predictions/run", headers: headers("operator"), payload: {} });
+
+    const { rows } = await withDb(async (c) => c.query<{ source_list: string; count: number }>(
+      `SELECT source_list, COUNT(*)::int AS count FROM predicted_conditions
+        WHERE tenant_id=$1 AND loan_id='INT-1' AND superseded_at IS NULL
+        GROUP BY source_list`,
+      [T],
+    ));
+    const sourceMap = Object.fromEntries(rows.map((r) => [r.source_list, r.count]));
+    // Portal-llm row must survive PC v2's auto-fire (Task 7's scoped DELETE fix).
+    expect(sourceMap["portal-llm"]).toBeGreaterThan(0);
+    // Also verify PC v2 emitted at least one row from its own sources.
+    // If PC v2 silently no-ops (e.g., IncomeTypeUnresolvedError), the
+    // scoped-DELETE protection becomes meaningless — there's nothing to be
+    // protected against. Acceptance criterion §13 #3 says BOTH source
+    // families coexist.
+    const pcSources = Object.keys(sourceMap).filter((s) => s !== "portal-llm");
+    expect(pcSources.length).toBeGreaterThan(0);
+  });
+});

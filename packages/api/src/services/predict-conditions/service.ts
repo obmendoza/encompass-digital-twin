@@ -140,10 +140,13 @@ export async function run(
       }
     }
 
-    // DELETE existing pending rows that don't match (hash or kb_version_id changed).
+    // DELETE existing pending PC v1/v2 rows that don't match (hash or kb_version_id changed).
+    // Portal-LLM rows (source_list='portal-llm') are versioned via superseded_at, not DELETE;
+    // exclude them here so the analysis-output ingest's portal predictions survive PC v2 auto-fire.
     await c.query(
       `DELETE FROM predicted_conditions
-        WHERE tenant_id = $1 AND loan_id = $2 AND status = 'pending'`,
+        WHERE tenant_id = $1 AND loan_id = $2 AND status = 'pending'
+          AND source_list != 'portal-llm'`,
       [tenantId, loanId],
     );
 

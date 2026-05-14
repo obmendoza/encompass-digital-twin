@@ -13,6 +13,7 @@ export const AdapterConfigSchema = z.object({
 export type AdapterConfig = z.infer<typeof AdapterConfigSchema>;
 
 export const LoanContextExtrasSchema = z.object({
+  // PC v2 v2 fields (Spec 1)
   repFico: z.number().int().min(300).max(900).optional(),
   ltv: z.number().min(0).max(200).optional(),
   loanAmount: z.number().nonnegative().optional(),
@@ -24,6 +25,32 @@ export const LoanContextExtrasSchema = z.object({
   county: z.string().optional(),
   isItin: z.boolean().optional(),
   llcOrLegalEntity: z.boolean().optional(),
+
+  // Spec 1.5 amendment additions — all optional
+  occupancy: z.enum(["Primary", "Secondary", "Investment"]).optional(),
+  state: z.string().length(2).optional(),
+  units: z.number().int().min(1).max(8).optional(),
+  cltv: z.number().min(0).max(200).optional(),
+  hcltv: z.number().min(0).max(200).optional(),
+  ownedPropertiesCount: z.number().int().nonnegative().optional(),
+  reoTotalLienBalance: z.number().nonnegative().optional(),
+  subjectRentalIncome: z.number().nonnegative().optional(),
+  isFirstTimeHomebuyer: z.boolean().optional(),
+  borrowerType: z.string().optional(),
+  channel: z.string().optional(),
+  productVariant: z.string().optional(),
+  interestOnly: z.boolean().optional(),
+  prepayPenalty: z.boolean().optional(),
+  balloon: z.boolean().optional(),
+  isUsCredit: z.boolean().optional(),
+  citizenship: z.string().optional(),
+  selfEmployed: z.boolean().optional(),
+  primaryIncomeType: z.string().optional(),
+  bankruptcyHistory: z.boolean().optional(),
+  foreclosureHistory: z.boolean().optional(),
+  shortSaleHistory: z.boolean().optional(),
+  presentlyDelinquent: z.boolean().optional(),
+  outstandingJudgments: z.boolean().optional(),
 }).strict();
 
 export type LoanContextExtras = z.infer<typeof LoanContextExtrasSchema>;

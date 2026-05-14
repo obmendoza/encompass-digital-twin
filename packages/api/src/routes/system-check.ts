@@ -5,6 +5,7 @@ import { getTenantId } from "../tenant-context.js";
 import { detectPatterns, persistPatterns } from "../learning/pattern-detector.js";
 import { withDb } from "../db/pool.js";
 import { docFetchMetrics } from "../doc-fetch-dispatcher.js";
+import { portalMetrics } from "./analysis-output-ingest.js";
 
 export function registerSystemCheckRoutes(app: FastifyInstance, store: Store) {
 
@@ -329,5 +330,12 @@ export function registerSystemCheckRoutes(app: FastifyInstance, store: Store) {
     bytes_total: docFetchMetrics.bytes_total,
     dead_lettered_total: docFetchMetrics.dead_lettered_total,
     refire_fires_total: docFetchMetrics.refire_fires_total,
+  }));
+
+  // 7. Portal metrics — in-memory counter for eligibility disagreements between
+  // portal verdict and PC v2 matrix-resolver. Keyed by program|portal_status|pc_v2_status.
+  // Used for ops visibility and future drift-detection spec.
+  app.get("/system/portal-metrics", async () => ({
+    eligibility_disagreements_total: Object.fromEntries(portalMetrics.eligibility_disagreements_total),
   }));
 }

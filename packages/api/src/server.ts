@@ -38,7 +38,9 @@ import { registerVAAdminRoutes } from "./routes/va-admin.js";
 import { registerBpoRoutes } from "./routes/bpo.js";
 import { registerPredictConditionsRoutes } from "./routes/predict-conditions.js";
 import { registerAdminIngestionMappingsRoutes } from "./routes/admin-ingestion-mappings.js";
+import { registerAnalysisOutputIngestRoutes } from "./routes/analysis-output-ingest.js";
 import { configurePredictConditionsService } from "./services/predict-conditions/index.js";
+import { redactPayloadMiddleware } from "./ingestion/pii-middleware.js";
 import { startLearningWorker } from "./learning-worker.js";
 import { startVAOutboxDispatcher } from "./services/va-outbox-dispatcher.js";
 import { startDocFetchDispatcher } from "./doc-fetch-dispatcher.js";
@@ -57,6 +59,17 @@ export function buildServer(opts: BuildOpts = {}): { app: FastifyInstance; store
   const app = Fastify({
     logger: {
       level: process.env.LOG_LEVEL ?? "info",
+      redact: {
+        paths: [
+          "req.body.*.ssn",
+          "req.body.*.*.ssn",
+          "req.body.borrowers[*].ssn",
+          "req.body.loanData.borrower.ssnMasked",
+          "req.body.analysisOutput.scenario_summary.borrowers[*].ssn",
+          "req.body.analysisOutput.scenario_summary.borrowers[*].dob",
+        ],
+        censor: "[REDACTED]",
+      },
     },
     requestIdHeader: "x-request-id",
     genReqId: () => randomUUID(),
@@ -75,6 +88,9 @@ export function buildServer(opts: BuildOpts = {}): { app: FastifyInstance; store
   } else if (opts.preloadScenarioId) {
     store.dispatch({ type: "LoadScenario", scenarioId: opts.preloadScenarioId, tenantId: preloadTenantId });
   }
+
+  // Spec 1.5: redact SSN from any /api/ingest/* request body before per-route hooks run.
+  app.addHook("preHandler", redactPayloadMiddleware);
 
   registerErrorHandler(app);
   app.register(cookie);
@@ -102,6 +118,7 @@ export function buildServer(opts: BuildOpts = {}): { app: FastifyInstance; store
   registerBpoRoutes(app, store);
   registerPredictConditionsRoutes(app, store);
   registerAdminIngestionMappingsRoutes(app);
+  registerAnalysisOutputIngestRoutes(app, store);
   configurePredictConditionsService({ store });
   if (opts.enableWebSocket) registerWsRoutes(app);
 
