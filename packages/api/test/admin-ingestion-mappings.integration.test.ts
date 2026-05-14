@@ -49,6 +49,16 @@ const headers = {
 };
 
 describe("admin ingestion-mappings CRUD", () => {
+  it("rejects non-super-admin writes with 403", async () => {
+    const res = await app.inject({
+      method: "POST", url: "/admin/tenants/admin-test/ingestion-mappings",
+      headers: { ...headers, "x-super-admin": "false" },
+      payload: { source_name: "x", adapter_type: "generic-json", adapter_config: { allowedFetchHosts: [] } },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(JSON.parse(res.body).error_class).toBe("forbidden");
+  });
+
   it("POST creates a mapping with valid adapter_config", async () => {
     const res = await app.inject({
       method: "POST", url: "/admin/tenants/admin-test/ingestion-mappings",
