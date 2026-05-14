@@ -3,6 +3,7 @@
 **Date:** 2026-05-15
 **Status:** Draft
 **Amends:** [NPNQM Ingestion Framework (Spec 1)](2026-05-14-ingestion-framework-design.md)
+**Amends:** Spec 1 §6 (PII) is updated by §6 of this amendment to extend redaction to existing loan + document endpoints.
 **Predecessor:** [PC v2 Pre-Underwriter Design](2026-05-14-pc-v2-pre-underwriter-design.md)
 **Successor:** Spec 2 — outbound writeback (deferred until portal API contract is in hand)
 
@@ -58,7 +59,7 @@ Spec 1's `LenderAdapter.transformLoan()` and `transformDocument()` cannot consum
 │    portalPredictions: PortalPrediction[], // document_requests rows    │
 │    eligibilityVerdict: EligibilityVerdict, // per-program PASS/FAIL    │
 │    seenConflicts: string[],                                             │
-│    stats: AnalysisStats,                                                │
+│    stats: PortalAnalysisStats,                                                │
 │  }                                                                      │
 │         │                                                               │
 │   ┌─────┴───────────────────────┐                                       │
@@ -104,10 +105,13 @@ export interface PortalPrediction {
   conditions: string[];
   sourceReferences: string[];
   severity: "HARD-STOP" | "SOFT-STOP";
-  status: string;                   // "needed" — extensible if portal adds more
+  portalStatus: string;             // "needed" | "satisfied" | "waived" | "deferred" — portal-specific; do not confuse with predicted_conditions.status
   tags: string[];
   sourceModule: string;             // portal-internal module ID
 }
+// NOTE: adapter logs a structured console.warn when it encounters an unknown portalStatus value
+// (not in the documented set); the value still passes through to portal_metadata.portal_status
+// for forward-compat.
 
 export type PortalDocCategory =
   | "Credit" | "Cross-Cutting" | "Compliance"
@@ -125,7 +129,7 @@ export interface EligibilityVerdict {
   }>;
 }
 
-export interface AnalysisStats {
+export interface PortalAnalysisStats {
   totalDocumentRequests: number;
   hardStopDocuments: number;
   elapsedSeconds: number;
@@ -141,7 +145,7 @@ export interface TransformAnalysisOutput {
   portalPredictions: PortalPrediction[];
   eligibilityVerdict: EligibilityVerdict;
   seenConflicts: string[];
-  stats: AnalysisStats;
+  stats: PortalAnalysisStats;
 }
 
 export abstract class LenderAdapter {
@@ -171,6 +175,7 @@ Field-path mapping table (canonical → portal):
 
 | `LoanContextExtras` field | Portal source path |
 |---------------------------|--------------------|
+| `occupancy` | canonicalized from `scenario_summary.occupancy`: `"NOO"` / `"Investment Property"` / `"Non-Owner Occupied"` → `"Investment"`; `"Primary Residence"` / `"Owner Occupied"` → `"Primary"`; `"Second Home"` / `"Secondary"` → `"Secondary"` |
 | `repFico` | `scenario_summary.credit.fico` |
 | `ltv` | `scenario_summary.numbers.LTV` |
 | `loanAmount` | `scenario_summary.numbers.loan_amount` |
@@ -222,8 +227,19 @@ The portal POSTs the contents of `<loan>_output.json` directly, wrapped in a thi
 
 1. `apiKeyAuthHook` validates the tenant.
 2. Request-body Zod parse; reject 400 with `error_class='validation_failed'` if malformed.
-3. **PII redaction sweep**: walk `analysisOutput` and replace SSN-shaped strings (`/\b\d{9}\b/` or `/\b\d{3}-\d{2}-\d{4}\b/`) with `xxx-xx-NNNN` keeping only the last 4 digits. Reuse `learning/pii-redactor.ts:redactText`.
-4. Idempotency: check `ingested_loans` for `(tenant_id, external_id)`. If present, return 200 `{ duplicate: true, loanId, status }`. (Same first-write-wins shape as Spec 1.)
+3. **PII redaction sweep**: the `redactPayloadMiddleware` preHandler (§6) has already run before this point. The body is safe. No additional sweep needed here.
+4. **Content-hash idempotency.** Compute `analysisHash = sha256(JSON.stringify(redactedAnalysisOutput))`.
+   Query `ingested_loans` for `(tenant_id, external_id)`:
+   - If present AND existing row's `analysis_hash` matches → return 200
+     `{ loanId, tenantId, status: existing.status, duplicate: true }`. No-op.
+   - If present AND `analysis_hash` differs → this is a re-analysis with new content.
+     Set `superseded_at = NOW()` on the loan's existing `portal_eligibility_verdicts` rows.
+     Mark the loan's existing `predicted_conditions` rows where `source_list='portal-llm'`
+     by setting `superseded_at = NOW()` (new column added in migration 023).
+     Proceed with the rest of the flow, inserting fresh portal-llm rows and eligibility
+     verdict rows. Audit row `action='ingest.analysis_output.replayed'` with metadata
+     including old and new `analysis_hash`.
+   - If absent → new ingest, proceed normally.
 5. Resolve mapping from `ingestion_mappings` (explicit `WHERE tenant_id = $1`).
 6. Resolve adapter via `getAdapter(adapter_type)`. Reject 400 with `error_class='unknown_adapter_type'` if missing.
 7. Parse adapter_config via `AdapterConfigSchema`.
@@ -234,7 +250,11 @@ The portal POSTs the contents of `<loan>_output.json` directly, wrapped in a thi
 12. Insert `result.portalPredictions` into `predicted_conditions` with `source_list='portal-llm'` (one row per portal prediction). Capture `priority`, `severity`, `specifications`, `reasons_needed`, `source_references`, `tags`, `source_module` in a new `portal_metadata JSONB` column (see §5).
 13. Insert `result.eligibilityVerdict` into new `portal_eligibility_verdicts` table (see §5).
 14. Insert `ingested_loans` row.
-15. Per-ingest `tenant_audit_log` entry (`action='ingest.analysis_output'`) with stats summary in metadata.
+15. **Per-ingest audit row.** `tenant_audit_log` entry with `action='ingest.analysis_output'`
+    and metadata: `{ adapter_type, source_name, external_id, hard_stops, total_docs,
+    elapsed_seconds, tool_calls, eligible_count, ineligible_count, analysis_hash,
+    replayed: false|true }`. Stats `by_category`/`by_priority` live inside the per-row
+    `portal_metadata` and don't need to bloat the audit log.
 16. **PC v2 auto-fire** — best-effort, same as loan-channel ingest. PC v2 writes its own `predicted_conditions` rows with the existing `source_list` values (minimum/income/matrix/geographic/requirements). Two-opinion view emerges naturally from the union.
 17. Return 201 with `{ loanId, tenantId, portalPredictionCount, eligibilityPrograms: { eligible, ineligible }, pcV2Triggered: true|false }`.
 
@@ -255,6 +275,10 @@ All additive. No destructive ALTER.
 ```sql
 -- packages/api/src/db/migrations/023-portal-analysis-output.sql
 
+-- 5.0 ingested_loans: track analysis_hash for content-hash idempotency (C1)
+ALTER TABLE ingested_loans ADD COLUMN IF NOT EXISTS analysis_hash TEXT;
+-- Nullable for loans ingested before this migration; required on new portal-source ingests.
+
 -- 5.1 Widen predicted_conditions.source_list CHECK
 ALTER TABLE predicted_conditions DROP CONSTRAINT IF EXISTS predicted_conditions_source_list_check;
 ALTER TABLE predicted_conditions ADD CONSTRAINT predicted_conditions_source_list_check
@@ -263,11 +287,18 @@ ALTER TABLE predicted_conditions ADD CONSTRAINT predicted_conditions_source_list
     'portal-llm'                                                  -- amendment: external analyzer
   ));
 
+-- predicted_conditions: support re-analysis supersession (C1)
+ALTER TABLE predicted_conditions ADD COLUMN IF NOT EXISTS analysis_hash TEXT;
+ALTER TABLE predicted_conditions ADD COLUMN IF NOT EXISTS superseded_at TIMESTAMPTZ;
+-- Both nullable: existing PC v2 rows have no analysis_hash; only portal-llm rows are superseded.
+
 -- 5.2 Portal-specific metadata on each portal-emitted prediction
 ALTER TABLE predicted_conditions ADD COLUMN IF NOT EXISTS portal_metadata JSONB;
 -- Shape (when source_list='portal-llm'):
 --   { priority, severity, document_category, specifications[], reasons_needed[],
---     source_references[], tags[], source_module, applies_to }
+--     source_references[], tags[], source_module, applies_to, portal_status }
+-- Note: portal_status (snake_case) stores the PortalPrediction.portalStatus value.
+--   "needed" | "satisfied" | "waived" | "deferred" — forward-compat: unknown values pass through.
 
 -- 5.3 portal_eligibility_verdicts — capture the portal's matrix-resolver-equivalent output
 CREATE TABLE IF NOT EXISTS portal_eligibility_verdicts (
@@ -279,9 +310,17 @@ CREATE TABLE IF NOT EXISTS portal_eligibility_verdicts (
   failed_count INT NOT NULL DEFAULT 0,
   failed_rules JSONB NOT NULL DEFAULT '[]'::jsonb,
   -- failed_rules shape: [{ requirement: string, message: string }]
+  analysis_hash TEXT NOT NULL,
+  superseded_at TIMESTAMPTZ,
   recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  PRIMARY KEY (tenant_id, loan_id, program)
+  -- Composite PK allows multiple historical rows (superseded rows coexist with the active row)
+  PRIMARY KEY (tenant_id, loan_id, program, recorded_at)
 );
+
+-- At most one active row per (tenant, loan, program) — the same pattern as kb_versions.active
+CREATE UNIQUE INDEX portal_eligibility_active_per_program
+  ON portal_eligibility_verdicts (tenant_id, loan_id, program)
+  WHERE superseded_at IS NULL;
 
 ALTER TABLE portal_eligibility_verdicts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE portal_eligibility_verdicts FORCE ROW LEVEL SECURITY;
@@ -314,7 +353,8 @@ export const LoanContextExtrasSchema = z.object({
   llcOrLegalEntity: z.boolean().optional(),
 
   // amendment additions (all optional; .strict() preserved)
-  occupancy: z.enum(["Primary", "Secondary", "Investment", "NOO"]).optional(),
+  // Note: "NOO" / "Investment Property" / "Non-Owner Occupied" → "Investment" (adapter normalizes)
+  occupancy: z.enum(["Primary", "Secondary", "Investment"]).optional(),
   state: z.string().length(2).optional(),
   units: z.number().int().min(1).max(8).optional(),
   cltv: z.number().min(0).max(200).optional(),
@@ -347,24 +387,53 @@ The .strict() rejection still catches typos, but the surface grows from 11 → 3
 
 ## 6. PII handling
 
-The sample `aubrey_output.json` contains `"ssn": "605827691"` — unmasked 9-digit SSN. Spec 1 had no PII handling on the loan-channel (because we assumed pre-redacted inputs); this assumption is wrong.
+The sample `aubrey_output.json` contains `"ssn": "605827691"` — unmasked 9-digit SSN. Spec 1 had no PII handling on the loan-channel (because we assumed pre-redacted inputs); **this assumption is wrong**.
 
-### 6.1 Redaction at request boundary
-
-In the new endpoint handler, BEFORE adapter dispatch:
+**Cross-endpoint scope.** PII redaction is NOT limited to the new analysis-output endpoint. The discovery that real payloads carry unmasked SSN means ALL `/api/ingest/*` endpoints are at risk. The `redactPayload` function described below is registered as a **Fastify `preHandler` middleware** on every `/api/ingest/*` route — including Spec 1's existing `/loans` and `/documents` endpoints AND the new `/analysis-output` endpoint. The middleware runs BEFORE any route handler, before Zod parse of the inner body, and before adapter dispatch.
 
 ```ts
+// packages/api/src/ingestion/pii-middleware.ts (new file)
 import { redactText } from "../learning/pii-redactor.js";
+import type { FastifyRequest, FastifyReply } from "fastify";
+
+/**
+ * Registered as a preHandler on all /api/ingest/* routes.
+ * Walks req.body (already JSON-parsed by Fastify) and replaces
+ * every SSN-shaped string with xxx-xx-NNNN before any handler runs.
+ * Mutates req.body in-place — no re-parse needed.
+ */
+export async function redactPayloadMiddleware(
+  req: FastifyRequest,
+  _reply: FastifyReply,
+): Promise<void> {
+  if (req.body !== null && typeof req.body === "object") {
+    req.body = redactPayload(req.body);
+  }
+}
 
 function redactPayload(raw: unknown): unknown {
-  // Deep clone + walk the tree; for any string field, run redactText.
-  // For numeric SSN fields (raw 9-digit numbers stored as strings without dashes),
+  // Iterative tree walk (not recursive — avoids stack overflows on deep payloads).
+  // For any string node, run redactText.
+  // For numeric SSN fields stored as strings without dashes,
   // explicitly mask all but the last 4 digits.
   // ...
 }
 ```
 
-The `learning/pii-redactor.ts:redactText` already handles SSN-dashed, SSN-spaced, SSN-undashed, email, phone, address, DOB. The endpoint runs it on every string in the payload before persisting anywhere.
+Registration in `buildServer()` (Spec 1's `server.ts`):
+
+```ts
+// Apply PII redaction to ALL ingest channels
+fastify.addHook("preHandler", async (req, reply) => {
+  if (req.url.startsWith("/api/ingest/")) {
+    await redactPayloadMiddleware(req, reply);
+  }
+});
+```
+
+### 6.1 Redaction at request boundary
+
+The `learning/pii-redactor.ts:redactText` already handles SSN-dashed, SSN-spaced, SSN-undashed, email, phone, address, DOB. The middleware runs it on every string in the payload before any downstream code touches the body.
 
 ### 6.2 Field-level rule for SSN
 
@@ -377,6 +446,31 @@ The `learning/pii-redactor.ts:redactText` already handles SSN-dashed, SSN-spaced
 - Loan amounts and financial numbers.
 
 If the team decides later to expand redaction scope, the redactor module is the single place to add rules.
+
+### 6.4 Log redaction (pino)
+
+Configure pino's `redact` option at the API root to cover the following paths. This is belt-and-suspenders: if a new route is added under `/api/ingest/*` and the developer forgets to wire the `redactPayloadMiddleware`, log paths still don't leak SSN.
+
+```ts
+// packages/api/src/server.ts — pino logger configuration
+const logger = pino({
+  redact: {
+    paths: [
+      "req.body.*.ssn",
+      "req.body.*.*.ssn",
+      "req.body.borrowers[*].ssn",
+      "req.body.analysisOutput.scenario_summary.borrowers[*].ssn",
+      "req.body.loanData.borrower.ssnMasked",     // defensive — mask even when already masked
+      "req.body.analysisOutput.scenario_summary.borrowers[*].dob",  // DOB is PII when paired with name
+    ],
+    censor: "[REDACTED]",
+  },
+});
+```
+
+The `dob` path is included because date-of-birth paired with a name constitutes PII under most privacy frameworks even when SSN is masked.
+
+**Performance.** The redactor uses an iterative tree walk (not recursive — depth-bounded but not enforced). For nested arrays (e.g., `borrowers[].employers[]`), the walker visits each terminal string once. Benchmark target: < 50ms for a 100KB payload. The integration-test suite includes a perf assertion that the middleware adds < 100ms to request latency.
 
 ---
 
@@ -394,6 +488,16 @@ UI shows both with source labels. Operator/UW can see drift naturally.
 
 PC v2 still uses the existing PC_SCHEMA_VERSION-based idempotency hash. If portal re-pushes the same loan with identical `scenario_summary`, PC v2 sees the cached batch and skips.
 
+### 7.1 Coexistence rules for two-source predictions
+
+**Within `predicted_conditions`**, portal-llm rows and PC v2 rows coexist as separate rows with distinct `source_list` values. Cross-source dedup is NOT performed at insert time. The UI is responsible for grouping by normalized description (using the same `normalizeConditionDescription` helper PC v2 uses internally — `@twin/core/normalize-condition-description.ts`) and rendering grouped predictions as a single card with two source badges.
+
+**On acceptance**, when the operator accepts EITHER source's prediction, the reducer's collision detector (Store-DB Consistency F1) prevents a duplicate condition. The non-accepted parallel prediction remains `status='pending'` until either (a) the operator explicitly dismisses it, (b) a future Drift Detection spec sweeps and reconciles. This is intentional intermediate state.
+
+**Eligibility verdicts** live in `portal_eligibility_verdicts` (portal-sourced) AND in PC v2's matrix-resolver predictions in `predicted_conditions` (UAS-sourced). The contract: **portal verdict is authoritative when present** (portal has seen full doc data; UAS has seen only what the portal told us). PC v2's matrix-resolver acts as a sanity check. If they disagree, the disagreement IS the signal — the write path emits a `tenant_audit_log` entry with `action='eligibility.disagreement'` and metadata `{ program, portal_status, pc_v2_status, loan_id }` so future drift-detection has data to mine.
+
+**`portal_eligibility_verdicts` versioning**: re-push with new content (per §4.2 step 4) inserts new rows; existing rows get `superseded_at = NOW()`. The active row per (tenant, loan, program) is the one with `superseded_at IS NULL`, enforced by a partial unique index.
+
 ---
 
 ## 8. NPNQMPortalAdapter rewrite checklist
@@ -401,7 +505,10 @@ PC v2 still uses the existing PC_SCHEMA_VERSION-based idempotency hash. If porta
 Updates to `packages/api/src/ingestion/adapters/npnqm-portal.ts`:
 
 1. `transformLoan(raw, config)` reads from `raw.scenario_summary.*` instead of top-level. Maintains backwards compat with the synthetic fixture by checking `scenario_summary` presence first and falling back to top-level.
-2. `extractExternalLoanId(raw)` returns `raw.scenario_summary?.loan_number ?? raw.borrowerCaseId`.
+2. `extractExternalLoanId(raw)` returns `raw.scenario_summary?.loan_number ?? raw.borrowerCaseId ?? raw.externalId`.
+   If all three are missing or empty, throws `MissingExternalIdError` (caught by the endpoint
+   as 400 with `error_class='missing_external_id'`). Prevents the `"NPNQM-undefined"` collision
+   bug where multiple loans without a usable identifier would all map to a single loanId.
 3. `transformDocument` unchanged (still used by the doc-channel for file pushes — the portal pushes file metadata separately after the analysis-output ingest).
 4. `transformAnalysisOutput(raw, config)` is new — see §3.1 shape. Maps `document_requests[]` → `PortalPrediction[]`, `scenario_summary.program_eligibility_detail` → `EligibilityVerdict`, etc.
 5. `deriveContextFields(loan, raw, config)` now produces the expanded extras (§5.1). Reads from `raw.scenario_summary.*` paths.
@@ -442,7 +549,8 @@ Move the 5 sample loans from `/tmp/npnqm-portal-samples/test_results/` into the 
 - **Drift detection UI / persistence** — store both verdicts now; build the UI surface later when UX requirements settle.
 - **Document-byte ingest from the portal** — file uploads continue through Spec 1's `/api/ingest/.../documents`. The portal-analysis ingest may include doc-metadata references (filenames, etc.) but no bytes.
 - **Final-state-file ingest** — `<loan>_final_state.json` (full agent trace) is not consumed by UAS v1. Future debugging/audit use case.
-- **Source-reference normalization** — portal cites "NQMF Guidelines - Credit Report Requirements"; PC v2 cites `program_requirements.id` UUIDs. Storing both as-is; bridge can land in a future spec.
+- **Source-reference normalization** — portal cites "NQMF Guidelines - Credit Report Requirements"; PC v2 cites `program_requirements.id` UUIDs. Storing both as-is; bridge can land in a future spec. UI implementation handles two shapes: portal `source_references` as free strings (render as text, optionally link to a KB chunk search), PC v2 `provenance.requirement_id` as UUIDs (link directly to the `program_requirements` row). No bridging at the data layer; the two shapes coexist per row.
+- **Auto-clear portal predictions when matching document arrives.** When `AddDocument` dispatches and the document's `docType` matches a `portal_metadata.document_type` of an existing `pending` portal-llm prediction for the same loan, the system could auto-transition the prediction's `status` from `pending` to `auto_accepted`. Currently the operator must accept manually. Deferred until UX requirements settle; the schema slot is reserved via the existing `status` column (no new value needed for v1).
 
 ## 11. Out of scope (true non-goals)
 
@@ -457,6 +565,7 @@ Move the 5 sample loans from `/tmp/npnqm-portal-samples/test_results/` into the 
 |------|------------|
 | Real portal payloads diverge from the 5 sample shapes (additional fields, missing fields) | Zod parse with `.passthrough()` on the analysis-output envelope; adapter uses defensive `pick()` lookups with `undefined` fallback (existing pattern). Schema-strict ONLY on extras. |
 | SSN leaks into logs/store/DB | Single redaction sweep at request boundary BEFORE any downstream call. Test asserts no raw 9-digit pattern in redacted output. Add a `pino` redaction rule on `req.body.analysisOutput.scenario_summary.borrowers[*].ssn` as belt-and-suspenders. |
+| **Cross-spec backfill: Spec 1's loan + doc channels assumed pre-redacted inputs; real payloads from the same lender carry unmasked SSN** | `redactPayload` preHandler middleware applied to ALL `/api/ingest/*` endpoints (not just analysis-output). Pino redaction config at API root. See §6 for full scope. |
 | Portal predictions and PC v2 predictions create UI clutter | Both stored with explicit `source_list`. UI filters/groups by source. Drift surfacing deferred. |
 | Migration 023 breaks existing PC v2 rows | Constraint widening (drop + recreate CHECK) is the only change. Existing rows have valid source values; new constraint admits them. Tested by re-running `pnpm --filter @twin/api test predict-conditions` after migration. |
 | Adapter exceptions echo payload data | Exception handler returns `{ error_id, adapter_type, error_class }` only. Stack + message logged server-side. Same pattern as Spec 1 §C1. |
@@ -469,7 +578,7 @@ Move the 5 sample loans from `/tmp/npnqm-portal-samples/test_results/` into the 
 
 1. `POST /api/ingest/:tenantSlug/analysis-output` accepts a real sample payload (e.g., `aubrey_output.json`) and returns 201 with `portalPredictionCount` matching the sample's `stats.total_document_requests`.
 2. SSN values in the payload never appear in DB rows or log statements. A grep test against the test DB confirms no 9-digit-no-dash sequence and no `xxx-xx-NNNN` pattern with the original last-4 from an explicit-SSN test fixture.
-3. `predicted_conditions` for that loan has N rows with `source_list='portal-llm'` (N = sample's doc count) and M rows with PC v2 sources after auto-fire (M = whatever PC v2 emits — likely 5-15 from doc-checklist + matrix/geographic/requirements).
+3. `predicted_conditions` for that loan has N rows with `source_list='portal-llm'` (N = sample's doc count) and M rows with PC v2 sources after auto-fire (M = whatever PC v2 emits — likely 5-15 from doc-checklist + matrix/geographic/requirements). Cross-source dedup is NOT performed; the UI is responsible for grouping by normalized description.
 4. `portal_eligibility_verdicts` has one row per program in the sample's `program_eligibility_detail` with matching `status` and `failed_count`.
 5. `loan_context_extras` row populated with at least 15 of the 32 extras fields from the sample (depends on which the sample carries).
 6. Re-POSTing the same `externalId` returns 200 with `duplicate: true`; no additional rows inserted.
@@ -484,7 +593,7 @@ Move the 5 sample loans from `/tmp/npnqm-portal-samples/test_results/` into the 
 
 Five phases, smaller than Spec 1 because most infrastructure already exists:
 
-- **Phase A — Foundation.** Migration 023, `LoanContextExtras` schema expansion, `PortalPrediction`/`EligibilityVerdict`/`AnalysisStats`/`TransformAnalysisOutput` types in `lender-adapter.ts`, base-class `transformAnalysisOutput` throwing default. Replace synthetic fixtures with the 5 real samples (SSN-masked).
+- **Phase A — Foundation.** Migration 023 (adds `analysis_hash`/`superseded_at` columns + partial unique index + CHECK widening), `LoanContextExtras` schema expansion, `PortalPrediction`/`EligibilityVerdict`/`PortalAnalysisStats`/`TransformAnalysisOutput` types in `lender-adapter.ts`, base-class `transformAnalysisOutput` throwing default, `redactPayloadMiddleware` wired to all `/api/ingest/*` routes. Replace synthetic fixtures with the 5 real samples (SSN-masked).
 - **Phase B — Adapter rewrite.** `NPNQMPortalAdapter.transformAnalysisOutput` against real shapes. Rewrite `transformLoan` + `deriveContextFields` for the new payload shape (preserving back-compat). Golden tests against all 5 samples.
 - **Phase C — Endpoint + PII.** `POST /api/ingest/:tenantSlug/analysis-output` route, request-body Zod schema, PII redaction sweep, error contracts, audit log. Integration tests including the explicit-SSN redaction case.
 - **Phase D — Persistence + PC v2 wiring.** Insert portal predictions with `source_list='portal-llm'` + `portal_metadata`; insert `portal_eligibility_verdicts`; trigger PC v2 auto-fire (existing pattern); integration test asserting both source families coexist.
@@ -500,7 +609,7 @@ Estimate: **8-10 plan tasks across 5 phases**. Smaller than Spec 1 (21 tasks) be
 - Whether `seen_conflicts` should be persisted in its own table or just included in the audit-log metadata. Draft: audit-log metadata only (low volume; queryable enough).
 - Whether `final_state.json` should ever be ingested. Currently out of scope; reconsider if a UW workflow needs the full agent trace.
 - Whether to add a `source_module` enum check on `portal_metadata.source_module` to catch portal-side renames. Draft: no — let the JSONB flex; the portal team can reshape without breaking us.
-- Whether portal can re-push an analysis with NEW `document_requests` (e.g., after the borrower submits more docs). Draft: re-push hits the duplicate path (200, no change). To support re-analysis, the portal must rotate the `externalId` or send a `force: true` flag. Out of scope for this spec.
+- ~~Whether portal can re-push an analysis with NEW `document_requests` (e.g., after the borrower submits more docs).~~ **RESOLVED (C1):** Re-push with different content hash IS supported. The write path detects a changed `analysis_hash`, supersedes prior portal-llm rows and eligibility-verdict rows, and inserts fresh ones. Re-push with the same content hash is a no-op (200 `duplicate: true`). No `force` flag needed.
 
 ---
 
