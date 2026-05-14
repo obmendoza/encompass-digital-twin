@@ -33,4 +33,20 @@ describe("GenericJsonAdapter", () => {
   it("deriveContextFields returns empty (no derivation for generic JSON)", () => {
     expect(adapter.deriveContextFields({} as never, {}, config)).toEqual({});
   });
+
+  it("transformLoan applies fieldPathOverrides for legacy field_map compat", () => {
+    // fieldPathOverrides uses legacy source->target dot-path semantics
+    // (same as GenericJsonTransformer.transform's fieldMap argument).
+    const raw = { loanData: { external: { loan: { amt: 500000 }, b: { name: "Test Borrower" } } } };
+    const configWithOverrides = {
+      ...config,
+      fieldPathOverrides: {
+        "external.loan.amt": "transaction.loanAmount",
+        "external.b.name": "borrower.fullName",
+      },
+    };
+    const partial = adapter.transformLoan(raw, configWithOverrides);
+    expect(partial.transaction?.loanAmount).toBe(500000);
+    expect(partial.borrower?.fullName).toBe("Test Borrower");
+  });
 });

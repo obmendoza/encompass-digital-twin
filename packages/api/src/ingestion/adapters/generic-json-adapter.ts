@@ -12,10 +12,15 @@ export class GenericJsonAdapter extends LenderAdapter {
     return r.externalId ?? r.loanData?.externalId ?? "";
   }
 
-  transformLoan(raw: unknown, _config: AdapterConfig): Partial<Loan> {
+  transformLoan(raw: unknown, config: AdapterConfig): Partial<Loan> {
     const r = raw as { loanData?: unknown };
     const data = r.loanData ?? raw;
-    return data as Partial<Loan>;
+    const overrides = config.fieldPathOverrides;
+    if (!overrides || Object.keys(overrides).length === 0) {
+      return data as Partial<Loan>;
+    }
+    // Apply legacy field_map semantics (source -> target dot-path) via GenericJsonTransformer.
+    return legacy.transform(data, overrides) as Partial<Loan>;
   }
 
   validateLoan(partial: Partial<Loan>): ValidationResult {

@@ -132,8 +132,8 @@ export function registerIngestionRoutes(app: FastifyInstance, store: Store): voi
 
           // Load mapping — explicit tenant filter (pooler-bypass-RLS).
           const mapping = await withTenantTx(tenantId, async (c) => {
-            const { rows } = await c.query<{ adapter_type: string; adapter_config: unknown }>(
-              `SELECT adapter_type, adapter_config FROM ingestion_mappings
+            const { rows } = await c.query<{ adapter_type: string; adapter_config: unknown; field_map: unknown }>(
+              `SELECT adapter_type, adapter_config, field_map FROM ingestion_mappings
                 WHERE tenant_id = $1 AND source_name = $2 AND active = true LIMIT 1`,
               [tenantId, source],
             );
@@ -148,6 +148,18 @@ export function registerIngestionRoutes(app: FastifyInstance, store: Store): voi
           }
 
           const config = AdapterConfigSchema.parse(mapping?.adapter_config ?? {});
+          // Backwards compat: merge legacy field_map JSONB into fieldPathOverrides.
+          // adapter_config.fieldPathOverrides wins on conflict.
+          if (
+            mapping?.field_map &&
+            typeof mapping.field_map === "object" &&
+            Object.keys(mapping.field_map as object).length > 0
+          ) {
+            config.fieldPathOverrides = {
+              ...(mapping.field_map as Record<string, string>),
+              ...(config.fieldPathOverrides ?? {}),
+            };
+          }
 
           let partialLoan: Partial<Loan>;
           try {
