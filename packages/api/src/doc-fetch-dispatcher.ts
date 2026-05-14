@@ -189,13 +189,29 @@ export function startDocFetchDispatcher(store: Store): void {
     },
     dispatchAddDocument: async (_storeRef, tenantId, loanId, documentId, fileName, fileUrl, fileSize, mimeType, docType) => {
       // _storeRef is null per the worker's per-row call; close over real `store` here.
-      void tenantId; void fileUrl; void fileSize; void mimeType; void documentId;
       await withStoreSnapshot(store, loanId, async () => {
+        const actor = { kind: "system" as const, id: "doc-fetch-worker" };
+        // Determine the auto-assigned id: reducer uses `d${documents.length + 1}`.
+        const state = store.getState() as { loans: Record<string, { documents: unknown[] } | undefined> };
+        const preLen = state.loans[loanId]?.documents.length ?? 0;
+        const newDocId = `d${preLen + 1}`;
         store.dispatch({
           type: "AddDocument",
           loanId,
           doc: { name: fileName, docType: docType as import("@twin/core").DocumentType },
-          actor: { kind: "system", id: "doc-fetch-worker" },
+          actor,
+        });
+        // Attach file metadata so the loan UI shows a fully resolved document
+        // rather than a pending stub with no file link.
+        store.dispatch({
+          type: "AttachFile",
+          loanId,
+          documentId: newDocId,
+          fileKey: `loan-documents/${tenantId}/${loanId}/${documentId}`,
+          fileUrl,
+          fileSize,
+          mimeType: mimeType ?? "application/octet-stream",
+          actor,
         });
       });
     },

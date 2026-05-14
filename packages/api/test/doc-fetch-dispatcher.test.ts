@@ -136,6 +136,39 @@ describe("doc-fetch-dispatcher metrics", () => {
   });
 });
 
+describe("doc-fetch-dispatcher dispatchAddDocument contract", () => {
+  it("passes full document metadata including fileUrl and fileSize to dispatchAddDocument", async () => {
+    const externalId = `DOC-CAPTURE-${randomUUID().slice(0, 8)}`;
+    await withDb(async (c) => {
+      await c.query(
+        `INSERT INTO ingested_documents
+           (tenant_id, external_id, document_id, loan_id, source_url, file_name, status, ingest_batch_id, doc_type, source_name)
+         VALUES ($1, $2, 'capture-doc-id', 'L-1', 'https://docs.example.com/capture', 'capture.pdf', 'pending_fetch', $3, 'PayStub', 'npnqm-portal')`,
+        [T, externalId, BATCH],
+      );
+    });
+    let captured: unknown = null;
+    const deps: FetchBatchDeps = {
+      safeFetch: async () => ({ ok: true, bytes: new Uint8Array([1, 2, 3, 4, 5]), contentType: "application/pdf" }),
+      uploadToStorage: async () => ({ key: "k", url: "https://supabase.example.com/abc.pdf" }),
+      dispatchAddDocument: async (_s, _t, _loanId, documentId, fileName, fileUrl, fileSize, mimeType, docType) => {
+        captured = { documentId, fileName, fileUrl, fileSize, mimeType, docType };
+      },
+      enqueueRefire: async () => undefined,
+      loadAdapterConfig: async () => ({ allowedFetchHosts: ["docs.example.com"], maxFileBytes: 50_000_000, identityPrefix: "QL-" }),
+    };
+    await processOneFetchBatch(deps, 10);
+    expect(captured).toMatchObject({
+      documentId: "capture-doc-id",
+      fileName: "capture.pdf",
+      fileUrl: "https://supabase.example.com/abc.pdf",
+      fileSize: 5,
+      mimeType: "application/pdf",
+      docType: "PayStub",
+    });
+  });
+});
+
 describe("doc-fetch-dispatcher RLS", () => {
   it("worker can claim pending_fetch rows across tenants via withDb (RLS does not block)", async () => {
     const externalId = `DOC-RLS-PROBE-${randomUUID().slice(0, 8)}`;
