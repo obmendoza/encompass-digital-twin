@@ -15,6 +15,7 @@ if (!process.env.DATABASE_URL) {
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { withDb, withTenantTx, closePool } from "../src/db/pool.js";
 import { buildServer } from "../src/server.js";
+import { writeExtrasFirstWriteWins } from "../src/ingestion/loan-context-extras.js";
 import type { FastifyInstance } from "fastify";
 import type { Store } from "@twin/core";
 
@@ -93,6 +94,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await app.close();
   await withDb(async (c) => {
+    await c.query(`DELETE FROM loan_context_extras     WHERE tenant_id = $1`, [T]);
     await c.query(`DELETE FROM predicted_conditions    WHERE tenant_id = $1`, [T]);
     await c.query(`DELETE FROM prediction_alerts       WHERE tenant_id = $1`, [T]);
     await c.query(`DELETE FROM income_type_resolver    WHERE tenant_id = $1`, [T]);
@@ -175,5 +177,52 @@ describe("predict-conditions HTTP integration", () => {
     expect(res.statusCode).toBe(400);
     const body = JSON.parse(res.body) as { code?: string; error?: string };
     expect(body.code ?? body.error).toBe("LOAN_NOT_FOUND");
+  });
+
+  it("fires v2 sources when loan_context_extras is populated", async () => {
+    // The existing beforeAll seeded a loan with id "INT-1" in tenant T.
+    // Write extras so PC v2's matrix/geographic/requirements resolvers have
+    // real values instead of degrading on undefined.
+    // LTV is set to 110 to exceed the tier's max_ltv_purchase of 105,
+    // ensuring the matrix resolver emits a v2 source finding.
+    await writeExtrasFirstWriteWins(T, "INT-1", {
+      repFico: 720,
+      ltv: 110,
+      county: "King County",
+      isItin: false,
+      loanAmount: 100000,
+      loanPurpose: "Purchase",
+    });
+
+    // Verify extras were written before running predictions
+    const extrasCheck = await withDb(async (c) => {
+      const { rows } = await c.query<{ extras: unknown }>(
+        `SELECT extras FROM loan_context_extras WHERE tenant_id = $1 AND loan_id = $2`,
+        [T, "INT-1"],
+      );
+      return rows.length > 0;
+    });
+    expect(extrasCheck).toBe(true);
+
+    const runRes = await app.inject({
+      method: "POST",
+      url: "/loans/INT-1/predictions/run",
+      headers: headers("operator"),
+      payload: {},
+    });
+    expect(runRes.statusCode).toBe(200);
+
+    const listRes = await app.inject({
+      method: "GET",
+      url: "/loans/INT-1/predictions",
+      headers: headers("operator"),
+    });
+    expect(listRes.statusCode).toBe(200);
+    const body = JSON.parse(listRes.body) as { predictions: Array<{ source_list?: string }> };
+    const sources = new Set(body.predictions.map((p) => p.source_list ?? ""));
+    // Matrix resolver fires because LTV (110) exceeds tier max (105).
+    // Confirms PC v2 sources (matrix/geographic/requirements) are emitted
+    // when loan_context_extras provides real v2 fields instead of undefined.
+    expect(sources.has("matrix")).toBe(true);
   });
 });
