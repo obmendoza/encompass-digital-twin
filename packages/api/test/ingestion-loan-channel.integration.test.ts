@@ -132,4 +132,33 @@ describe("POST /api/ingest/:tenantSlug/loans — adapter dispatch", () => {
     expect(res.statusCode).toBe(400);
     expect(JSON.parse(res.body).error_class).toBe("unknown_adapter_type");
   });
+
+  it("falls back to request externalId when generic-json adapter returns empty (Codex round-3 P2)", async () => {
+    await withDb(async (c) => {
+      await c.query(
+        `INSERT INTO ingestion_mappings (tenant_id, source_name, transformer_type, adapter_type, adapter_config, field_map, active)
+         VALUES ($1, 'generic-bare', 'generic-json', 'generic-json', $2::jsonb, '{}'::jsonb, true)
+         ON CONFLICT DO NOTHING`,
+        [T, JSON.stringify({ identityPrefix: "GEN-", allowedFetchHosts: [], maxFileBytes: 50_000_000 })],
+      );
+    });
+    // loanData omits externalId — GenericJsonAdapter.extractExternalLoanId returns "" without throwing.
+    // The fix must use the request envelope externalId as fallback.
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/ingest/loan-channel-test/loans",
+      headers: { authorization: `Bearer ${KEY}` },
+      payload: {
+        source: "generic-bare",
+        externalId: "BARE-001",
+        loanData: {
+          borrower: { fullName: "Test Borrower" },
+          transaction: { loanAmount: 300000 },
+        },
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    const r = JSON.parse(res.body);
+    expect(r.loanId).toBe("GEN-BARE-001");
+  });
 });

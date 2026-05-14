@@ -183,9 +183,13 @@ export function registerIngestionRoutes(app: FastifyInstance, store: Store): voi
           try {
             externalLoanIdFromAdapter = adapter.extractExternalLoanId(loanData);
           } catch {
-            externalLoanIdFromAdapter = externalId; // fall back to the request envelope
+            externalLoanIdFromAdapter = "";
           }
-          const loanId = `${config.identityPrefix}${externalLoanIdFromAdapter}`;
+          // Fall back to the request envelope's externalId if the adapter didn't yield one.
+          // This preserves backwards compat with the legacy generic-json behavior, where
+          // the external_id always came from the request body.
+          const effectiveExternalLoanId = externalLoanIdFromAdapter || externalId;
+          const loanId = `${config.identityPrefix}${effectiveExternalLoanId}`;
           const loan = buildLoanFromPartial(loanId, partialLoan, tenantId);
 
           store.dispatch({ type: "InjectLoan", loan });
