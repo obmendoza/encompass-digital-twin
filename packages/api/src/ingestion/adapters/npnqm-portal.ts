@@ -1,6 +1,7 @@
 import type { Loan, LoanContextExtras, AdapterConfig, NqmProgram, DocumentType } from "@twin/core";
 import {
   LenderAdapter,
+  MissingExternalIdError,
   type DocumentMetadataInput,
   type ValidationResult,
   type PortalPrediction,
@@ -23,12 +24,28 @@ export class NPNQMPortalAdapter extends LenderAdapter {
   readonly adapterType = "npnqm-portal";
 
   extractExternalLoanId(raw: unknown): string {
-    const id = pick<string>(raw, "borrowerCaseId") ?? pick<string>(raw, "externalId");
-    if (!id) throw new Error("npnqm-portal: payload missing borrowerCaseId");
+    const r = raw as Record<string, unknown>;
+    const scenario = r.scenario_summary as Record<string, unknown> | undefined;
+    const fromScenario = scenario?.loan_number as string | undefined;
+    const fromCase = r.borrowerCaseId as string | undefined;
+    const fromEnvelope = r.externalId as string | undefined;
+    const id = fromScenario || fromCase || fromEnvelope;
+    if (!id) {
+      throw new MissingExternalIdError(
+        `npnqm-portal: payload missing scenario_summary.loan_number, borrowerCaseId, and externalId`,
+      );
+    }
     return id;
   }
 
   transformLoan(raw: unknown, config: AdapterConfig): Partial<Loan> {
+    const r = raw as Record<string, unknown>;
+    const scenario = r.scenario_summary as Record<string, unknown> | undefined;
+    if (scenario) return this.scenarioToLoan(scenario, config);
+    return this.legacyTopLevelToLoan(r, config);
+  }
+
+  private legacyTopLevelToLoan(raw: Record<string, unknown>, config: AdapterConfig): Partial<Loan> {
     const lenderProgram = pick<string>(raw, "selectedProgram") ?? pick<string>(raw, "programName");
     const program = (lenderProgram && config.programMapping?.[lenderProgram]) ?? lenderProgram ?? undefined;
     return {
@@ -99,6 +116,13 @@ export class NPNQMPortalAdapter extends LenderAdapter {
   }
 
   deriveContextFields(loan: Loan, raw: unknown, _config: AdapterConfig): Partial<LoanContextExtras> {
+    const r = raw as Record<string, unknown>;
+    const scenario = r.scenario_summary as Record<string, unknown> | undefined;
+    if (scenario) return this.scenarioToExtras(scenario);
+    return this.legacyTopLevelToExtras(loan, r);
+  }
+
+  private legacyTopLevelToExtras(loan: Loan, raw: Record<string, unknown>): Partial<LoanContextExtras> {
     return {
       repFico: pick<number>(raw, "borrower.fico") ?? pick<number>(raw, "creditScore"),
       ltv: loan.transaction?.ltv,
