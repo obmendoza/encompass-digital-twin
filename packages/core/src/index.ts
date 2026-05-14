@@ -7,4 +7,5 @@ export * from "./tenant-schemas.js";
 export * from "./learning-types.js";
 export * from "./learning-schemas.js";
 export * from "./va-schemas.js";
+export * from "./adapter-config.js";
 export { normalizeConditionDescription } from "./normalize-condition-description.js";
