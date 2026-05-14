@@ -56,8 +56,19 @@ async function cleanupPredictConditionsState(tenantId: string, loanId: string): 
   const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
   await client.connect();
   try {
+    // predicted_conditions and prediction_alerts have FORCE RLS on
+    // current_setting('app.current_tenant'). Wrap the DELETEs in a tx with
+    // the GUC set so the policy admits them. Without this, the cleanup
+    // silently matches zero rows on a stale RLS-enforced connection and
+    // W10 re-runs hit PREDICTIONS_INSUFFICIENT.
+    await client.query("BEGIN");
+    await client.query(`SET LOCAL app.current_tenant = $1::uuid`, [tenantId]);
     await client.query(`DELETE FROM predicted_conditions WHERE tenant_id = $1 AND loan_id = $2`, [tenantId, loanId]);
-    await client.query(`DELETE FROM prediction_alerts WHERE tenant_id = $1 AND loan_id = $2`, [tenantId, loanId]);
+    await client.query(`DELETE FROM prediction_alerts    WHERE tenant_id = $1 AND loan_id = $2`, [tenantId, loanId]);
+    await client.query("COMMIT");
+  } catch (e) {
+    try { await client.query("ROLLBACK"); } catch { /* swallow */ }
+    throw e;
   } finally {
     await client.end();
   }
