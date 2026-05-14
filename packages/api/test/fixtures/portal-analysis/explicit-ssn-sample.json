@@ -1,0 +1,28 @@
+{
+  "source": "npnqm-portal",
+  "externalId": "TEST-SSN-001",
+  "analysisOutput": {
+    "document_requests": [],
+    "scenario_summary": {
+      "loan_number": "TEST-SSN-001",
+      "borrowers": [
+        {
+          "name": "Test Borrower",
+          "ssn": "123456789",
+          "dob": "1985-01-01",
+          "role": "primary"
+        }
+      ]
+    },
+    "seen_conflicts": [],
+    "stats": {
+      "total_document_requests": 0,
+      "hard_stop_documents": 0,
+      "elapsed_seconds": 0,
+      "tool_calls": 0,
+      "by_category": {},
+      "by_priority": {},
+      "by_status": {}
+    }
+  }
+}
