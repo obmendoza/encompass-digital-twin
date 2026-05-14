@@ -4,6 +4,7 @@ import { getLoansForTenant } from "./_helpers.js";
 import { getTenantId } from "../tenant-context.js";
 import { detectPatterns, persistPatterns } from "../learning/pattern-detector.js";
 import { withDb } from "../db/pool.js";
+import { docFetchMetrics } from "../doc-fetch-dispatcher.js";
 
 export function registerSystemCheckRoutes(app: FastifyInstance, store: Store) {
 
@@ -319,4 +320,14 @@ export function registerSystemCheckRoutes(app: FastifyInstance, store: Store) {
       };
     });
   });
+
+  // 6. Doc-fetch metrics — in-memory counters for attempts, bytes, dead-letters,
+  // refire-fires. Exposed via /system endpoint for ops visibility — same surface
+  // PC v2's audit metadata uses for ingest-time observability.
+  app.get("/system/doc-fetch-metrics", async () => ({
+    attempts_total: Object.fromEntries(docFetchMetrics.attempts_total),
+    bytes_total: docFetchMetrics.bytes_total,
+    dead_lettered_total: docFetchMetrics.dead_lettered_total,
+    refire_fires_total: docFetchMetrics.refire_fires_total,
+  }));
 }

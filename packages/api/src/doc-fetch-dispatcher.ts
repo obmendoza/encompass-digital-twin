@@ -8,6 +8,19 @@ import type { enqueueRefire as EnqueueRefireFn } from "./ingestion/refire-deboun
 import { AdapterConfigSchema } from "@twin/core";
 import type { AdapterConfig, Store } from "@twin/core";
 
+// ── Metrics ──────────────────────────────────────────────────────────────────
+
+export const docFetchMetrics = {
+  attempts_total: new Map<string, number>(),    // key = outcome:failed_reason
+  bytes_total: 0,
+  dead_lettered_total: 0,
+  refire_fires_total: 0,
+};
+
+function incMetric(key: string, by = 1): void {
+  docFetchMetrics.attempts_total.set(key, (docFetchMetrics.attempts_total.get(key) ?? 0) + by);
+}
+
 export interface FetchBatchDeps {
   safeFetch: typeof SafeFetchFn;
   uploadToStorage: (key: string, bytes: Uint8Array, contentType: string | null) => Promise<{ key: string; url: string }>;
@@ -78,6 +91,7 @@ async function processRow(row: PendingRow, deps: FetchBatchDeps): Promise<boolea
   if (!fetched.ok) {
     const reason = classifyFailure(fetched.reason);
     const detail = fetched.detail ? `${fetched.reason}: ${fetched.detail}` : fetched.reason;
+    incMetric(`fail:${reason}`);
     await recordFailure(row, reason, detail);
     return false;
   }
@@ -90,6 +104,8 @@ async function processRow(row: PendingRow, deps: FetchBatchDeps): Promise<boolea
     fetched.bytes.byteLength, fetched.contentType,
   );
   await markFetched(row);
+  incMetric("success:ok");
+  docFetchMetrics.bytes_total += fetched.bytes.byteLength;
   await deps.enqueueRefire(row.tenant_id, row.loan_id, "doc_added", 30);
   return true;
 }
@@ -109,6 +125,7 @@ async function recordFailure(row: PendingRow, failedReason: string, lastError: s
   const attempts = row.attempts + 1;
   const terminal = TERMINAL_REASONS.has(failedReason) || attempts >= BACKOFF_MS.length;
   if (terminal) {
+    docFetchMetrics.dead_lettered_total++;
     await withDb(async (c) => {
       await c.query(
         `UPDATE ingested_documents
@@ -215,6 +232,7 @@ export function startDocFetchDispatcher(store: Store): void {
             if (!_runPredictions) _runPredictions = (await import("./services/predict-conditions/index.js")).run as never;
             if (!_buildCtx) _buildCtx = (await import("./routes/predict-conditions-context-builder.js")).buildLoanContextFromLoan as never;
             const ready = await _drainRefires(50);
+            docFetchMetrics.refire_fires_total += ready.length;
             for (const r of ready) {
               try {
                 const state = store.getState() as { loans: Record<string, unknown> };

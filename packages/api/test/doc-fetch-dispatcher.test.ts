@@ -15,7 +15,7 @@ if (!process.env.DATABASE_URL) {
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { withDb, closePool } from "../src/db/pool.js";
-import { processOneFetchBatch, type FetchBatchDeps } from "../src/doc-fetch-dispatcher.js";
+import { processOneFetchBatch, type FetchBatchDeps, docFetchMetrics } from "../src/doc-fetch-dispatcher.js";
 
 const T = "5d175193-6ee2-4d6a-b16e-ee00ee00ee06";
 const BATCH = "11111111-1111-1111-1111-111111111111";
@@ -123,5 +123,15 @@ describe("doc-fetch-dispatcher.processOneFetchBatch", () => {
     });
     expect(row.status).toBe("failed");
     expect(row.failed_reason).toBe("ssrf_blocked");
+  });
+});
+
+describe("doc-fetch-dispatcher metrics", () => {
+  it("counters increment for success and failure outcomes", () => {
+    const okCount = docFetchMetrics.attempts_total.get("success:ok") ?? 0;
+    expect(okCount).toBeGreaterThan(0);
+    const failKeys = Array.from(docFetchMetrics.attempts_total.keys()).filter((k) => k.startsWith("fail:"));
+    expect(failKeys.length).toBeGreaterThan(0);
+    expect(docFetchMetrics.bytes_total).toBeGreaterThan(0);
   });
 });
