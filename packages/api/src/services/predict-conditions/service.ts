@@ -52,6 +52,18 @@ export function __testOnly_setThrowAfterDispatch(e: Error | null): void {
   __testOnly_throwAfterDispatch = e;
 }
 
+/**
+ * Schema version of the predict-conditions input domain. Bumping invalidates
+ * all prior idempotency hashes — any loan with a pending batch from an older
+ * schema will re-run instead of being reused. Increment when adding a new
+ * resolver source so deployed v(N-1) batches don't gate the new sources off.
+ *
+ *   v1: doc-checklist only (minimum + income from program_doc_checklist)
+ *   v2: + matrix (program_matrix_tiers) + geographic (geographic_restrictions)
+ *       + requirements (program_requirements, deterministic + LLM backstop)
+ */
+const PC_SCHEMA_VERSION = 2;
+
 function canonicalizeContext(loan: LoanContext): string {
   // Canonical JSON for hashing: sort top-level keys deterministically.
   const sorted: Record<string, unknown> = {};
@@ -62,7 +74,10 @@ function canonicalizeContext(loan: LoanContext): string {
 }
 
 function hashInput(loan: LoanContext): string {
-  return createHash("sha256").update(canonicalizeContext(loan)).digest("hex");
+  return createHash("sha256")
+    .update(`v${PC_SCHEMA_VERSION}\0`)
+    .update(canonicalizeContext(loan))
+    .digest("hex");
 }
 
 interface PendingMatch {
