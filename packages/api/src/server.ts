@@ -38,6 +38,7 @@ import { registerVAAdminRoutes } from "./routes/va-admin.js";
 import { registerBpoRoutes } from "./routes/bpo.js";
 import { registerPredictConditionsRoutes } from "./routes/predict-conditions.js";
 import { registerAdminIngestionMappingsRoutes } from "./routes/admin-ingestion-mappings.js";
+import { registerAnalysisOutputIngestRoutes } from "./routes/analysis-output-ingest.js";
 import { configurePredictConditionsService } from "./services/predict-conditions/index.js";
 import { redactPayloadMiddleware } from "./ingestion/pii-middleware.js";
 import { startLearningWorker } from "./learning-worker.js";
@@ -117,6 +118,7 @@ export function buildServer(opts: BuildOpts = {}): { app: FastifyInstance; store
   registerBpoRoutes(app, store);
   registerPredictConditionsRoutes(app, store);
   registerAdminIngestionMappingsRoutes(app);
+  registerAnalysisOutputIngestRoutes(app, store);
   configurePredictConditionsService({ store });
   if (opts.enableWebSocket) registerWsRoutes(app);
 

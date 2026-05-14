@@ -21,7 +21,7 @@ registerAdapter(new NPNQMPortalAdapter());
  * Build a complete Loan object from partial ingested data.
  * Fills missing fields with sensible defaults so the loan renders in the UI.
  */
-function buildLoanFromPartial(loanId: string, partial: Partial<Loan>, tenantId: string): Loan {
+export function buildLoanFromPartial(loanId: string, partial: Partial<Loan>, tenantId: string): Loan {
   const now = new Date().toISOString();
   const borrower = partial.borrower ?? { fullName: "Unknown Borrower", ssnMasked: "xxx-xx-0000", dob: "1990-01-01", maritalStatus: "Unmarried" as const };
   const loanAmount = partial.transaction?.loanAmount ?? 0;
