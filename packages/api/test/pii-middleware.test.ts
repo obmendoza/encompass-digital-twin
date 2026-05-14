@@ -5,21 +5,21 @@ import { dirname as dn2, resolve as rp2 } from "node:path";
 import { fileURLToPath as ftu2 } from "node:url";
 import { redactPayload, redactPayloadMiddleware } from "../src/ingestion/pii-middleware.js";
 
-describe("redactPayload", () => {
-  it("masks 9-digit SSN values as [REDACTED_SSN]", () => {
-    const input = { borrower: { ssn: "605827691", name: "Test User" } };
+describe("redactPayload (path-restricted)", () => {
+  it("masks SSN at known PII paths", () => {
+    const input = { loanData: { borrower: { ssn: "123456789", fullName: "Test" } } };
     const out = redactPayload(input) as typeof input;
-    expect(out.borrower.ssn).toBe("[REDACTED_SSN]");
-    expect(out.borrower.name).toBe("Test User");
+    expect(out.loanData.borrower.ssn).toBe("[REDACTED_SSN]");
+    expect(out.loanData.borrower.fullName).toBe("Test");
   });
 
   it("masks dashed SSN (123-45-6789) as [REDACTED_SSN]", () => {
-    const input = { borrower: { ssn: "123-45-6789" } };
+    const input = { loanData: { borrower: { ssn: "123-45-6789" } } };
     const out = redactPayload(input) as typeof input;
-    expect(out.borrower.ssn).toBe("[REDACTED_SSN]");
+    expect(out.loanData.borrower.ssn).toBe("[REDACTED_SSN]");
   });
 
-  it("recurses into nested arrays", () => {
+  it("masks SSN at nested-array PII path", () => {
     const input = {
       analysisOutput: {
         scenario_summary: {
@@ -33,31 +33,60 @@ describe("redactPayload", () => {
     const out = redactPayload(input) as typeof input;
     expect(out.analysisOutput.scenario_summary.borrowers[0]!.ssn).toBe("[REDACTED_SSN]");
     expect(out.analysisOutput.scenario_summary.borrowers[1]!.ssn).toBe("[REDACTED_SSN]");
+    expect(out.analysisOutput.scenario_summary.borrowers[0]!.name).toBe("A");
   });
 
-  it("preserves non-SSN strings unchanged", () => {
-    const input = { property: { county: "King County", zip: "98004" } };
+  it("preserves 9-digit values at NON-PII paths (the Codex P1 case)", () => {
+    const input = {
+      source: "npnqm-portal",
+      externalId: "123456789",
+      analysisOutput: {
+        scenario_summary: {
+          loan_number: "987654321",
+          property: { address: "123 Main St" },
+        },
+      },
+    };
     const out = redactPayload(input) as typeof input;
-    expect(out.property.county).toBe("King County");
-    expect(out.property.zip).toBe("98004");
+    expect(out.externalId).toBe("123456789");
+    expect(out.analysisOutput.scenario_summary.loan_number).toBe("987654321");
+    expect(out.analysisOutput.scenario_summary.property.address).toBe("123 Main St");
   });
 
-  it("doesn't mutate the input object", () => {
-    const input = { borrower: { ssn: "605827691" } };
+  it("masks bare top-level ssn key", () => {
+    const input = { ssn: "123456789" };
+    const out = redactPayload(input) as typeof input;
+    expect(out.ssn).toBe("[REDACTED_SSN]");
+  });
+
+  it("masks DOB at known PII paths", () => {
+    const input = { loanData: { borrower: { dob: "1985-03-12" } } };
+    const out = redactPayload(input) as typeof input;
+    expect(out.loanData.borrower.dob).toBe("[REDACTED_DOB]");
+  });
+
+  it("preserves DOB-shaped values at non-PII paths", () => {
+    const input = { metadata: { created_at: "1985-03-12" } };
+    const out = redactPayload(input) as typeof input;
+    expect(out.metadata.created_at).toBe("1985-03-12");
+  });
+
+  it("does not mutate the input object", () => {
+    const input = { loanData: { borrower: { ssn: "123456789" } } };
     const _out = redactPayload(input);
-    expect(input.borrower.ssn).toBe("605827691");
+    expect(input.loanData.borrower.ssn).toBe("123456789");
   });
 
-  it("performance: <50ms for a 100KB payload", () => {
+  it("performance: <50ms for a 100KB payload with no PII paths", () => {
     const large = {
       analysisOutput: {
         scenario_summary: {
           borrowers: Array.from({ length: 100 }, (_, i) => ({
             ssn: `${String(i).padStart(9, "0")}`,
             name: `Borrower ${i}`,
-            address: `${i} Main St`,
+            dob: "1985-01-01",
           })),
-          extra: "x".repeat(50_000),
+          notes: "x".repeat(50_000),
         },
       },
     };
@@ -74,21 +103,21 @@ describe("redactPayloadMiddleware", () => {
   it("calls redactPayload on req.body for /api/ingest/* requests", async () => {
     const req = {
       url: "/api/ingest/test-tenant/analysis-output",
-      body: { borrower: { ssn: "123456789" } },
+      body: { loanData: { borrower: { ssn: "123456789" } } },
     } as never;
     const reply = {} as never;
     await redactPayloadMiddleware(req, reply);
-    expect((req as { body: { borrower: { ssn: string } } }).body.borrower.ssn).toBe("[REDACTED_SSN]");
+    expect((req as { body: { loanData: { borrower: { ssn: string } } } }).body.loanData.borrower.ssn).toBe("[REDACTED_SSN]");
   });
 
   it("skips non-/api/ingest paths", async () => {
     const req = {
       url: "/loans/X/predictions/run",
-      body: { borrower: { ssn: "123456789" } },
+      body: { loanData: { borrower: { ssn: "123456789" } } },
     } as never;
     const reply = {} as never;
     await redactPayloadMiddleware(req, reply);
-    expect((req as { body: { borrower: { ssn: string } } }).body.borrower.ssn).toBe("123456789");
+    expect((req as { body: { loanData: { borrower: { ssn: string } } } }).body.loanData.borrower.ssn).toBe("123456789");
   });
 
   it("no-op when body is absent or non-object", async () => {
