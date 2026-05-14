@@ -135,3 +135,28 @@ describe("doc-fetch-dispatcher metrics", () => {
     expect(docFetchMetrics.bytes_total).toBeGreaterThan(0);
   });
 });
+
+describe("doc-fetch-dispatcher RLS", () => {
+  it("worker can claim pending_fetch rows across tenants via withDb (RLS does not block)", async () => {
+    const externalId = `DOC-RLS-PROBE-${randomUUID().slice(0, 8)}`;
+    await withDb(async (c) => {
+      await c.query(
+        `INSERT INTO ingested_documents
+           (tenant_id, external_id, document_id, loan_id, source_url, file_name, status, ingest_batch_id, doc_type, source_name)
+         VALUES ($1, $2, 'probe-id', 'L-1', 'https://docs.example.com/probe', 'probe.pdf', 'pending_fetch', $3, 'Other', 'npnqm-portal')
+         ON CONFLICT (tenant_id, external_id) DO NOTHING`,
+        [T, externalId, BATCH],
+      );
+    });
+    const deps: FetchBatchDeps = {
+      safeFetch: async () => ({ ok: true, bytes: new Uint8Array([1]), contentType: "application/pdf" }),
+      uploadToStorage: async () => ({ key: "k", url: "https://x" }),
+      dispatchAddDocument: async () => undefined,
+      enqueueRefire: async () => undefined,
+      loadAdapterConfig: async () => ({ allowedFetchHosts: ["docs.example.com"], maxFileBytes: 50_000_000, identityPrefix: "QL-" }),
+    };
+    const result = await processOneFetchBatch(deps, 10);
+    // The probe row should have been processed — i.e., processed >= 1.
+    expect(result.processed).toBeGreaterThanOrEqual(1);
+  });
+});
