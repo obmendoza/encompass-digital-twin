@@ -32,14 +32,14 @@ beforeAll(async () => {
     // Seed pending_fetch rows.
     await c.query(
       `INSERT INTO ingested_documents
-         (tenant_id, external_id, document_id, loan_id, source_url, file_name, status, ingest_batch_id)
-       VALUES ($1, 'DOC-OK', 'doc-ok-id', 'L-1', 'https://docs.example.com/ok', 'ok.pdf', 'pending_fetch', $2)`,
+         (tenant_id, external_id, document_id, loan_id, source_url, file_name, doc_type, source_name, status, ingest_batch_id)
+       VALUES ($1, 'DOC-OK', 'doc-ok-id', 'L-1', 'https://docs.example.com/ok', 'ok.pdf', 'Income', 'test-source', 'pending_fetch', $2)`,
       [T, BATCH],
     );
     await c.query(
       `INSERT INTO ingested_documents
-         (tenant_id, external_id, document_id, loan_id, source_url, file_name, status, ingest_batch_id)
-       VALUES ($1, 'DOC-FAIL', 'doc-fail-id', 'L-1', 'https://docs.example.com/fail', 'fail.pdf', 'pending_fetch', $2)`,
+         (tenant_id, external_id, document_id, loan_id, source_url, file_name, doc_type, source_name, status, ingest_batch_id)
+       VALUES ($1, 'DOC-FAIL', 'doc-fail-id', 'L-1', 'https://docs.example.com/fail', 'fail.pdf', 'Other', null, 'pending_fetch', $2)`,
       [T, BATCH],
     );
   });
@@ -62,9 +62,9 @@ describe("doc-fetch-dispatcher.processOneFetchBatch", () => {
         return { ok: false, reason: "status_404" };
       },
       uploadToStorage: async () => ({ key: "loan-documents/x/y/z", url: "https://supabase/x" }),
-      dispatchAddDocument: vi.fn(),
+      dispatchAddDocument: vi.fn(async () => undefined),
       enqueueRefire: vi.fn(async () => undefined),
-      loadAdapterConfig: async () => ({ allowedFetchHosts: ["docs.example.com"], maxFileBytes: 50_000_000, identityPrefix: "QL-" }),
+      loadAdapterConfig: async (_tenantId: string, _sourceName: string | null) => ({ allowedFetchHosts: ["docs.example.com"], maxFileBytes: 50_000_000, identityPrefix: "QL-" }),
     };
     const result = await processOneFetchBatch(deps, 10);
     expect(result.processed).toBeGreaterThanOrEqual(2);
@@ -101,17 +101,17 @@ describe("doc-fetch-dispatcher.processOneFetchBatch", () => {
     await withDb(async (c) => {
       await c.query(
         `INSERT INTO ingested_documents
-           (tenant_id, external_id, document_id, loan_id, source_url, file_name, status, ingest_batch_id)
-         VALUES ($1, $2, 'ssrf-id', 'L-1', 'https://attacker.example.com/x', 'x.pdf', 'pending_fetch', $3)`,
+           (tenant_id, external_id, document_id, loan_id, source_url, file_name, doc_type, source_name, status, ingest_batch_id)
+         VALUES ($1, $2, 'ssrf-id', 'L-1', 'https://attacker.example.com/x', 'x.pdf', 'Other', null, 'pending_fetch', $3)`,
         [T, externalId, BATCH],
       );
     });
     const deps: FetchBatchDeps = {
       safeFetch: async () => ({ ok: false, reason: "host_not_allowed" }),
       uploadToStorage: async () => ({ key: "", url: "" }),
-      dispatchAddDocument: vi.fn(),
+      dispatchAddDocument: vi.fn(async () => undefined),
       enqueueRefire: vi.fn(async () => undefined),
-      loadAdapterConfig: async () => ({ allowedFetchHosts: ["docs.example.com"], maxFileBytes: 50_000_000, identityPrefix: "QL-" }),
+      loadAdapterConfig: async (_tenantId: string, _sourceName: string | null) => ({ allowedFetchHosts: ["docs.example.com"], maxFileBytes: 50_000_000, identityPrefix: "QL-" }),
     };
     await processOneFetchBatch(deps, 10);
     const row = await withDb(async (c) => {

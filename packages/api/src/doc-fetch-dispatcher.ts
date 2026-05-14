@@ -33,9 +33,10 @@ export interface FetchBatchDeps {
     fileUrl: string,
     fileSize: number,
     mimeType: string | null,
+    docType: string,
   ) => Promise<void>;
   enqueueRefire: typeof EnqueueRefireFn;
-  loadAdapterConfig: (tenantId: string, loanId: string) => Promise<AdapterConfig>;
+  loadAdapterConfig: (tenantId: string, sourceName: string | null) => Promise<AdapterConfig>;
 }
 
 interface PendingRow {
@@ -46,6 +47,8 @@ interface PendingRow {
   source_url: string;
   file_name: string;
   attempts: number;
+  doc_type: string;
+  source_name: string | null;
 }
 
 export const BACKOFF_MS = [60_000, 5 * 60_000, 30 * 60_000, 2 * 60 * 60_000, 12 * 60 * 60_000];
@@ -69,7 +72,7 @@ export async function processOneFetchBatch(
 async function claimPendingRows(limit: number): Promise<PendingRow[]> {
   return withDb(async (c) => {
     const { rows } = await c.query<PendingRow>(
-      `SELECT tenant_id, external_id, document_id, loan_id, source_url, file_name, attempts
+      `SELECT tenant_id, external_id, document_id, loan_id, source_url, file_name, attempts, doc_type, source_name
        FROM ingested_documents
        WHERE status = 'pending_fetch' AND next_attempt_at <= NOW()
        ORDER BY created_at
@@ -82,7 +85,7 @@ async function claimPendingRows(limit: number): Promise<PendingRow[]> {
 }
 
 async function processRow(row: PendingRow, deps: FetchBatchDeps): Promise<boolean> {
-  const config = await deps.loadAdapterConfig(row.tenant_id, row.loan_id);
+  const config = await deps.loadAdapterConfig(row.tenant_id, row.source_name);
   const fetched = await deps.safeFetch(row.source_url, {
     allowedHosts: config.allowedFetchHosts,
     maxBytes: config.maxFileBytes,
@@ -101,7 +104,7 @@ async function processRow(row: PendingRow, deps: FetchBatchDeps): Promise<boolea
   await deps.dispatchAddDocument(
     null as unknown as Store,
     row.tenant_id, row.loan_id, row.document_id, row.file_name, upload.url,
-    fetched.bytes.byteLength, fetched.contentType,
+    fetched.bytes.byteLength, fetched.contentType, row.doc_type,
   );
   await markFetched(row);
   incMetric("success:ok");
@@ -184,24 +187,26 @@ export function startDocFetchDispatcher(store: Store): void {
       const { data } = supabase.storage.from("loan-documents").getPublicUrl(key);
       return { key, url: data.publicUrl };
     },
-    dispatchAddDocument: async (_storeRef, tenantId, loanId, documentId, fileName, fileUrl, fileSize, mimeType) => {
+    dispatchAddDocument: async (_storeRef, tenantId, loanId, documentId, fileName, fileUrl, fileSize, mimeType, docType) => {
       // _storeRef is null per the worker's per-row call; close over real `store` here.
       void tenantId; void fileUrl; void fileSize; void mimeType; void documentId;
       await withStoreSnapshot(store, loanId, async () => {
         store.dispatch({
           type: "AddDocument",
           loanId,
-          doc: { name: fileName, docType: "Other" },
+          doc: { name: fileName, docType: docType as import("@twin/core").DocumentType },
           actor: { kind: "system", id: "doc-fetch-worker" },
         });
       });
     },
     enqueueRefire,
-    loadAdapterConfig: async (tenantId, _loanId) => {
+    loadAdapterConfig: async (tenantId, sourceName) => {
       const result = await withTenantTx(tenantId, async (c) => {
         const { rows } = await c.query<{ adapter_config: unknown }>(
-          `SELECT adapter_config FROM ingestion_mappings WHERE tenant_id=$1 AND active=true LIMIT 1`,
-          [tenantId],
+          sourceName
+            ? `SELECT adapter_config FROM ingestion_mappings WHERE tenant_id=$1 AND source_name=$2 AND active=true LIMIT 1`
+            : `SELECT adapter_config FROM ingestion_mappings WHERE tenant_id=$1 AND active=true LIMIT 1`,
+          sourceName ? [tenantId, sourceName] : [tenantId],
         );
         return rows[0]?.adapter_config ?? {};
       });

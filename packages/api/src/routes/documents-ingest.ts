@@ -124,10 +124,10 @@ export function registerDocumentsIngestRoutes(app: FastifyInstance): void {
             const inserted = await withTenantTx(tenantId, async (c) => {
               const r = await c.query(
                 `INSERT INTO ingested_documents
-                   (tenant_id, external_id, document_id, loan_id, source_url, file_name, status, ingest_batch_id)
-                 VALUES ($1, $2, $3, $4, $5, $6, 'pending_fetch', $7)
+                   (tenant_id, external_id, document_id, loan_id, source_url, file_name, doc_type, source_name, status, ingest_batch_id)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending_fetch', $9)
                  ON CONFLICT (tenant_id, external_id) DO NOTHING`,
-                [tenantId, meta.externalDocId, documentId, loanId, meta.sourceUrl, meta.fileName, ingestBatchId],
+                [tenantId, meta.externalDocId, documentId, loanId, meta.sourceUrl, meta.fileName, meta.docType, source, ingestBatchId],
               );
               return r.rowCount ?? 0;
             });
