@@ -169,6 +169,41 @@ describe("doc-fetch-dispatcher dispatchAddDocument contract", () => {
   });
 });
 
+describe("doc-fetch-dispatcher post-fetch error handling", () => {
+  it("records failure when uploadToStorage throws after a successful fetch (Codex round-3 P2)", async () => {
+    const externalId = `DOC-POST-FAIL-${randomUUID().slice(0, 8)}`;
+    await withDb(async (c) => {
+      await c.query(
+        `INSERT INTO ingested_documents
+           (tenant_id, external_id, document_id, loan_id, source_url, file_name, status, ingest_batch_id, doc_type, source_name)
+         VALUES ($1, $2, 'post-fail-id', 'L-1', 'https://docs.example.com/post-fail', 'pf.pdf', 'pending_fetch', $3, 'Other', 'npnqm-portal')`,
+        [T, externalId, BATCH],
+      );
+    });
+    const deps: FetchBatchDeps = {
+      safeFetch: async () => ({ ok: true, bytes: new Uint8Array([1, 2, 3]), contentType: "application/pdf" }),
+      uploadToStorage: async () => { throw new Error("supabase storage outage simulated"); },
+      dispatchAddDocument: async () => undefined,
+      enqueueRefire: async () => undefined,
+      loadAdapterConfig: async () => ({ allowedFetchHosts: ["docs.example.com"], maxFileBytes: 50_000_000, identityPrefix: "QL-" }),
+    };
+    const result = await processOneFetchBatch(deps, 10);
+    expect(result.failed).toBeGreaterThanOrEqual(1);
+    // Verify the row has attempts>=1 and next_attempt_at is in the future (back-off applied).
+    const row = await withDb(async (c) => {
+      const { rows } = await c.query<{ status: string; attempts: number; failed_reason: string | null; next_attempt_at: Date }>(
+        `SELECT status, attempts, failed_reason, next_attempt_at FROM ingested_documents WHERE tenant_id=$1 AND external_id=$2`,
+        [T, externalId],
+      );
+      return rows[0]!;
+    });
+    expect(row.status).toBe("pending_fetch");
+    expect(row.attempts).toBe(1);
+    expect(row.failed_reason).toBe("post_fetch_error");
+    expect(row.next_attempt_at.getTime()).toBeGreaterThan(Date.now() + 30_000); // first backoff is 60s
+  });
+});
+
 describe("doc-fetch-dispatcher RLS", () => {
   it("worker can claim pending_fetch rows across tenants via withDb (RLS does not block)", async () => {
     const externalId = `DOC-RLS-PROBE-${randomUUID().slice(0, 8)}`;

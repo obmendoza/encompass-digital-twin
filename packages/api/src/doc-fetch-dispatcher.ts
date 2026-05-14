@@ -99,18 +99,25 @@ async function processRow(row: PendingRow, deps: FetchBatchDeps): Promise<boolea
     return false;
   }
   const storageKey = `loan-documents/${row.tenant_id}/${row.loan_id}/${row.document_id}`;
-  const upload = await deps.uploadToStorage(storageKey, fetched.bytes, fetched.contentType);
-  // dispatchAddDocument is dependency-injected; Task 16 wires real store via closure.
-  await deps.dispatchAddDocument(
-    null as unknown as Store,
-    row.tenant_id, row.loan_id, row.document_id, row.file_name, upload.url,
-    fetched.bytes.byteLength, fetched.contentType, row.doc_type,
-  );
-  await markFetched(row);
-  incMetric("success:ok");
-  docFetchMetrics.bytes_total += fetched.bytes.byteLength;
-  await deps.enqueueRefire(row.tenant_id, row.loan_id, "doc_added", 30);
-  return true;
+  try {
+    const upload = await deps.uploadToStorage(storageKey, fetched.bytes, fetched.contentType);
+    // dispatchAddDocument is dependency-injected; Task 16 wires real store via closure.
+    await deps.dispatchAddDocument(
+      null as unknown as Store,
+      row.tenant_id, row.loan_id, row.document_id, row.file_name, upload.url,
+      fetched.bytes.byteLength, fetched.contentType, row.doc_type,
+    );
+    await markFetched(row);
+    incMetric("success:ok");
+    docFetchMetrics.bytes_total += fetched.bytes.byteLength;
+    await deps.enqueueRefire(row.tenant_id, row.loan_id, "doc_added", 30);
+    return true;
+  } catch (e) {
+    const msg = (e instanceof Error ? e.message : String(e)).slice(0, 500);
+    incMetric("fail:post_fetch_error");
+    await recordFailure(row, "post_fetch_error", msg);
+    return false;
+  }
 }
 
 export function classifyFailure(reason: string): string {
