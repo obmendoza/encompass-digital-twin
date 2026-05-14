@@ -1,5 +1,21 @@
-import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import { dirname, resolve as resolvePath } from "node:path";
+import { fileURLToPath } from "node:url";
+
+if (!process.env.DATABASE_URL) {
+  const here = dirname(fileURLToPath(import.meta.url));
+  try {
+    for (const line of readFileSync(resolvePath(here, "../.env"), "utf8").split("\n")) {
+      const m = line.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/);
+      if (m && !process.env[m[1]]) process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
+    }
+  } catch { /* */ }
+}
+
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { withDb, closePool } from "../src/db/pool.js";
 import { buildLoanContextFromLoan } from "../src/routes/predict-conditions-context-builder.js";
+import { writeExtrasFirstWriteWins } from "../src/ingestion/loan-context-extras.js";
 import type { Loan } from "@twin/core";
 
 function makeLoan(overrides: Partial<Loan> = {}): Loan {
@@ -37,8 +53,8 @@ function makeLoan(overrides: Partial<Loan> = {}): Loan {
 }
 
 describe("buildLoanContextFromLoan — PC v2 field population", () => {
-  it("populates the v2 numeric fields from loan.transaction / credit / qualifying / assets", () => {
-    const ctx = buildLoanContextFromLoan(makeLoan());
+  it("populates the v2 numeric fields from loan.transaction / credit / qualifying / assets", async () => {
+    const ctx = await buildLoanContextFromLoan(makeLoan());
     expect(ctx.repFico).toBe(720);
     expect(ctx.ltv).toBe(75);
     expect(ctx.loanAmount).toBe(500000);
@@ -49,8 +65,8 @@ describe("buildLoanContextFromLoan — PC v2 field population", () => {
     expect(ctx.noteRate).toBe(7.5);
   });
 
-  it("preserves PC v1 fields unchanged", () => {
-    const ctx = buildLoanContextFromLoan(makeLoan());
+  it("preserves PC v1 fields unchanged", async () => {
+    const ctx = await buildLoanContextFromLoan(makeLoan());
     expect(ctx.program).toBe("Flex Select");
     expect(ctx.occupancy).toBe("primary");
     expect(ctx.state).toBe("CA");
@@ -58,10 +74,56 @@ describe("buildLoanContextFromLoan — PC v2 field population", () => {
     expect(ctx.citizenship).toBe("US Citizen");
   });
 
-  it("leaves repFico undefined when loan.credit.repScore is null", () => {
+  it("leaves repFico undefined when loan.credit.repScore is null", async () => {
     const loan = makeLoan();
     loan.credit = { ...loan.credit, repScore: null };
-    const ctx = buildLoanContextFromLoan(loan);
+    const ctx = await buildLoanContextFromLoan(loan);
     expect(ctx.repFico).toBeUndefined();
+  });
+});
+
+// ── Extras-merge tests (Task 10) ─────────────────────────────────────────────
+
+const T = "5d175193-6ee2-4d6a-b16e-ee00ee00ee03";
+
+beforeAll(async () => {
+  await withDb(async (c) => {
+    await c.query(
+      `INSERT INTO tenants (id, name, slug, status, type)
+       VALUES ($1, 'CB Test', 'cb-test', 'active', 'demo')
+       ON CONFLICT (id) DO NOTHING`,
+      [T],
+    );
+    await c.query(`DELETE FROM loan_context_extras WHERE tenant_id = $1`, [T]);
+  });
+});
+afterAll(async () => {
+  await withDb(async (c) => {
+    await c.query(`DELETE FROM loan_context_extras WHERE tenant_id = $1`, [T]);
+  });
+  await closePool();
+});
+
+describe("buildLoanContextFromLoan — extras merge", () => {
+  const makeExtrasLoan = () =>
+    makeLoan({
+      id: "CB-1",
+      tenantId: T,
+    });
+
+  it("extras-absent: falls back to Loan-derived defaults", async () => {
+    const ctx = await buildLoanContextFromLoan(makeExtrasLoan());
+    // county defaults to "" (fail-closed sentinel) when no extras present
+    expect(ctx.county).toBe("");
+    // repFico comes from loan.credit.repScore when extras is absent
+    expect(ctx.repFico).toBe(720);
+  });
+
+  it("extras-present: extras override Loan-derived defaults", async () => {
+    await writeExtrasFirstWriteWins(T, "CB-1", { repFico: 750, county: "King County", isItin: false });
+    const ctx = await buildLoanContextFromLoan(makeExtrasLoan());
+    expect(ctx.repFico).toBe(750);
+    expect(ctx.county).toBe("King County");
+    expect(ctx.isItin).toBe(false);
   });
 });

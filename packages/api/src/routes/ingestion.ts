@@ -209,13 +209,12 @@ export function registerIngestionRoutes(app: FastifyInstance, store: Store): voi
             );
           });
 
-          // PC v2 auto-fire — best-effort. NOTE: the context-builder is still
-          // synchronous in this task; Task 10 makes it async. Keep the existing
-          // sync call shape for now — Task 10 will update this.
+          // PC v2 auto-fire — best-effort. Context-builder is now async
+          // (Task 10) and merges loan_context_extras populated by the adapter.
           try {
             const { run: runPredictions } = await import("../services/predict-conditions/index.js");
             const { buildLoanContextFromLoan } = await import("./predict-conditions-context-builder.js");
-            const ctx = buildLoanContextFromLoan(loan);
+            const ctx = await buildLoanContextFromLoan(loan);
             await runPredictions(tenantId, loanId, ctx, "system:loan-ingest");
           } catch (err) {
             req.log?.error?.({ err, tenantId, loanId, errorId }, "[predict-conditions] auto-fire error");

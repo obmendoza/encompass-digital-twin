@@ -4,8 +4,9 @@
 
 import type { Loan } from "@twin/core";
 import type { LoanContext } from "../services/doc-requirements.js";
+import { loadExtras } from "../ingestion/loan-context-extras.js";
 
-export function buildLoanContextFromLoan(loan: Loan): LoanContext {
+export async function buildLoanContextFromLoan(loan: Loan): Promise<LoanContext> {
   const borrowerType = loan.qualifyingMethod === "TraditionalDocs" ? "W2" : "Self-Employed";
   const citizenship = "US Citizen";
   const incomeDocType =
@@ -33,7 +34,7 @@ export function buildLoanContextFromLoan(loan: Loan): LoanContext {
         : loan.transaction.loanPurpose === "Refi-CO"
           ? "Cash-Out Refinance"
           : undefined;
-  return {
+  const base: LoanContext = {
     // ── PC v1 fields (unchanged) ──
     incomeDocType,
     borrowerType,
@@ -62,4 +63,14 @@ export function buildLoanContextFromLoan(loan: Loan): LoanContext {
     reservesMonths: loan.assets.reservesMonths,
     noteRate: loan.transaction.noteRate,
   };
+  if (!loan.tenantId) return base;
+  const extras = await loadExtras(loan.tenantId, loan.id);
+  if (!extras) return base;
+  // Override base fields with non-undefined values from extras. Extras are
+  // populated by adapters during ingestion (Task 8/9) and carry real county,
+  // repFico, isItin, etc. that the Loan domain type cannot represent directly.
+  const overrides = Object.fromEntries(
+    Object.entries(extras).filter(([, v]) => v !== undefined),
+  ) as Partial<LoanContext>;
+  return { ...base, ...overrides };
 }

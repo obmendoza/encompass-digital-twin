@@ -63,7 +63,7 @@ export function registerPredictConditionsRoutes(app: FastifyInstance, store: Sto
       const ctx = getTenantContext();
       const { loanId } = req.params;
       const loan = requireLoanForTenant(store, loanId);
-      const context = buildLoanContext(loan);
+      const context = await buildLoanContext(loan);
       // Wrap run() in try/catch for symmetry with the other mutation routes.
       // run() catches its own resolver errors and writes prediction_alerts
       // rows, so this catch only fires on truly unexpected failures (DB
