@@ -18,6 +18,18 @@ const BodySchema = z.object({
   analysisOutput: z.unknown(),
 });
 
+export const portalMetrics = {
+  eligibility_disagreements_total: new Map<string, number>(),
+};
+
+function incrementEligibilityDisagreement(program: string, portalStatus: string, pcV2Status: string): void {
+  const key = `${program}|${portalStatus}|${pcV2Status}`;
+  portalMetrics.eligibility_disagreements_total.set(
+    key,
+    (portalMetrics.eligibility_disagreements_total.get(key) ?? 0) + 1,
+  );
+}
+
 export function registerAnalysisOutputIngestRoutes(app: FastifyInstance, store: Store): void {
   app.post<{ Params: { tenantSlug: string } }>(
     "/api/ingest/:tenantSlug/analysis-output",
@@ -188,6 +200,53 @@ export function registerAnalysisOutputIngestRoutes(app: FastifyInstance, store: 
             pcV2Triggered = true;
           } catch (err) {
             req.log?.error?.({ err, tenantId, loanId, errorId }, "[predict-conditions] auto-fire after analysis-output failed");
+          }
+
+          // Eligibility-disagreement detection (Spec 1.5 §7.1).
+          // For each program in the portal verdict, check whether PC v2's
+          // matrix-resolver emitted a row mentioning that program. A row
+          // means PC v2 thinks the program FAILS; absence means PC v2 thinks
+          // it PASSES. Disagreement → audit + metric.
+          if (pcV2Triggered) {
+            try {
+              const pcMatrixFindings = await withTenantTx(tenantId, async (c) => {
+                const { rows } = await c.query<{ description: string }>(
+                  `SELECT description FROM predicted_conditions
+                    WHERE tenant_id=$1 AND loan_id=$2 AND source_list='matrix'
+                      AND status='pending' AND superseded_at IS NULL`,
+                  [tenantId, loanId],
+                );
+                return rows;
+              });
+              for (const portalProgram of result.eligibilityVerdict.perProgram) {
+                const pcSaidFail = pcMatrixFindings.some((f) =>
+                  f.description.includes(portalProgram.program),
+                );
+                const pcStatus: "PASS" | "FAIL" = pcSaidFail ? "FAIL" : "PASS";
+                if (pcStatus !== portalProgram.status) {
+                  await withTenantTx(tenantId, async (c) => {
+                    await c.query(
+                      `INSERT INTO tenant_audit_log (target_tenant_id, actor_id, action, reason, metadata)
+                       VALUES ($1, 'system:eligibility-comparator', 'eligibility.disagreement', $2, $3::jsonb)`,
+                      [
+                        tenantId,
+                        `portal ${portalProgram.status} vs pc_v2 ${pcStatus} on ${portalProgram.program}`,
+                        JSON.stringify({
+                          program: portalProgram.program,
+                          portal_status: portalProgram.status,
+                          pc_v2_status: pcStatus,
+                          loan_id: loanId,
+                          analysis_hash: analysisHash,
+                        }),
+                      ],
+                    );
+                  });
+                  incrementEligibilityDisagreement(portalProgram.program, portalProgram.status, pcStatus);
+                }
+              }
+            } catch (err) {
+              req.log?.error?.({ err, tenantId, loanId }, "[eligibility-disagreement] failed to compute");
+            }
           }
 
           return reply.code(201).send({

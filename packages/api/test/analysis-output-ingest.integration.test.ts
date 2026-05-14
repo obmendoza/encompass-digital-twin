@@ -155,3 +155,74 @@ describe("POST /api/ingest/:tenantSlug/analysis-output", () => {
     expect(JSON.parse(res.body).error_class).toBe("unknown_adapter_type");
   });
 });
+
+describe("POST /analysis-output — eligibility disagreement audit", () => {
+  it("emits action='eligibility.disagreement' when portal and PC v2 disagree", { timeout: 90000 }, async () => {
+    // Seed an active KB version so PC v2 auto-fire runs (pcV2Triggered=true).
+    // Even if PC v2 returns an alert (e.g. IncomeTypeUnresolvedError) it still
+    // sets pcV2Triggered=true and produces no matrix rows → PCv2 considers all
+    // programs PASS. Programs the portal marks FAIL then disagree with PCv2.
+    await withDb(async (c) => {
+      await c.query(
+        `INSERT INTO kb_versions (tenant_id, version, status, source_documents)
+           VALUES ($1, 1, 'active', '{"kind":"test"}'::jsonb)
+         ON CONFLICT DO NOTHING`,
+        [T],
+      );
+    });
+
+    // Build a payload based on the aubrey sample but with explicit per-program
+    // eligibility verdicts: portal says "Investor DSCR No Ratio" is FAIL and
+    // "Investor DSCR" is PASS. PCv2 (no matrix findings) says both are PASS.
+    // → "Investor DSCR No Ratio" disagrees (portal FAIL ≠ pc_v2 PASS).
+    const sample = loadSample("aubrey_output.json") as Record<string, unknown>;
+    const payload = {
+      ...sample,
+      scenario_summary: {
+        ...(sample.scenario_summary as Record<string, unknown>),
+        eligible_programs: ["Investor DSCR"],
+        ineligible_programs: ["Investor DSCR No Ratio"],
+        program_eligibility_detail: {
+          "Investor DSCR": {
+            status: "PASS",
+            passed_count: 5,
+            failed_count: 0,
+            failed_rules: [],
+          },
+          "Investor DSCR No Ratio": {
+            status: "FAIL",
+            passed_count: 3,
+            failed_count: 2,
+            failed_rules: [{ requirement: "DSCR >= 1.25", message: "DSCR 0.9 < 1.25" }],
+          },
+        },
+      },
+    };
+
+    const ingestRes = await app.inject({
+      method: "POST", url: "/api/ingest/ao-test/analysis-output",
+      headers: { authorization: `Bearer ${KEY}` },
+      payload: { source: "npnqm-portal", externalId: "DISAGREE-1", analysisOutput: payload },
+    });
+    expect(ingestRes.statusCode).toBe(201);
+    const ingestBody = JSON.parse(ingestRes.body) as { pcV2Triggered: boolean };
+    // pcV2Triggered must be true for the disagreement detection block to run.
+    expect(ingestBody.pcV2Triggered).toBe(true);
+
+    const { rows } = await withDb(async (c) => c.query<{ count: number }>(
+      `SELECT COUNT(*)::int AS count FROM tenant_audit_log
+        WHERE target_tenant_id=$1 AND action='eligibility.disagreement'
+          AND metadata->>'loan_id' = 'NPNQM-DISAGREE-1'`,
+      [T],
+    ));
+    expect(rows[0]!.count).toBeGreaterThanOrEqual(1);
+  });
+
+  it("/system/portal-metrics exposes the disagreement counter", async () => {
+    const res = await app.inject({ method: "GET", url: "/system/portal-metrics" });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body) as { eligibility_disagreements_total: Record<string, number> };
+    expect(body.eligibility_disagreements_total).toBeDefined();
+    expect(typeof body.eligibility_disagreements_total).toBe("object");
+  });
+});
