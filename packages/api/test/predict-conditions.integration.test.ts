@@ -256,5 +256,12 @@ describe("predict-conditions HTTP integration — two-source coexistence (Spec 1
     const sourceMap = Object.fromEntries(rows.map((r) => [r.source_list, r.count]));
     // Portal-llm row must survive PC v2's auto-fire (Task 7's scoped DELETE fix).
     expect(sourceMap["portal-llm"]).toBeGreaterThan(0);
+    // Also verify PC v2 emitted at least one row from its own sources.
+    // If PC v2 silently no-ops (e.g., IncomeTypeUnresolvedError), the
+    // scoped-DELETE protection becomes meaningless — there's nothing to be
+    // protected against. Acceptance criterion §13 #3 says BOTH source
+    // families coexist.
+    const pcSources = Object.keys(sourceMap).filter((s) => s !== "portal-llm");
+    expect(pcSources.length).toBeGreaterThan(0);
   });
 });
