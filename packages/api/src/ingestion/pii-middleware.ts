@@ -1,24 +1,9 @@
 import type { FastifyRequest, FastifyReply } from "fastify";
-
-const SSN_DASHED = /^\d{3}-\d{2}-(\d{4})$/;
-const SSN_RAW = /^\d{9}$/;
-const SSN_DASHED_INLINE = /\b\d{3}-\d{2}-(\d{4})\b/g;
-const SSN_RAW_INLINE = /\b\d{9}\b/g;
-
-function maskValue(s: string): string {
-  let m = s.match(SSN_DASHED);
-  if (m) return `xxx-xx-${m[1]}`;
-  m = s.match(SSN_RAW);
-  if (m) return `xxx-xx-${s.slice(-4)}`;
-  // Inline match (embedded in a longer string).
-  let out = s.replace(SSN_DASHED_INLINE, (_, last4) => `xxx-xx-${last4}`);
-  out = out.replace(SSN_RAW_INLINE, (match) => `xxx-xx-${match.slice(-4)}`);
-  return out;
-}
+import { redactText } from "../learning/pii-redactor.js";
 
 function walk(node: unknown): unknown {
   if (node === null || typeof node !== "object") {
-    return typeof node === "string" ? maskValue(node) : node;
+    return typeof node === "string" ? redactText(node).redacted : node;
   }
   if (Array.isArray(node)) {
     return node.map(walk);
@@ -30,7 +15,7 @@ function walk(node: unknown): unknown {
   return out;
 }
 
-/** Deep-clones + redacts SSN-shaped strings. Non-mutating. */
+/** Deep-clones + redacts PII strings (SSN, email, phone, address, DOB). Non-mutating. */
 export function redactPayload(input: unknown): unknown {
   return walk(input);
 }

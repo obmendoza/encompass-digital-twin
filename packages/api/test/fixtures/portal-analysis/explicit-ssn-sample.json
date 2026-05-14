@@ -1,4 +1,5 @@
 {
+  "_comment": "SSN '123456789' is redacted to '[REDACTED_SSN]' by pii-middleware via learning/pii-redactor.redactText",
   "source": "npnqm-portal",
   "externalId": "TEST-SSN-001",
   "analysisOutput": {

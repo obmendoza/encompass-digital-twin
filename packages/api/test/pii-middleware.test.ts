@@ -6,17 +6,17 @@ import { fileURLToPath as ftu2 } from "node:url";
 import { redactPayload, redactPayloadMiddleware } from "../src/ingestion/pii-middleware.js";
 
 describe("redactPayload", () => {
-  it("masks 9-digit SSN values keeping last 4 digits", () => {
+  it("masks 9-digit SSN values as [REDACTED_SSN]", () => {
     const input = { borrower: { ssn: "605827691", name: "Test User" } };
     const out = redactPayload(input) as typeof input;
-    expect(out.borrower.ssn).toBe("xxx-xx-7691");
+    expect(out.borrower.ssn).toBe("[REDACTED_SSN]");
     expect(out.borrower.name).toBe("Test User");
   });
 
-  it("masks dashed SSN (123-45-6789)", () => {
+  it("masks dashed SSN (123-45-6789) as [REDACTED_SSN]", () => {
     const input = { borrower: { ssn: "123-45-6789" } };
     const out = redactPayload(input) as typeof input;
-    expect(out.borrower.ssn).toBe("xxx-xx-6789");
+    expect(out.borrower.ssn).toBe("[REDACTED_SSN]");
   });
 
   it("recurses into nested arrays", () => {
@@ -31,8 +31,8 @@ describe("redactPayload", () => {
       },
     };
     const out = redactPayload(input) as typeof input;
-    expect(out.analysisOutput.scenario_summary.borrowers[0]!.ssn).toBe("xxx-xx-6789");
-    expect(out.analysisOutput.scenario_summary.borrowers[1]!.ssn).toBe("xxx-xx-4321");
+    expect(out.analysisOutput.scenario_summary.borrowers[0]!.ssn).toBe("[REDACTED_SSN]");
+    expect(out.analysisOutput.scenario_summary.borrowers[1]!.ssn).toBe("[REDACTED_SSN]");
   });
 
   it("preserves non-SSN strings unchanged", () => {
@@ -78,7 +78,7 @@ describe("redactPayloadMiddleware", () => {
     } as never;
     const reply = {} as never;
     await redactPayloadMiddleware(req, reply);
-    expect((req as { body: { borrower: { ssn: string } } }).body.borrower.ssn).toBe("xxx-xx-6789");
+    expect((req as { body: { borrower: { ssn: string } } }).body.borrower.ssn).toBe("[REDACTED_SSN]");
   });
 
   it("skips non-/api/ingest paths", async () => {
