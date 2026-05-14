@@ -24,6 +24,7 @@ import { registerSystemCheckRoutes } from "./routes/system-check.js";
 import { registerTenantRoutes } from "./routes/tenants.js";
 import { registerGuidelineRoutes } from "./routes/guidelines.js";
 import { registerIngestionRoutes } from "./routes/ingestion.js";
+import { registerDocumentsIngestRoutes } from "./routes/documents-ingest.js";
 import { registerWsRoutes, getWsClientCount } from "./routes/ws.js";
 import { buildOpenApiSpec } from "./openapi.js";
 import * as persistence from "./persistence.js";
@@ -89,6 +90,7 @@ export function buildServer(opts: BuildOpts = {}): { app: FastifyInstance; store
   registerTenantRoutes(app);
   registerGuidelineRoutes(app);
   registerIngestionRoutes(app, store);
+  registerDocumentsIngestRoutes(app);
   registerLearningMetricsRoutes(app);
   registerPatternRoutes(app);
   registerApiKeyRoutes(app);
