@@ -13,11 +13,11 @@ interface Props {
 }
 
 function promptForDismissReason(): string | null {
-  if (typeof window === "undefined") return "uw_not_required"; // SSR fallback
-  const r = window.prompt("Dismiss reason (e.g., 'doc not required', 'borrower exempt'):");
-  if (r === null) return null; // operator cancelled
-  if (r.trim().length < 4) {
-    alert("Reason must be at least 4 characters.");
+  if (typeof window === "undefined") return null; // SSR — caller decides
+  const r = window.prompt("Dismiss reason (10+ characters, e.g., 'doc not required for this loan'):");
+  if (r === null) return null; // cancelled
+  if (r.trim().length < 10) {
+    alert("Reason must be at least 10 characters (matches server validation).");
     return null;
   }
   return r.trim();
@@ -80,6 +80,24 @@ export function GroupedConditionCard({ group, mode, driftProgram = null, onAccep
     });
   };
 
+  const handlePerRowDismiss = (predictionId: string): void => {
+    const reason = promptForDismissReason();
+    if (reason === null) return;
+    setError(null);
+    start(async () => {
+      const r = await onDismiss(predictionId, reason);
+      if (!r.ok) setError(`Dismiss failed: ${"error" in r ? r.error : "unknown"}`);
+    });
+  };
+
+  const handlePerRowAccept = (predictionId: string): void => {
+    setError(null);
+    start(async () => {
+      const r = await onAccept(predictionId);
+      if (!r.ok) setError(`Accept failed: ${"error" in r ? r.error : "unknown"}`);
+    });
+  };
+
   const hasDrift = mode === "drift" && driftProgram !== null;
 
   return (
@@ -109,7 +127,7 @@ export function GroupedConditionCard({ group, mode, driftProgram = null, onAccep
 
       {mode === "curation"
         ? renderCuration(group, meta)
-        : renderDrift(group, onAccept, onDismiss)}
+        : renderDrift(group, handlePerRowAccept, handlePerRowDismiss)}
 
       {error && <div className="text-[11px] text-[#8a1a1a] mt-1">{error}</div>}
 
@@ -159,8 +177,8 @@ function renderCuration(group: PredictionGroup, meta: PortalMetadata | null): JS
 
 function renderDrift(
   group: PredictionGroup,
-  onAccept: Props["onAccept"],
-  onDismiss: Props["onDismiss"],
+  onAccept: (predictionId: string) => void,
+  onDismiss: (predictionId: string) => void,
 ): JSX.Element {
   return (
     <div className="grid grid-cols-2 gap-2 text-[11px]">
@@ -170,10 +188,7 @@ function renderDrift(
           <div>{group.portalRow.description}</div>
           <div className="flex gap-1 mt-1">
             <button className="enc-btn" aria-label="Accept portal-llm row" onClick={() => onAccept(group.portalRow!.id)}>Accept</button>
-            <button className="enc-btn" aria-label="Dismiss portal-llm row" onClick={() => {
-              const reason = promptForDismissReason();
-              if (reason !== null) onDismiss(group.portalRow!.id, reason);
-            }}>Dismiss</button>
+            <button className="enc-btn" aria-label="Dismiss portal-llm row" onClick={() => onDismiss(group.portalRow!.id)}>Dismiss</button>
           </div>
         </div>
       )}
@@ -184,10 +199,7 @@ function renderDrift(
             <div>{row.description}</div>
             <div className="flex gap-1 mt-1">
               <button className="enc-btn" aria-label={`Accept ${row.source_list} row`} onClick={() => onAccept(row.id)}>Accept</button>
-              <button className="enc-btn" aria-label={`Dismiss ${row.source_list} row`} onClick={() => {
-                const reason = promptForDismissReason();
-                if (reason !== null) onDismiss(row.id, reason);
-              }}>Dismiss</button>
+              <button className="enc-btn" aria-label={`Dismiss ${row.source_list} row`} onClick={() => onDismiss(row.id)}>Dismiss</button>
             </div>
           </div>
         ))}

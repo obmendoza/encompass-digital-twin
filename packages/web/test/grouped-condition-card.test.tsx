@@ -125,12 +125,12 @@ describe("GroupedConditionCard — dismiss reason picker (I1+I2)", () => {
   afterEach(() => vi.restoreAllMocks());
 
   it("calls onDismiss with operator-supplied reason when prompt returns a valid string", async () => {
-    vi.spyOn(window, "prompt").mockReturnValue("borrower exempt");
+    vi.spyOn(window, "prompt").mockReturnValue("borrower exempt from requirement");
     const onAccept = vi.fn(async () => ({ ok: true }));
     const onDismiss = vi.fn(async () => ({ ok: true }));
     render(<GroupedConditionCard group={mkGroup()} mode="curation" onAccept={onAccept} onDismiss={onDismiss} />);
     fireEvent.click(screen.getByRole("button", { name: /^Dismiss$/ }));
-    await waitFor(() => expect(onDismiss).toHaveBeenCalledWith("p1", "borrower exempt"));
+    await waitFor(() => expect(onDismiss).toHaveBeenCalledWith("p1", "borrower exempt from requirement"));
   });
 
   it("does not call onDismiss when operator cancels prompt (null)", async () => {
@@ -143,7 +143,7 @@ describe("GroupedConditionCard — dismiss reason picker (I1+I2)", () => {
     expect(onDismiss).not.toHaveBeenCalled();
   });
 
-  it("does not call onDismiss when reason is too short (< 4 chars)", async () => {
+  it("does not call onDismiss when reason is too short (< 10 chars)", async () => {
     vi.spyOn(window, "prompt").mockReturnValue("no");
     vi.spyOn(window, "alert").mockImplementation(() => {});
     const onAccept = vi.fn(async () => ({ ok: true }));
