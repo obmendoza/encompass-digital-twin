@@ -7,6 +7,8 @@
 - [PC v2 Pre-Underwriter Design](2026-05-14-pc-v2-pre-underwriter-design.md) — PC v2 emission semantics
 - [NPNQM Ingestion Framework](2026-05-14-ingestion-framework-design.md) — overall architecture
 
+**Platform precondition:** `x-user-role` request header is set by `packages/web/middleware.ts` from the Supabase `user_roles` table (see `packages/web/lib/auth.ts`). This UI consumes the header as-is.
+
 ---
 
 ## 1. Goal
@@ -49,6 +51,8 @@ packages/web/components/encompass/PredictedConditionsPanel.tsx  (modify)
     ├── Drift mode: both expanded side-by-side; per-row Accept/Dismiss
     └── group-level Accept/Dismiss (orchestrates per-row API calls)
 ```
+
+`GroupedConditionCard` preserves the keyboard-nav patterns of the existing `PredictedConditionsPanel` cards (focus management, j/k navigation, a/d shortcuts) IF they exist. Verify against the current component at implementation time; do not regress.
 
 Page route stays unchanged: `packages/web/app/loan/[loanId]/predictions/page.tsx` (server component) feeds the panel as today. The server component reads `searchParams.view` + `x-user-role` header to pick the default mode and passes it down.
 
@@ -132,6 +136,12 @@ Pure function. No DB calls, no side effects. Pending rows only — accepted/dism
 **URL param:** `?view=curation|drift`. Server-component reads `searchParams.view` and `x-user-role` header:
 
 ```ts
+// `x-user-role` is set upstream by packages/web/middleware.ts:38, which
+// reads the role from the Supabase user_roles table via packages/web/lib/auth.ts.
+// If a request reaches this server component without the header (auth misconfiguration,
+// new route forgetting middleware coverage), default to "operator" — the Curation
+// mode is the safer fallback because it doesn't expose the diagnostic Drift surface
+// to users whose role hasn't been resolved.
 const explicitView = searchParams.view;
 const role = headers["x-user-role"] ?? "operator";
 const mode: "curation" | "drift" =
@@ -193,6 +203,10 @@ Two-column. Per-row accept/dismiss visible on each side. Group-level Accept stil
 ### 5.1 Group-level Accept (recommended-accept-portal-dismiss-pc)
 
 ```ts
+const [partialFailures, setPartialFailures] = useState<
+  Map<string, { groupKey: string; failedPcRowIds: string[] }>
+>(new Map());
+
 async function handleGroupAccept(group: PredictionGroup): Promise<void> {
   setError(null);
   startTransition(async () => {
@@ -203,17 +217,47 @@ async function handleGroupAccept(group: PredictionGroup): Promise<void> {
       const r = await actionAcceptPrediction(loanId, group.rows[0]!.id);
       if (!r.ok) { setError(`Accept failed: ${r.error}`); return; }
     }
+    const failed: string[] = [];
     for (const pcRow of group.pcV2Rows) {
-      if (!group.portalRow) continue;  // single-source: nothing to dismiss
+      if (!group.portalRow) continue;
       const r = await actionDismissPrediction(loanId, pcRow.id, "duplicate_of_portal");
-      if (!r.ok) console.warn(`[predictions] dismiss-as-duplicate failed for ${pcRow.id}:`, r.error);
+      if (!r.ok) failed.push(pcRow.id);
+    }
+    if (failed.length > 0) {
+      setPartialFailures((prev) => {
+        const next = new Map(prev);
+        next.set(group.normalizedKey, { groupKey: group.normalizedKey, failedPcRowIds: failed });
+        return next;
+      });
     }
     router.refresh();
   });
 }
 ```
 
-Accept the portal row (richer metadata becomes the canonical condition for downstream Spec 2 writeback). Then dismiss every parallel PC v2 row with `reason='duplicate_of_portal'`. Dismissal failures are logged but non-fatal — the portal accept already succeeded and is the load-bearing action.
+Accept the portal row (richer metadata becomes the canonical condition for downstream Spec 2 writeback). Then dismiss every parallel PC v2 row with `reason='duplicate_of_portal'`. Dismissal failures are tracked in the `partialFailures` Map (keyed by `normalizedKey`) rather than silently logged — the portal accept already succeeded and is the load-bearing action, but leftover PC v2 rows would render as phantom single-source cards on next render without the cleanup-failure banner in §5.1.1.
+
+**Loading state during the transition.** The group card renders with `aria-busy={isPending}` and `className={isPending ? "opacity-60 pointer-events-none" : ""}` while the accept-then-dismiss sequence is in flight (~150ms × N rows). Without this, operator clicks Accept and sees no UI change for the ~450ms median sequence — risk of double-click and confusion. The existing `useTransition()` hook surfaces `isPending` cleanly; no new state needed.
+
+### 5.1.1 Cleanup retry affordance
+
+When `handleGroupAccept` produces partial failures, the panel renders a banner above the predictions list:
+
+```
+⚠ Accept succeeded but cleanup incomplete.
+   1 duplicate row failed to dismiss for "Credit Report".
+   [ Retry cleanup ]  [ Dismiss as-is ]
+```
+
+The banner is sourced from the `partialFailures` Map. One banner per failed group; banners stack if multiple groups have unresolved cleanup.
+
+**Retry cleanup** re-issues `actionDismissPrediction` for each `failedPcRowIds` entry. Same `reason='duplicate_of_portal'`. On success, the entry is removed from `partialFailures` and `router.refresh()` runs. On second failure, the banner stays — operator can retry again or click "Dismiss as-is".
+
+**Dismiss as-is** clears the `partialFailures` entry without re-issuing the API call. The phantom PC v2 cards stay as `status='pending'` until the operator manually dismisses them via the per-card controls (Drift mode) or accepts/dismisses them as standalone predictions. The audit-log entry trail makes this visible to ops.
+
+The banner persists across navigation if `partialFailures` is lifted to a session-storage hook (`use-local-storage` or similar). For v1, in-memory `useState` is acceptable; navigating away loses the warning. Document this trade-off explicitly so operators don't expect cross-page persistence.
+
+If the panel reloads (e.g., browser refresh) and PC v2 rows still match the `failedPcRowIds`, the banner doesn't re-render automatically. Operator's recourse is to use the per-card controls in Drift mode. This is the "if retry also fails" recovery path — not silent, just manual.
 
 ### 5.2 Group-level Dismiss
 
@@ -242,9 +286,9 @@ These rarely appear as operator-selected reasons — they're system-generated fr
 ### 6.1 Banner
 
 ```
-⚠  Eligibility drift: Portal and PC v2 disagree on 2 programs
+⚠  Eligibility drift suspected for 2 programs (heuristic match)
    [Investor DSCR · Flex Plus]
-   View → [Open in Drift mode]
+   View → [Open in Drift mode to verify]
 ```
 
 Renders at the top of the panel (above the mode toggle) when at least one disagreement exists. Server-component query during page load:
@@ -270,6 +314,10 @@ Disagreement = (`portal_status='PASS' AND pc_v2_failed=true`) OR (`portal_status
 
 Banner link: `?view=drift&filter=disagreements` — filters the panel to groups touching the disagreeing programs.
 
+**Heuristic confidence note.** The `description ILIKE` match catches the "no matching tier" matrix finding cleanly (it mentions the program name). It can over-report when a matrix finding about a different aspect (e.g., property collateral restriction) happens to mention a program name. The banner copy includes "heuristic match" + "verify in Drift mode" so operators calibrate expectations. When a future spec lands structured `program` provenance on matrix findings, the heuristic is replaced and the banner becomes authoritative.
+
+**Localization.** Banner copy uses literal strings in v1 (English only). If the platform exposes i18n primitives in the future, the literal copy moves to a localization key.
+
 ### 6.2 Inline drift indicator (Drift mode only)
 
 Each `GroupedConditionCard` carries a `Drift` chip in the header when its document is tied to a disagreeing program:
@@ -282,7 +330,11 @@ Card gets a yellow left border. Chip text: `Drift: Investor DSCR (Portal PASS, P
 
 ### 6.3 Filter param
 
-`?filter=disagreements` (Drift mode only) narrows the rendered groups to those tied to programs in the disagreement set. Implemented as a client-side `predictionGroups.filter(...)` after grouping — no new server query.
+`?filter=disagreements` (Drift mode only) narrows the rendered **pending** groups to those tied to programs in the disagreement set. Implemented as a client-side `predictionGroups.filter(...)` after grouping — no new server query.
+
+**Accepted/dismissed sections** below the pending groups are NOT filtered by the disagreement set. Operator filters intent is "show me what to look at next"; accepted/dismissed history is reference context that helps the operator remember what they've already cleared in this loan.
+
+When the filter is active, render a banner above the pending groups: `Filtered to 2 programs. [View all]`. The "View all" link clears the filter via `?view=drift` (no filter param).
 
 ---
 
@@ -309,10 +361,11 @@ If the existing API surface that `actions.ts` calls returns predictions as a fla
 | Component render | Single-source PC v2 group | Render in both modes; assert no priority badges, no specifications disclosure, no PC v2 chip (nothing to collapse). |
 | Accept flow | `handleGroupAccept` multi-source | Mock `actionAcceptPrediction` + `actionDismissPrediction`; assert portal row accepted FIRST, then each PC v2 row dismissed with `reason='duplicate_of_portal'`. |
 | Accept flow | `handleGroupAccept` single-source | Mock actions; assert only `actionAcceptPrediction` called once, no dismiss calls. |
-| Accept flow | Dismiss failure non-fatal | Mock `actionAcceptPrediction` ok + `actionDismissPrediction` fail; assert `router.refresh()` still called, error not surfaced to operator. |
+| Accept flow | Dismiss failure — cleanup banner renders | Mock `actionAcceptPrediction` ok + `actionDismissPrediction` fail; assert `router.refresh()` still called, `partialFailures` Map has the failed row IDs, cleanup-failure banner renders with Retry cleanup + Dismiss as-is affordances (§5.1.1). |
 | Mode default | Server-component logic | Pure-function test of the mode resolver: `(undefined, "operator") → curation`, `("drift", "operator") → drift`, `(undefined, "va") → drift`. |
 | Banner | Disagreement query | DB-integration test: seed portal_eligibility_verdicts + predicted_conditions, run the query, assert disagreement rows match expected. |
 | Banner | Empty state | Banner not rendered when zero disagreements. |
+| Banner heuristic limitation | Pin test asserting the known under-report | Seed `portal_eligibility_verdicts` with `Investor DSCR: PASS` AND a matrix-resolver finding describing LTV failure (no program name in description). Assert the banner does NOT render. When future spec replaces the heuristic with structured `program` provenance, flip this assertion. |
 | Existing tests | `predicted-conditions-panel.test.tsx` | Must still pass — no regressions to single-source rendering for demo tenants. |
 
 ---
@@ -321,6 +374,7 @@ If the existing API surface that `actions.ts` calls returns predictions as a fla
 
 - **Drift-detection improvement.** The under-reporting heuristic stays the same as Spec 1.5. A future spec adds structured `program` provenance on matrix findings; both UI and backend audit pick up the richer signal automatically when it lands.
 - **Per-user mode preference.** URL param is enough for v1. If product wants "remember my mode choice across sessions" later, add a user-prefs surface.
+- **Mode persistence across navigation.** URL query param is deep-linkable but doesn't survive cross-page navigation (operator clicks to `/loan/X/conditions`, then back → no `?view=drift`, mode resets to role default). Acceptable v1 trade-off; if operators report friction, persist in session storage in a future iteration.
 - **Drift-banner across multiple loans.** This UI is loan-scoped. A "loans with eligibility drift" dashboard is a separate spec.
 - **Real-time updates.** Page is server-rendered; refresh on action. No WebSocket push for live drift updates.
 - **Curation history view.** Accepted/dismissed predictions render in their existing sections; no new "audit trail per condition" UI.
@@ -338,8 +392,10 @@ If the existing API surface that `actions.ts` calls returns predictions as a fla
 | Risk | Mitigation |
 |------|-----------|
 | Banner under-reports drift (same heuristic limitation as backend) | Documented in §6.1; future spec replaces the heuristic with structured `program` provenance — picks up automatically here. |
-| Operator clicks Accept on a multi-source card, dismiss-as-duplicate API fails mid-sequence | Failure logged + surfaced via `console.warn`; portal accept already succeeded; PC v2 row sits as `pending` until the next refresh or a manual dismiss. Operationally noisy but not data-corrupting. |
+| Banner over-reports drift when matrix findings mention program names incidentally | Banner copy includes "heuristic match" qualifier and "verify in Drift mode" callout. Drift mode itself uses the same heuristic for inline indicators but allows operator to inspect specific cards. False-positive cost is operator-confidence erosion; mitigation is honest banner copy. Future spec replaces the heuristic with structured `program` provenance from matrix-resolver. |
+| Group-accept partial failure produces phantom single-source cards on next render | The `partialFailures` Map (§5.1) tracks failed dismiss calls per group. An inline banner above the predictions list surfaces the failure with `Retry cleanup` and `Dismiss as-is` affordances (§5.1.1). Operator gets an immediate visual signal; manual fallback via Drift mode per-card controls if retry exhausts. Cross-page persistence deferred to a future iteration. |
 | Mode toggle URL pollution breaks deep links | URL param is opt-in (default resolved server-side). Existing `/loan/[loanId]/predictions` deep links keep working — they just resolve to role-default mode. |
+| `router.refresh()` after group accept resets scroll position + expanded disclosures | Acceptable for v1; operator's flow is "click Accept → page refreshes → scroll to next pending group." Future iteration could use Next's granular cache invalidation via `revalidateTag` to refresh only the predictions panel data, preserving non-form UI state. |
 | Performance: grouping on a large predictions array (>100 rows) | `Map`-backed grouping is O(N); 100 predictions = sub-millisecond. Not a concern at expected scale (17-35 rows per loan). |
 | Existing panel tests break on the schema widening | `portal_metadata?: PortalMetadata \| null` is additive; existing tests with predictions lacking the field continue to type-check and render. New tests cover the field's presence. |
 | Operator confusion when same condition appears in BOTH a grouped card AND an already-accepted condition (race during multi-row sequence) | The reducer's collision detector prevents the double-write; UI surfaces the resulting error inline. Race window is ~50ms (network RTT × 2). |
@@ -351,11 +407,11 @@ If the existing API surface that `actions.ts` calls returns predictions as a fla
 1. Operator (role `operator`) loads `/loan/[loanId]/predictions` for a loan with both portal-llm and PC v2 rows. The panel defaults to Curation mode. Multi-source groups render as single primary cards with `+N source` chips. Single-source PC v2 groups (demo tenant) render unchanged.
 2. VA (role `va`) loads the same URL. Panel defaults to Drift mode. Multi-source groups render two-column.
 3. `?view=drift` overrides for any role. `?view=curation` overrides for any role.
-4. Accepting a multi-source group's card produces: one `actionAcceptPrediction` call on the portal row + one `actionDismissPrediction` call per PC v2 row with `reason='duplicate_of_portal'`. Audit log shows the matching rows.
+4. Accepting a multi-source group's card produces: one `actionAcceptPrediction` call on the portal row + one `actionDismissPrediction` call per PC v2 row with `reason='duplicate_of_portal'`. Audit log shows the matching rows. **When any dismiss returns `!r.ok`, an inline cleanup-failure banner renders with Retry cleanup + Dismiss as-is affordances** (§5.1.1). Retry re-issues the failed dismisses; Dismiss as-is clears the warning without retrying.
 5. Dismissing a multi-source group mirrors the above with `reason='duplicate_of_portal_dismiss'` on the PC v2 dismissals.
 6. Per-row Accept/Dismiss buttons VISIBLE only in Drift mode; Curation mode hides them.
 7. Eligibility-drift banner renders when at least one `portal_eligibility_verdicts` row disagrees with PC v2 matrix-resolver findings (per the §6.1 heuristic). Banner clicks through to `?view=drift&filter=disagreements`.
-8. Inline drift indicator on cards renders in Drift mode only.
+8. Inline drift indicator on cards renders in Drift mode only. `?filter=disagreements` (Drift mode) narrows pending groups to disagreement-touching ones; accepted/dismissed sections remain unfiltered; "Filtered to N programs" banner with "View all" link renders above the pending groups.
 9. Existing `predicted-conditions-panel.test.tsx` passes unchanged.
 10. Build clean across `@twin/core`, `@twin/api`, `@twin/web`.
 
