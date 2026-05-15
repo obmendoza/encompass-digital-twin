@@ -1,6 +1,6 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -52,6 +52,7 @@ interface Props {
 export function PredictedConditionsPanel({ loanId, predictions, alerts, mode, filter, basePath, driftData }: Props) {
   const router = useRouter();
   const [pending, start] = useTransition();
+  const [panelError, setPanelError] = useState<string | null>(null);
 
   const activeAlerts = alerts.filter((a) => a.cleared_at === null);
   const noKbAlert = activeAlerts.find((a) => a.error_class === "NoActiveKbVersionError");
@@ -66,17 +67,25 @@ export function PredictedConditionsPanel({ loanId, predictions, alerts, mode, fi
   const dismissedItems = predictions.filter((p) => p.status === "dismissed");
 
   const handleRerun = () => {
+    setPanelError(null);
     start(async () => {
       const r = await actionRunPredictions(loanId);
-      if (!r.ok) return;
+      if (!r.ok) {
+        setPanelError(`Re-run failed: ${"error" in r ? r.error : "unknown"}`);
+        return;
+      }
       router.refresh();
     });
   };
 
   const handleClearAlert = (alertId: string) => {
+    setPanelError(null);
     start(async () => {
       const r = await actionClearPredictionAlert(loanId, alertId);
-      if (!r.ok) return;
+      if (!r.ok) {
+        setPanelError(`Clear failed: ${"error" in r ? r.error : "unknown"}`);
+        return;
+      }
       router.refresh();
     });
   };
@@ -84,6 +93,12 @@ export function PredictedConditionsPanel({ loanId, predictions, alerts, mode, fi
   return (
     <div className="enc-panel">
       <h3 className="text-[14px] font-bold text-[#1a2b4a] mb-2">Predicted Conditions</h3>
+
+      {panelError && (
+        <div className="mb-2 p-1 text-[11px] bg-[#fee2e2] border-l-4 border-[#8a1a1a] text-[#8a1a1a]">
+          {panelError}
+        </div>
+      )}
 
       {activeAlerts.length > 0 && (
         <div className="mb-3">
