@@ -57,14 +57,9 @@ export function PredictedConditionsPanel({ loanId, predictions, alerts, mode, fi
   const noKbAlert = activeAlerts.find((a) => a.error_class === "NoActiveKbVersionError");
   const pendingGroups = groupByNormalizedDescription(predictions as GroupingPrediction[]);
 
-  const driftProgramNames = new Set(driftData.programs.map((p) => p.program));
-
   const filteredPendingGroups =
     filter === "disagreements" && mode === "drift"
-      ? pendingGroups.filter((g) => {
-          const desc = g.displayDescription.toLowerCase();
-          return Array.from(driftProgramNames).some((name) => desc.includes(name.toLowerCase()));
-        })
+      ? pendingGroups.filter((g) => findDriftProgram(g, driftData.programs) !== null)
       : pendingGroups;
 
   const acceptedItems = predictions.filter((p) => p.status === "accepted");
