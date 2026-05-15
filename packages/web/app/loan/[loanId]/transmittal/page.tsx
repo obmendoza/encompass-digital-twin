@@ -72,6 +72,13 @@ export default async function TransmittalPage({
     // Best-effort; predictions are auxiliary.
   }
 
+  let driftData: { disagreementCount: number; programs: Array<{ program: string; portalStatus: string; pcV2Status: string }> } = { disagreementCount: 0, programs: [] };
+  try {
+    driftData = await api.getEligibilityDrift(loan.id);
+  } catch {
+    // Best-effort; banner just won't render.
+  }
+
   const openCount = loan.conditions.filter((c) => c.status === "Open").length;
   const rcvdCount = loan.conditions.filter((c) => c.status === "Received").length;
   const clrCount = loan.conditions.filter((c) => c.status === "Cleared").length;
@@ -158,6 +165,7 @@ export default async function TransmittalPage({
         }
         filter={sp.filter === "disagreements" ? "disagreements" : null}
         basePath={`/loan/${loanId}/transmittal`}
+        driftData={driftData}
       />
 
       <div className="mt-2 flex items-center gap-3 p-2 bg-[#f6f8fb] border border-[#6b7a8f]">

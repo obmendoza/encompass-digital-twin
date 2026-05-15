@@ -51,6 +51,7 @@ describe("PredictedConditionsPanel (operator)", () => {
         mode="curation"
         filter={null}
         basePath="/test"
+        driftData={{ disagreementCount: 0, programs: [] }}
       />
     );
     expect(screen.getByText("Initial Loan Application (1003)")).toBeInTheDocument();
@@ -68,6 +69,7 @@ describe("PredictedConditionsPanel (operator)", () => {
         mode="curation"
         filter={null}
         basePath="/test"
+        driftData={{ disagreementCount: 0, programs: [] }}
       />
     );
     expect(screen.getByText(/Alert: NoActiveKbVersionError/)).toBeInTheDocument();

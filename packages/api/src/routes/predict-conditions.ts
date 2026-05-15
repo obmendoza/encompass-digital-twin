@@ -58,6 +58,50 @@ export function registerPredictConditionsRoutes(app: FastifyInstance, store: Sto
     },
   );
 
+  app.get<{ Params: { loanId: string } }>(
+    "/loans/:loanId/eligibility-drift",
+    async (req, reply) => {
+      const ctx = getTenantContext();
+      const tenantId = ctx.tenantId;
+      const { loanId } = req.params;
+      requireLoanForTenant(store, loanId);
+      return withTenantTx(tenantId, async (c) => {
+        const { rows } = await c.query<{
+          program: string;
+          portal_status: "PASS" | "FAIL";
+          pc_v2_failed: boolean;
+        }>(
+          `SELECT
+             pev.program,
+             pev.status AS portal_status,
+             EXISTS (
+               SELECT 1 FROM predicted_conditions pc
+               WHERE pc.tenant_id = pev.tenant_id
+                 AND pc.loan_id = pev.loan_id
+                 AND pc.source_list = 'matrix'
+                 AND pc.status = 'pending'
+                 AND pc.superseded_at IS NULL
+                 AND pc.description ILIKE '%' || pev.program || '%'
+             ) AS pc_v2_failed
+           FROM portal_eligibility_verdicts pev
+           WHERE pev.tenant_id = $1 AND pev.loan_id = $2 AND pev.superseded_at IS NULL`,
+          [tenantId, loanId],
+        );
+        const disagreements = rows.filter(
+          (r) => (r.portal_status === "PASS" && r.pc_v2_failed) || (r.portal_status === "FAIL" && !r.pc_v2_failed),
+        );
+        return reply.send({
+          disagreementCount: disagreements.length,
+          programs: disagreements.map((d) => ({
+            program: d.program,
+            portalStatus: d.portal_status,
+            pcV2Status: d.pc_v2_failed ? "FAIL" : "PASS",
+          })),
+        });
+      });
+    },
+  );
+
   app.post<{ Params: { loanId: string } }>(
     "/loans/:loanId/predictions/run",
     async (req, reply) => {

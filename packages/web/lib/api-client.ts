@@ -244,6 +244,11 @@ export const api = {
     }>(
       `/loans/${loanId}/predictions`,
     ),
+  getEligibilityDrift: (loanId: string) =>
+    req<{
+      disagreementCount: number;
+      programs: Array<{ program: string; portalStatus: "PASS" | "FAIL"; pcV2Status: "PASS" | "FAIL" }>;
+    }>(`/loans/${loanId}/eligibility-drift`),
   // The `actorId` parameter on the five mutation methods below sets
   // x-user-id so the API records the REAL operator/VA in audit rows and
   // acted_by/cleared_by columns (rather than the req() default

@@ -12,6 +12,7 @@ import { groupByNormalizedDescription, type Prediction as GroupingPrediction } f
 import type { PortalMetadata } from "@/lib/prediction-grouping";
 import { GroupedConditionCard } from "./GroupedConditionCard";
 import { ModeToggle } from "./ModeToggle";
+import { EligibilityDriftBanner } from "./EligibilityDriftBanner";
 
 interface Prediction {
   id: string;
@@ -44,9 +45,10 @@ interface Props {
   mode: "curation" | "drift";
   filter: "disagreements" | null;
   basePath: string;
+  driftData: { disagreementCount: number; programs: Array<{ program: string; portalStatus: string; pcV2Status: string }> };
 }
 
-export function PredictedConditionsPanel({ loanId, predictions, alerts, mode, filter, basePath }: Props) {
+export function PredictedConditionsPanel({ loanId, predictions, alerts, mode, filter, basePath, driftData }: Props) {
   const router = useRouter();
   const [pending, start] = useTransition();
 
@@ -94,6 +96,11 @@ export function PredictedConditionsPanel({ loanId, predictions, alerts, mode, fi
         </div>
       )}
 
+      <EligibilityDriftBanner
+        disagreementCount={driftData.disagreementCount}
+        programs={driftData.programs}
+        basePath={basePath}
+      />
       <ModeToggle currentMode={mode} basePath={basePath} currentFilter={filter} />
 
       {pendingGroups.length === 0 ? (
