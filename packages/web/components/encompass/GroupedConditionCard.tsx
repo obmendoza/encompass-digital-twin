@@ -12,6 +12,17 @@ interface Props {
   onDismiss: (predictionId: string, reason: string) => Promise<ActionResult>;
 }
 
+function promptForDismissReason(): string | null {
+  if (typeof window === "undefined") return "uw_not_required"; // SSR fallback
+  const r = window.prompt("Dismiss reason (e.g., 'doc not required', 'borrower exempt'):");
+  if (r === null) return null; // operator cancelled
+  if (r.trim().length < 4) {
+    alert("Reason must be at least 4 characters.");
+    return null;
+  }
+  return r.trim();
+}
+
 export function GroupedConditionCard({ group, mode, driftProgram = null, onAccept, onDismiss }: Props): JSX.Element {
   const [pending, start] = useTransition();
   const [partialFailure, setPartialFailure] = useState<{ failedPcRowIds: string[] } | null>(null);
@@ -37,7 +48,9 @@ export function GroupedConditionCard({ group, mode, driftProgram = null, onAccep
     });
   };
 
-  const handleGroupDismiss = (reason: string): void => {
+  const handleGroupDismiss = (): void => {
+    const reason = promptForDismissReason();
+    if (reason === null) return; // operator cancelled
     setError(null);
     setPartialFailure(null);
     start(async () => {
@@ -110,7 +123,7 @@ export function GroupedConditionCard({ group, mode, driftProgram = null, onAccep
 
       <div className="flex gap-2 mt-1">
         <button className="enc-btn enc-btn--primary" onClick={handleGroupAccept}>Accept</button>
-        <button className="enc-btn" onClick={() => handleGroupDismiss("uw_not_required")}>Dismiss</button>
+        <button className="enc-btn" onClick={handleGroupDismiss}>Dismiss</button>
       </div>
     </div>
   );
@@ -157,7 +170,10 @@ function renderDrift(
           <div>{group.portalRow.description}</div>
           <div className="flex gap-1 mt-1">
             <button className="enc-btn" aria-label="Accept portal-llm row" onClick={() => onAccept(group.portalRow!.id)}>Accept</button>
-            <button className="enc-btn" aria-label="Dismiss portal-llm row" onClick={() => onDismiss(group.portalRow!.id, "uw_not_required")}>Dismiss</button>
+            <button className="enc-btn" aria-label="Dismiss portal-llm row" onClick={() => {
+              const reason = promptForDismissReason();
+              if (reason !== null) onDismiss(group.portalRow!.id, reason);
+            }}>Dismiss</button>
           </div>
         </div>
       )}
@@ -168,7 +184,10 @@ function renderDrift(
             <div>{row.description}</div>
             <div className="flex gap-1 mt-1">
               <button className="enc-btn" aria-label={`Accept ${row.source_list} row`} onClick={() => onAccept(row.id)}>Accept</button>
-              <button className="enc-btn" aria-label={`Dismiss ${row.source_list} row`} onClick={() => onDismiss(row.id, "uw_not_required")}>Dismiss</button>
+              <button className="enc-btn" aria-label={`Dismiss ${row.source_list} row`} onClick={() => {
+                const reason = promptForDismissReason();
+                if (reason !== null) onDismiss(row.id, reason);
+              }}>Dismiss</button>
             </div>
           </div>
         ))}

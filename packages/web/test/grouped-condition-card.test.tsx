@@ -121,6 +121,41 @@ describe("GroupedConditionCard — Drift mode", () => {
   });
 });
 
+describe("GroupedConditionCard — dismiss reason picker (I1+I2)", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("calls onDismiss with operator-supplied reason when prompt returns a valid string", async () => {
+    vi.spyOn(window, "prompt").mockReturnValue("borrower exempt");
+    const onAccept = vi.fn(async () => ({ ok: true }));
+    const onDismiss = vi.fn(async () => ({ ok: true }));
+    render(<GroupedConditionCard group={mkGroup()} mode="curation" onAccept={onAccept} onDismiss={onDismiss} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Dismiss$/ }));
+    await waitFor(() => expect(onDismiss).toHaveBeenCalledWith("p1", "borrower exempt"));
+  });
+
+  it("does not call onDismiss when operator cancels prompt (null)", async () => {
+    vi.spyOn(window, "prompt").mockReturnValue(null);
+    const onAccept = vi.fn(async () => ({ ok: true }));
+    const onDismiss = vi.fn(async () => ({ ok: true }));
+    render(<GroupedConditionCard group={mkGroup()} mode="curation" onAccept={onAccept} onDismiss={onDismiss} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Dismiss$/ }));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(onDismiss).not.toHaveBeenCalled();
+  });
+
+  it("does not call onDismiss when reason is too short (< 4 chars)", async () => {
+    vi.spyOn(window, "prompt").mockReturnValue("no");
+    vi.spyOn(window, "alert").mockImplementation(() => {});
+    const onAccept = vi.fn(async () => ({ ok: true }));
+    const onDismiss = vi.fn(async () => ({ ok: true }));
+    render(<GroupedConditionCard group={mkGroup()} mode="curation" onAccept={onAccept} onDismiss={onDismiss} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Dismiss$/ }));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(onDismiss).not.toHaveBeenCalled();
+    expect(window.alert).toHaveBeenCalled();
+  });
+});
+
 describe("GroupedConditionCard — partial-failure recovery (Spec 1.5-UI §5.1.1)", () => {
   it("renders cleanup-failure banner when a dismiss-as-duplicate fails", async () => {
     const onAccept = vi.fn(async () => ({ ok: true }));
