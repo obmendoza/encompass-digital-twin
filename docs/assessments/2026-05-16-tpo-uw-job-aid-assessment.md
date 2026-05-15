@@ -506,3 +506,124 @@ The Automated Conditions catalog (A.8) gives PC v2 a concrete seed-data alignmen
 ---
 
 *Screen captures from May 2026 production confirm the Job Aid's structural shape is current. The most consequential additions from the screens are: (1) the REVISED-prefix data-quality issue with a clear structured-history fix, (2) the per-channel Non QM screen duality, and (3) the Tasks-vs-Conditions distinction — none of which overturn the Job Aid analysis but all of which sharpen Spec 2's outbound contract.*
+
+---
+
+## Addendum 2: RM Job Aid — Pre-UW Automation Surface
+
+**Source:** NPNQM Tenant, *Relationship Manager Job Aid (New Draft V2)*, 33 pages, undated (post-`10.28.22`).
+
+The RM Job Aid documents the role that sits between Client/AE and the Underwriter — the operational workhorse that prepares files for UW review. In our model this is the **VA / Operator / BPO** role. This addendum reads the RM Job Aid for what's automatable today, what's load-bearing for the architecture, and what new questions go to NPNQM.
+
+### B.1 What the RM actually does (scope of work)
+
+The RM is responsible for moving a file from broker submission through CTC by performing eight categories of work. Each has a different ratio of mechanical-rules to human-judgment content:
+
+| Category | Mechanical | Judgment | Money / Compliance Risk |
+|---|---|---|---|
+| Pipeline & touch cadence | high | low | low |
+| Conversation Log maintenance | high | low | medium (regulatory audit trail) |
+| ECD date math + SLA tracking | high | low | low |
+| 3rd-party order placement & status | high (after vendor wiring) | low | medium (per-vendor cost) |
+| Document validation (HOI, Flood, Title, CPL, E&O, Payoff, ICD, Mavent) | high (deterministic rule checks) | medium (edge cases) | high (compliance) |
+| Conditions queue (review docs, mark fulfilled, re-request) | medium | medium | medium |
+| Loan requests (Exception, Rush, Condo, Client/UW meeting) | low | high | high |
+| Communications (templated emails, escalations, restructure negotiation) | medium (template fill) | high (tone, escalation timing) | medium (client relationship) |
+
+The high-mechanical, low-judgment, low-risk slices (pipeline tracking, ECD math, doc expiration verification, conditions queue triage) are the natural place to start. The judgment-heavy slices (exception merit, restructure negotiation, escalation timing) stay with humans.
+
+### B.2 What's load-bearing — not a footnote
+
+Three architectural realities the Job Aid surfaces that any RM-automation effort has to plan for:
+
+**B.2.1 3rd-party vendor integration is the actual blocker.** The RM relies on at least these external systems, each with its own auth, contract, rate limit, error semantics, and audit trail:
+
+- **DataVerify DRIVE** (fraud/identity) — already discussed in Addendum 1
+- **CIC / MeridianLink** (`cic.meridianlink.com`) — Credit Refresh, Credit Supplement, SSA Verification / PreciseID, Tax Transcripts (4506C), VVOE
+- **ValueLink** (`usmtg.spurams.com`) — appraisal status, SSR reports, AIR certs, proof of delivery
+- **FEMA Disaster** declarations feed
+- **NMLS Consumer Access** (`nmlsconsumeraccess.org`) — for 3rd Party Processing Fee payee verification
+- **Smartasset** / `publicrecords.netronline.com` — property tax fallback sources
+- **Email-based intake** to internal NPNQM desks: `appraisaldesk@nqmf.com`, `appraisaltransfers@nqmf.com`, `bsarequest@npinc.com`, `qc@npinc.com` — these are workflow channels with humans on the receiving end, not APIs.
+- **Property Guard** — short-term rental permit validation
+- **Mavent** (Ellie Mae compliance service) — surfaced inside Encompass but compliance-managed externally
+
+Wiring these is multi-quarter work. The Job Aid implicitly assumes a human RM mediates all of them, which is why "automate the RM" is the wrong framing — most of the surface area is integration, not logic.
+
+**B.2.2 Compliance/liability dimension on rule-based actions.** Even the "rule-based" tasks have legal-entity decisions baked in:
+
+- **Mortgagee clause selection** varies by state — NY uses *"Great Home Mortgage of New York, in lieu of true name NP, Inc."*, all other states use *"NQM Funding, LLC"*, TX skips the ISAOA/ATIMA clause. This is a legal-entity selection wrapped in a string-template fill.
+- **Variance tolerances** on locked loans (DTI ≤43%, DSCR bands ≥1.24 / 1-1.14 / .75-1 / <.75) trigger pricing actions.
+- **Mavent "permitted fails"** are managed via an external spreadsheet — a Mavent fail is OK *only* if it's on that list or has specific conversation-log approval from the Disclosure Desk Mgr / Ops Mgr.
+
+Our two-key approval pattern (already in use for KB versions: admin + compliance officer) is the right template for RM agent actions that touch these zones. Don't grant full autonomy to anything that picks a legal-entity name or interprets a Mavent fail.
+
+**B.2.3 Conversation Log conflicts with `redactPayloadMiddleware`.** The Job Aid is explicit: *"Copies of all communication surrounding a loan, whether external or internal, must be added to the Conversation Log within Encompass. … When using email, ensure to copy the entire message into the body."* This is the regulatory audit trail of record.
+
+If our RM Agent is itself the communicating party (sending templated emails, submitting orders, updating clients), then the Conversation Log entries it generates are ground truth. But our `redactPayloadMiddleware` strips SSN/DOB/email at request boundaries. Resolve before building:
+
+- Does NPNQM expect the un-redacted message to land in the Conversation Log? (Likely yes — it's a regulatory record.)
+- Where does redaction sit relative to the agent's communication path? Probably: redact when crossing the LLM boundary, but persist the un-redacted form to Conversation Log via a separate channel that bypasses the middleware.
+
+This is a meaningful architectural call, not a configuration tweak.
+
+### B.3 An additive third option for the agent decomposition question
+
+Addendum 1 surfaced Option A (5 specialists, lighter) and Option B (7-8 specialists, heavier). The RM Job Aid surfaces a third axis, **orthogonal** to A/B:
+
+**Option C: pre-UW RM-side agentic layer.** Sits ahead of whichever Audit-Report agent decomposition is chosen. Composed of rule-based **Document Validators** invoked by an **RM Coordinator Agent**.
+
+- **RM Coordinator Agent** — pipeline state, milestone management, SLA enforcement, sub-agent dispatch
+- **Document Validators (sub-agents, deterministic-rules-first, LLM-augmented for edge cases):**
+  - Insurance Validator (HOI/Flood rule check: loss-payee match, address match, 12mo term, deductible caps, wind/hail/hurricane, coverage ≥ lesser-of-loan-or-RC, DSCR 6mo PITIA rent-loss)
+  - Title Validator (mortgagee clause by state, ISAOA/ATIMA, 90-day, vesting match, lender coverage ≥ loan amount)
+  - CPL Validator (60-day, mortgagee clauses, agent match to title commitment + E&O)
+  - E&O Validator ($1m min / $500k attorney, agent match, not expired)
+  - Payoff Validator (per-diem through disbursement, not 30 days past due, payoff field updated)
+  - Doc Expiration Validator (date math vs closing date for: Income / Asset / Credit Report / Appraisal / VVOE / Flood / Title / CPL / Credit Refresh / Lock)
+  - ICD Validator (rate/LTV/fees/3rd-party-fees match Encompass)
+  - Mavent Validator (Pass/Alert/permitted-fail lookup)
+  - Lock Variance Validator (DTI / DSCR tolerance)
+  - Credit Refresh Diff Validator (new debt / balance change / new inquiry detection)
+- **Vendor Order Connectors (deferred — multi-quarter integration work):**
+  - CIC/MeridianLink, ValueLink, FEMA, NMLS, Smartasset, Property Guard, appraisaldesk@ email-intake adapter, etc.
+
+Option C is **additive** to A/B. Pick A or B for the Audit Report / UW-assistance side; layer C on top whenever the RM-side work is ready. They don't compete.
+
+The MVP slice of Option C — the rule-based Document Validators **without** vendor wiring — is shippable in weeks, not quarters. Each validator is a self-contained rule check with three properties that make it safe to ship early:
+
+1. **Deterministic logic** (date math, field-equality, threshold checks)
+2. **No money movement, no auto-acting on legal-entity decisions**
+3. **Failure mode = surface a finding to the RM** (or to PC v2's prediction surface), not auto-update Encompass
+
+This earns the right to expand scope to vendor-wired actions later.
+
+### B.4 What the RM Job Aid does NOT change
+
+- **The Spec 2 outbound contract questions remain open.** The RM workflow doesn't unblock them — it adds new outbound message types (Conversation Log entries, status updates, milestone toggles, condition state changes) but the auth/idempotency/versioning questions still need NPNQM to answer.
+- **The BSA Team finding (Addendum 1, Finding 1) is reinforced.** The RM Job Aid never asks the RM to compute income — it consumes from the BSA team upstream. Our system should do the same for `npnqm-twin`.
+- **The Condition Review iterative cycle (Addendum 1, Finding 2) is reinforced.** The RM is the agent that performs the `**Rev MM/DD Initials**` description update — the convention is explicitly documented in the RM Job Aid: *"the format used to modify a condition is to update the Description as follows: **Rev MM/DD Initials – list out the condition** and do not edit any UW condition descriptions."* The RM aid even *normalizes* the convention (`**Rev MM/DD Initials**` is the canonical form per RM policy), which mismatches the 5+ variants we observed in production UW data (Addendum 1, A.7). The data-quality opportunity is real on both sides.
+
+### B.5 Existing systems to leverage / extend
+
+- **`sla-monitor`** (advisory lock 42) currently checks `maxQueueTimeMinutes / maxProcessingTimeMinutes / maxReviewTimeMinutes` from `tenant.settings.sla`. This is per-UW-assignment, not RM-time-of-day SLAs (2pm cutoff for same-day condition review, 2-4hr email response, every-3-days file touch). The RM SLAs are **different in shape** (calendar-aware, business-hours-aware, working-time-zone-aware) and would need a sibling monitor or an extension of the schema, not a reuse.
+- **Spec 1.5 `document_requests`** carries portal-LLM document predictions but does **not** carry RM-side validation outputs (HOI policy parsing, Title commitment parsing). Those are still TBD on our side — confirmed by reading `packages/api/src/ingestion/adapters/npnqm-portal.ts:140-172`. If NPNQM later adds them, the inbound side already has a path. Until then, our validators run on documents pulled from their portal storage.
+- **Two-key approval pattern** (admin + compliance_officer for KB versions) is the natural template for RM actions touching mortgagee-clause selection, exception submission, restructure decisions.
+
+### B.6 Tenant-shape consistency
+
+Same pattern as the BSA finding (Addendum 1): the RM Agent is a **`npnqm-twin`-specific feature**, not a universal capability. The `demo` tenant is a showcase, doesn't have an RM-equivalent role, doesn't need Option C. This is consistent with the per-tenant adapter model already in place for inbound.
+
+### B.7 NPNQM follow-up additions
+
+The follow-up note (`docs/npnqm-source/2026-05-16-job-aid-followup.md`) gets five new concrete questions:
+
+- **Mavent permitted-fail spreadsheet** — would you share it? It's described as living on the intranet (`Ops Resources`); without it, automated Mavent triage is impossible.
+- **3rd-party vendor authorization** — which of these are we authorized to invoke on your behalf as part of the agentic workflow: CIC/MeridianLink, ValueLink, DataVerify, Property Guard, FEMA feed, NMLS Consumer Access lookups? Are any out of scope?
+- **Conversation Log redaction expectations** — when our agent is the logger, do you want PII (SSN/DOB) un-redacted to preserve regulatory-record completeness, or redacted to match our middleware? Where does the redaction boundary sit?
+- **RM→UW handoff threshold** — the Job Aid says *"typically wait until you have at least five underwriting conditions to send the file back to the underwriter for review."* Is this guideline or policy? If policy, what counts as a "deal-breaker" exception?
+- **Canonical source-of-truth for state-variant mortgagee clauses** — is the NY-vs-other-vs-TX list in the Job Aid current? Where would we pull updates from?
+
+---
+
+*The RM Job Aid expands the architectural horizon: alongside the UW-assistance work (PC v2, Two-Source UI, ROADMAP Phase 2 Audit Report), there's a substantial **pre-UW automation layer** that the NPNQM operation maps cleanly onto. The thin MVP slice — rule-based Document Validators without vendor wiring — is shippable independently. The judgment-heavy slices (exceptions, restructure, escalation, communications-with-stakes) stay with humans. 3rd-party vendor integration is the load-bearing blocker for the full vision, not a footnote.*

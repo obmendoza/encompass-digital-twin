@@ -128,11 +128,61 @@ What the Job Aid **does** do is let us draft a much more concrete §2 (the messa
 
 ---
 
+## 4.1 Update — RM Job Aid received
+
+You've since shared the **Relationship Manager Job Aid (New Draft V2)**, which significantly expands what we can plan. The RM role maps cleanly onto what we'd build as the "pre-UW agentic layer" in our system — the operational tier that prepares files for UW review.
+
+The RM Job Aid is also helpful evidence for §2 (Condition Review cycle): it explicitly documents the canonical revision format as *"**Rev MM/DD Initials – list out the condition**"*, which is **stricter** than the 5+ variants we observed in production UW data on screen captures. This suggests RMs follow the policy but UWs may not — worth confirming.
+
+Five new questions specifically about the RM workflow:
+
+### 4.1.1 Mavent permitted-fail spreadsheet
+
+The Job Aid references *"the Mavent spreadsheet posted on the intranet / Ops Resources"* as the canonical list of acceptable Mavent fails. Would you be able to share it? Without it, an automated Mavent triage step on our side has to be conservative (flag every fail) instead of useful (clear the permitted ones automatically).
+
+### 4.1.2 3rd-party vendor authorization
+
+The RM Job Aid lists several external systems the RM invokes:
+
+- CIC / MeridianLink (`cic.meridianlink.com`) — Credit Refresh, Supplement, SSA / PreciseID, Tax Transcripts, VVOE
+- ValueLink (`usmtg.spurams.com`) — appraisal status, SSR reports
+- DataVerify DRIVE — fraud/identity
+- Property Guard — short-term rental permit validation
+- FEMA disaster declarations feed
+- NMLS Consumer Access — 3rd Party Processing Fee payee verification
+- Smartasset / `publicrecords.netronline.com` — property tax fallback
+
+Of these, which are you authorized to have us invoke on your behalf via service credentials, and which are out of scope (we'd surface findings as predictions but not place orders)?
+
+Also: the email-based intake channels (`appraisaldesk@nqmf.com`, `appraisaltransfers@nqmf.com`, `bsarequest@npinc.com`) — would these stay human-staffed, or are they candidates for replacement with a structured API on your side as part of Spec 2?
+
+### 4.1.3 Conversation Log redaction expectations
+
+The RM Job Aid mandates that *all* communications — external + internal — be logged in the Conversation Log with the full message body. When our agent is the communicating party, we'd be writing those entries.
+
+We currently redact SSN / DOB / email at request boundaries (Spec 1.5 PII middleware). For Conversation Log entries:
+
+- Should we preserve un-redacted PII to maintain regulatory-record completeness?
+- Or apply our standard redaction and accept that the log shows `[REDACTED_SSN]` markers?
+- Where does NPNQM's compliance team draw the line?
+
+### 4.1.4 RM → UW handoff threshold
+
+The Job Aid says *"we typically wait until you have at least five underwriting conditions to send the file back to the underwriter for review"* — except the appraisal, which "warrants an immediate resubmit to UW, regardless of how many other conditions have been received."
+
+Is "5 conditions" a guideline or hard policy? What counts as a "deal-breaker" that justifies immediate resubmit? Knowing this lets us tune when our system batches predictions vs surfaces them immediately.
+
+### 4.1.5 State-variant mortgagee clauses
+
+The Job Aid lists three variants (NY uses *"Great Home Mortgage of New York, in lieu of true name NP, Inc."*, all other states use *"NQM Funding, LLC"*, TX skips the ISAOA/ATIMA clause). Is this list current? Is there a canonical internal source-of-truth (a doc, a screen, a config) we can point our title-validator agent at — or should we hard-code from the Job Aid and require manual updates?
+
+---
+
 ## 5. Suggested next step
 
-A 30-min sync would resolve §2 (BSA + Condition Review confirmations) and §3 (the five concrete questions) much faster than email back-and-forth. After that we can either close out the outbound contract questions from the readiness note in the same call, or schedule a separate technical sync with whoever owns your portal API.
+A 30-min sync would resolve §2 (BSA + Condition Review confirmations), §3 (the five UW-side questions), and §4.1 (the five RM-side questions) much faster than email back-and-forth. After that we can either close out the outbound contract questions from the readiness note in the same call, or schedule a separate technical sync with whoever owns your portal API.
 
-If a sync isn't feasible, written answers to §2 and §3 alone would be enough for us to ship the immediate, non-outbound work (condition-lifecycle modeling, structured revision-history capture, multi-agent role refinement). We can keep the outbound writeback on hold until your portal contract is ready.
+If a sync isn't feasible, written answers to §2, §3, and §4.1 alone would be enough for us to ship the immediate, non-outbound work — including the thinnest viable slice of the pre-UW agentic layer (rule-based document validators that surface findings to your RM without acting on them).
 
 ---
 
