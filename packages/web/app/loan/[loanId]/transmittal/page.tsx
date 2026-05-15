@@ -161,7 +161,11 @@ export default async function TransmittalPage({
         mode={
           sp.view === "drift" || sp.view === "curation"
             ? sp.view
-            : (user?.role === "operator" || !user?.role ? "curation" : "drift")
+            // Drift mode is the diagnostic surface — explicit opt-in for VAs and UWs
+            // who need side-by-side comparison + per-row controls. All other roles
+            // (demo, admin, unknown, undefined) get the safer Curation default to avoid
+            // exposing the diagnostic surface to users whose job doesn't need it.
+            : (user?.role === "va" || user?.role === "uw" ? "drift" : "curation")
         }
         filter={sp.filter === "disagreements" ? "disagreements" : null}
         basePath={`/loan/${loanId}/transmittal`}
