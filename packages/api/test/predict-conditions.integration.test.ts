@@ -265,3 +265,57 @@ describe("predict-conditions HTTP integration — two-source coexistence (Spec 1
     expect(pcSources.length).toBeGreaterThan(0);
   });
 });
+
+describe("GET /loans/:loanId/predictions — Spec 1.5 schema widening", () => {
+  it("response carries portal_metadata for portal-llm rows", async () => {
+    await withDb(async (c) => {
+      await c.query(
+        `INSERT INTO predicted_conditions
+           (id, tenant_id, loan_id, prediction_run_id, source_list, description, category, status,
+            source_input_hash, kb_version_id, source_rule_table, source_rule_id, emission_kind,
+            portal_metadata, analysis_hash)
+         VALUES (gen_random_uuid(), $1, 'INT-1', gen_random_uuid(), 'portal-llm',
+                 'Schema-widen test', 'PTA', 'pending',
+                 'hash', NULL, NULL, NULL, 'deterministic',
+                 '{"priority":"P0","severity":"SOFT-STOP","document_category":"Credit"}'::jsonb,
+                 'test-hash-1')`,
+        [T],
+      );
+    });
+    const res = await app.inject({
+      method: "GET",
+      url: "/loans/INT-1/predictions",
+      headers: headers("operator"),
+    });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body) as { predictions: Array<{ id: string; description: string; portal_metadata?: unknown; analysis_hash?: string | null; superseded_at?: string | null }> };
+    const portalRow = body.predictions.find((p) => p.description === "Schema-widen test");
+    expect(portalRow).toBeDefined();
+    expect((portalRow!.portal_metadata as { priority?: string } | undefined)?.priority).toBe("P0");
+    expect(portalRow!.analysis_hash).toBe("test-hash-1");
+    expect(portalRow!.superseded_at).toBeNull();
+  });
+
+  it("response excludes superseded rows", async () => {
+    await withDb(async (c) => {
+      await c.query(
+        `INSERT INTO predicted_conditions
+           (id, tenant_id, loan_id, prediction_run_id, source_list, description, category, status,
+            source_input_hash, kb_version_id, source_rule_table, source_rule_id, emission_kind,
+            portal_metadata, analysis_hash, superseded_at)
+         VALUES (gen_random_uuid(), $1, 'INT-1', gen_random_uuid(), 'portal-llm',
+                 'Superseded row marker', 'PTA', 'pending',
+                 'hash', NULL, NULL, NULL, 'deterministic',
+                 '{}'::jsonb, 'test-hash-old', NOW())`,
+        [T],
+      );
+    });
+    const res = await app.inject({
+      method: "GET",
+      url: "/loans/INT-1/predictions",
+      headers: headers("operator"),
+    });
+    const body = JSON.parse(res.body) as { predictions: Array<{ description: string }> };
+    expect(body.predictions.find((p) => p.description === "Superseded row marker")).toBeUndefined();
+  });
+});

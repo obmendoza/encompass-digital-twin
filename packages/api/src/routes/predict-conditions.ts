@@ -38,9 +38,10 @@ export function registerPredictConditionsRoutes(app: FastifyInstance, store: Sto
           `SELECT id, tenant_id, loan_id, prediction_run_id, source_input_hash,
                   predicted_at, predicted_by, kb_version_id, resolved_income_type,
                   category, description, note, source_list, source_order, status,
-                  acted_by, acted_at, acted_role, dismissal_reason, accepted_condition_id
+                  acted_by, acted_at, acted_role, dismissal_reason, accepted_condition_id,
+                  portal_metadata, analysis_hash, superseded_at
              FROM predicted_conditions
-            WHERE tenant_id = $1 AND loan_id = $2
+            WHERE tenant_id = $1 AND loan_id = $2 AND superseded_at IS NULL
             ORDER BY status, source_list, source_order`,
           [tenantId, loanId],
         );
