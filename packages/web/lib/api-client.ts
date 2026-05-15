@@ -223,9 +223,32 @@ export const api = {
 
   // ─── Predictive Conditions ───────────────────────────────────────
   getPredictions: (loanId: string) =>
-    req<{ predictions: Array<{ id: string; status: string; description: string; category: string; note: string | null; source_list: string; source_order: number; acted_by: string | null; acted_role: string | null; dismissal_reason: string | null; accepted_condition_id: string | null }>; alerts: Array<{ id: string; error_class: string; remediation_hint: string; cleared_at: string | null }> }>(
+    req<{
+      predictions: Array<{
+        id: string;
+        status: string;
+        description: string;
+        category: string;
+        note: string | null;
+        source_list: string;
+        source_order: number;
+        acted_by: string | null;
+        acted_role: string | null;
+        dismissal_reason: string | null;
+        accepted_condition_id: string | null;
+        portal_metadata: unknown;
+        analysis_hash: string | null;
+        superseded_at: string | null;
+      }>;
+      alerts: Array<{ id: string; error_class: string; remediation_hint: string; cleared_at: string | null }>;
+    }>(
       `/loans/${loanId}/predictions`,
     ),
+  getEligibilityDrift: (loanId: string) =>
+    req<{
+      disagreementCount: number;
+      programs: Array<{ program: string; portalStatus: "PASS" | "FAIL"; pcV2Status: "PASS" | "FAIL" }>;
+    }>(`/loans/${loanId}/eligibility-drift`),
   // The `actorId` parameter on the five mutation methods below sets
   // x-user-id so the API records the REAL operator/VA in audit rows and
   // acted_by/cleared_by columns (rather than the req() default

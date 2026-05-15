@@ -16,8 +16,13 @@ export const dynamic = "force-dynamic";
 
 export default async function TransmittalPage({
   params,
-}: { params: Promise<{ loanId: string }> }) {
+  searchParams,
+}: {
+  params: Promise<{ loanId: string }>;
+  searchParams: Promise<{ view?: string; filter?: string }>;
+}) {
   const { loanId } = await params;
+  const sp = await searchParams;
   let loan;
   try {
     loan = await api.getLoan(loanId);
@@ -65,6 +70,13 @@ export default async function TransmittalPage({
     predictionsData = { predictions: r.predictions, alerts: r.alerts };
   } catch {
     // Best-effort; predictions are auxiliary.
+  }
+
+  let driftData: { disagreementCount: number; programs: Array<{ program: string; portalStatus: string; pcV2Status: string }> } = { disagreementCount: 0, programs: [] };
+  try {
+    driftData = await api.getEligibilityDrift(loan.id);
+  } catch {
+    // Best-effort; banner just won't render.
   }
 
   const openCount = loan.conditions.filter((c) => c.status === "Open").length;
@@ -146,6 +158,18 @@ export default async function TransmittalPage({
         loanId={loan.id}
         predictions={predictionsData.predictions as never}
         alerts={predictionsData.alerts as never}
+        mode={
+          sp.view === "drift" || sp.view === "curation"
+            ? sp.view
+            // Drift mode is the diagnostic surface — explicit opt-in for VAs and UWs
+            // who need side-by-side comparison + per-row controls. All other roles
+            // (demo, admin, unknown, undefined) get the safer Curation default to avoid
+            // exposing the diagnostic surface to users whose job doesn't need it.
+            : (user?.role === "va" || user?.role === "uw" ? "drift" : "curation")
+        }
+        filter={sp.filter === "disagreements" ? "disagreements" : null}
+        basePath={`/loan/${loanId}/transmittal`}
+        driftData={driftData}
       />
 
       <div className="mt-2 flex items-center gap-3 p-2 bg-[#f6f8fb] border border-[#6b7a8f]">
