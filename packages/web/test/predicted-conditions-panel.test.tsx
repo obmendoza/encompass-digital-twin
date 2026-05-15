@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { PredictedConditionsPanel } from "@/components/encompass/PredictedConditionsPanel";
 import { VAPredictedConditionsPanel } from "@/components/encompass/VAPredictedConditionsPanel";
 
@@ -15,6 +15,13 @@ vi.mock("@/app/loan/[loanId]/predictions/actions", () => ({
   actionClearPredictionAlert: vi.fn(async () => ({ ok: true, alertId: "a-1" })),
 }));
 
+// ModeToggle uses next/link — mock it so tests don't need router context.
+vi.mock("next/link", () => ({
+  default: ({ href, children, ...rest }: { href: string; children: React.ReactNode; [k: string]: unknown }) => (
+    <a href={href} {...rest}>{children}</a>
+  ),
+}));
+
 const samplePrediction = {
   id: "p-1",
   status: "pending" as const,
@@ -26,17 +33,30 @@ const samplePrediction = {
   acted_by: null,
   acted_role: null,
   dismissal_reason: null,
+  portal_metadata: null,
+  analysis_hash: null,
+  superseded_at: null,
+  accepted_condition_id: null,
 };
 
 describe("PredictedConditionsPanel (operator)", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("renders pending list with Accept/Dismiss buttons", () => {
-    render(<PredictedConditionsPanel loanId="L-1" predictions={[samplePrediction]} alerts={[]} />);
+    render(
+      <PredictedConditionsPanel
+        loanId="L-1"
+        predictions={[samplePrediction]}
+        alerts={[]}
+        mode="curation"
+        filter={null}
+        basePath="/test"
+      />
+    );
     expect(screen.getByText("Initial Loan Application (1003)")).toBeInTheDocument();
+    // GroupedConditionCard renders Accept and Dismiss buttons at group level.
     expect(screen.getByText("Accept")).toBeInTheDocument();
-    // Two "Dismiss" texts exist: the table button and the modal submit (hidden until opened).
-    expect(screen.getAllByText("Dismiss").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText("Dismiss")).toBeInTheDocument();
   });
 
   it("renders alert banner with Clear button when an active alert exists", () => {
@@ -45,6 +65,9 @@ describe("PredictedConditionsPanel (operator)", () => {
         loanId="L-1"
         predictions={[]}
         alerts={[{ id: "a-1", error_class: "NoActiveKbVersionError", remediation_hint: "Activate a KB version first", cleared_at: null }]}
+        mode="curation"
+        filter={null}
+        basePath="/test"
       />
     );
     expect(screen.getByText(/Alert: NoActiveKbVersionError/)).toBeInTheDocument();
@@ -52,17 +75,12 @@ describe("PredictedConditionsPanel (operator)", () => {
     expect(screen.getByText("Clear alert")).toBeInTheDocument();
   });
 
-  it("disables Dismiss submit on short reasons (client-side validation)", () => {
-    render(<PredictedConditionsPanel loanId="L-1" predictions={[samplePrediction]} alerts={[]} />);
-    // Click the table-row Dismiss button to open the modal.
-    const dismissButtons = screen.getAllByText("Dismiss");
-    fireEvent.click(dismissButtons[0]!);
-    const textarea = screen.getByRole("textbox");
-    fireEvent.change(textarea, { target: { value: "short" } });
-    // After opening the modal there are 2 Dismiss buttons; the submit one is disabled.
-    const allDismiss = screen.getAllByText("Dismiss").filter((b) => b.tagName === "BUTTON") as HTMLButtonElement[];
-    const submitBtn = allDismiss.find((b) => b.disabled);
-    expect(submitBtn).toBeDefined();
+  // TODO: The per-row dismiss modal (client-side reason validation) was removed in Task 5.
+  // GroupedConditionCard uses a fixed reason ("uw_not_required") for group-level dismissal.
+  // This test no longer applies to the current UI surface. Re-add a test for
+  // GroupedConditionCard's per-row Drift mode dismiss if that UI path needs coverage.
+  it.skip("disables Dismiss submit on short reasons (client-side validation) — removed in Task 5", () => {
+    // Panel-level DismissModal was removed; reason validation now lives in GroupedConditionCard (Drift mode).
   });
 });
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   actionAcceptPrediction,
@@ -8,6 +8,10 @@ import {
   actionRunPredictions,
   actionClearPredictionAlert,
 } from "@/app/loan/[loanId]/predictions/actions";
+import { groupByNormalizedDescription, type Prediction as GroupingPrediction } from "@/lib/prediction-grouping";
+import type { PortalMetadata } from "@/lib/prediction-grouping";
+import { GroupedConditionCard } from "./GroupedConditionCard";
+import { ModeToggle } from "./ModeToggle";
 
 interface Prediction {
   id: string;
@@ -20,6 +24,10 @@ interface Prediction {
   acted_by: string | null;
   acted_role: string | null;
   dismissal_reason: string | null;
+  portal_metadata: PortalMetadata | null;
+  analysis_hash: string | null;
+  superseded_at: string | null;
+  accepted_condition_id: string | null;
 }
 
 interface Alert {
@@ -33,65 +41,34 @@ interface Props {
   loanId: string;
   predictions: Prediction[];
   alerts: Alert[];
+  mode: "curation" | "drift";
+  filter: "disagreements" | null;
+  basePath: string;
 }
 
-export function PredictedConditionsPanel({ loanId, predictions, alerts }: Props) {
+export function PredictedConditionsPanel({ loanId, predictions, alerts, mode, filter, basePath }: Props) {
   const router = useRouter();
   const [pending, start] = useTransition();
-  const [dismissModal, setDismissModal] = useState<{ predictionId: string } | null>(null);
-  const [dismissReason, setDismissReason] = useState("");
-  const [error, setError] = useState<string | null>(null);
 
   const activeAlerts = alerts.filter((a) => a.cleared_at === null);
   const noKbAlert = activeAlerts.find((a) => a.error_class === "NoActiveKbVersionError");
-  const pendingItems = predictions.filter((p) => p.status === "pending");
-  const acceptedCount = predictions.filter((p) => p.status === "accepted").length;
-  const dismissedCount = predictions.filter((p) => p.status === "dismissed").length;
-
-  const handleAccept = (predictionId: string) => {
-    setError(null);
-    start(async () => {
-      const r = await actionAcceptPrediction(loanId, predictionId);
-      if (!r.ok) setError(`Accept failed: ${r.error}`);
-      else router.refresh();
-    });
-  };
-
-  const handleDismissSubmit = () => {
-    if (!dismissModal) return;
-    if (dismissReason.trim().length < 10) {
-      setError("Dismissal reason must be at least 10 characters.");
-      return;
-    }
-    const predictionId = dismissModal.predictionId;
-    const reason = dismissReason.trim();
-    setError(null);
-    start(async () => {
-      const r = await actionDismissPrediction(loanId, predictionId, reason);
-      if (!r.ok) setError(`Dismiss failed: ${r.error}`);
-      else {
-        setDismissModal(null);
-        setDismissReason("");
-        router.refresh();
-      }
-    });
-  };
+  const pendingGroups = groupByNormalizedDescription(predictions as GroupingPrediction[]);
+  const acceptedItems = predictions.filter((p) => p.status === "accepted");
+  const dismissedItems = predictions.filter((p) => p.status === "dismissed");
 
   const handleRerun = () => {
-    setError(null);
     start(async () => {
       const r = await actionRunPredictions(loanId);
-      if (!r.ok) setError(`Re-run failed: ${r.error}`);
-      else router.refresh();
+      if (!r.ok) return;
+      router.refresh();
     });
   };
 
   const handleClearAlert = (alertId: string) => {
-    setError(null);
     start(async () => {
       const r = await actionClearPredictionAlert(loanId, alertId);
-      if (!r.ok) setError(`Clear failed: ${r.error}`);
-      else router.refresh();
+      if (!r.ok) return;
+      router.refresh();
     });
   };
 
@@ -117,40 +94,35 @@ export function PredictedConditionsPanel({ loanId, predictions, alerts }: Props)
         </div>
       )}
 
-      {error && <div className="text-[11px] text-[#c00] mb-2">{error}</div>}
+      <ModeToggle currentMode={mode} basePath={basePath} currentFilter={filter} />
 
-      {pendingItems.length === 0 ? (
+      {pendingGroups.length === 0 ? (
         <div className="text-[11px] text-[#6b7a8f]">No pending predictions.</div>
       ) : (
         <>
-          <div className="text-[11px] font-bold mb-1">Pending ({pendingItems.length})</div>
-          <table className="w-full border-collapse text-[10px]">
-            <tbody>
-              {pendingItems.map((p, i) => (
-                <tr key={p.id} className={i % 2 ? "bg-[#f5f3e8]" : ""}>
-                  <td className="px-2 py-[3px]"><b>[{p.category}]</b></td>
-                  <td className="px-2 py-[3px]">
-                    {p.description}
-                    {p.note && <span className="text-[#6b7a8f]"> ({p.note})</span>}
-                  </td>
-                  <td className="px-2 py-[3px] text-right">
-                    <button className="enc-btn text-[9px]" disabled={pending} onClick={() => handleAccept(p.id)}>
-                      Accept
-                    </button>
-                    {" "}
-                    <button className="enc-btn text-[9px]" disabled={pending} onClick={() => setDismissModal({ predictionId: p.id })}>
-                      Dismiss
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="text-[11px] font-bold mb-1">Pending ({pendingGroups.length} group{pendingGroups.length !== 1 ? "s" : ""})</div>
+          {pendingGroups.map((group) => (
+            <GroupedConditionCard
+              key={group.normalizedKey}
+              group={group}
+              mode={mode}
+              onAccept={async (predictionId) => {
+                const r = await actionAcceptPrediction(loanId, predictionId);
+                router.refresh();
+                return r;
+              }}
+              onDismiss={async (predictionId, reason) => {
+                const r = await actionDismissPrediction(loanId, predictionId, reason);
+                router.refresh();
+                return r;
+              }}
+            />
+          ))}
         </>
       )}
 
       <div className="mt-3 flex items-center gap-3 text-[10px] text-[#6b7a8f]">
-        <span>Accepted ({acceptedCount}) · Dismissed ({dismissedCount})</span>
+        <span>Accepted ({acceptedItems.length}) · Dismissed ({dismissedItems.length})</span>
         <button
           className="enc-btn text-[9px] ml-auto"
           disabled={pending}
@@ -160,31 +132,6 @@ export function PredictedConditionsPanel({ loanId, predictions, alerts }: Props)
           {pending ? "Working..." : "Re-run predictions"}
         </button>
       </div>
-
-      {dismissModal && (
-        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={() => setDismissModal(null)}>
-          <div className="bg-white border border-[#6b7a8f] p-4 w-[400px]" onClick={(e) => e.stopPropagation()}>
-            <h4 className="text-[12px] font-bold mb-2">Dismiss Prediction</h4>
-            <p className="text-[10px] text-[#404040] mb-2">Reason (required, at least 10 chars):</p>
-            <textarea
-              className="w-full border border-[#6b7a8f] text-[11px] p-2"
-              rows={3}
-              value={dismissReason}
-              onChange={(e) => setDismissReason(e.target.value)}
-            />
-            <div className="mt-2 flex justify-end gap-2">
-              <button className="enc-btn text-[10px]" onClick={() => setDismissModal(null)}>Cancel</button>
-              <button
-                className="enc-btn enc-btn--primary text-[10px]"
-                disabled={pending || dismissReason.trim().length < 10}
-                onClick={handleDismissSubmit}
-              >
-                Dismiss
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

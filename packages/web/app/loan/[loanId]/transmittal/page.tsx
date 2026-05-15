@@ -16,8 +16,13 @@ export const dynamic = "force-dynamic";
 
 export default async function TransmittalPage({
   params,
-}: { params: Promise<{ loanId: string }> }) {
+  searchParams,
+}: {
+  params: Promise<{ loanId: string }>;
+  searchParams: Promise<{ view?: string; filter?: string }>;
+}) {
   const { loanId } = await params;
+  const sp = await searchParams;
   let loan;
   try {
     loan = await api.getLoan(loanId);
@@ -146,6 +151,13 @@ export default async function TransmittalPage({
         loanId={loan.id}
         predictions={predictionsData.predictions as never}
         alerts={predictionsData.alerts as never}
+        mode={
+          sp.view === "drift" || sp.view === "curation"
+            ? sp.view
+            : (user?.role === "operator" || !user?.role ? "curation" : "drift")
+        }
+        filter={sp.filter === "disagreements" ? "disagreements" : null}
+        basePath={`/loan/${loanId}/transmittal`}
       />
 
       <div className="mt-2 flex items-center gap-3 p-2 bg-[#f6f8fb] border border-[#6b7a8f]">
