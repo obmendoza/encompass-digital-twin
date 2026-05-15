@@ -98,13 +98,24 @@ const HoiPolicyFields = z.object({
     included: z.boolean(),                          // LLM-derived boolean from wording
     wording: z.string().nullable(),                 // verbatim text the LLM saw
     separatePolicy: z.boolean(),
+    confidence: z.number().min(0).max(1),           // per-field LLM self-reported confidence
   }).nullable(),
   rentLossCoverageMonths: z.number().int().nullable(),
   rentLossWording: z.string().nullable(),          // verbatim; flag "actual cost sustained"
+  rentLossActualCostSustained: z.object({          // semantic check on the wording
+    detected: z.boolean(),                          // true if "actual cost sustained" present
+    confidence: z.number().min(0).max(1),
+  }).nullable(),
   occupancyOnPolicy: z.string().nullable(),
-  premiumPaidInFull: z.boolean().nullable(),
+  premiumPaidInFull: z.object({
+    paid: z.boolean(),
+    confidence: z.number().min(0).max(1),
+  }).nullable(),
   premiumDueDays: z.number().int().nullable(),     // days from policy date until premium due
-  wallsInCoverage: z.boolean().nullable(),         // condo HOA master policy
+  wallsInCoverage: z.object({                      // condo HOA master policy
+    included: z.boolean(),
+    confidence: z.number().min(0).max(1),
+  }).nullable(),
   ho6Policy: z.object({                            // separate condo unit-owner policy
     present: z.boolean(),
     deductiblePct: z.number().nullable(),
@@ -221,21 +232,38 @@ export interface HoiFieldExtractor {
 Three implementations:
 
 - `PortalProvidedHoiExtractor` — checks for an existing `document_extractions` row with `source = 'portal'` and `superseded_at IS NULL`. `canExtract` returns true if found; `extract` returns the cached row.
-- `LlmHoiExtractor` — calls Anthropic Claude with a tool-use schema matching `HoiPolicyFields` / `FloodCertFields`. Uses prompt caching (existing pattern from learning-worker). Returns structured fields + confidence aggregate.
+- `LlmHoiExtractor` — calls Anthropic Claude with a tool-use schema matching `HoiPolicyFields` / `FloodCertFields`. Uses prompt caching (existing pattern from learning-worker). Returns structured fields + per-field confidence on prose-derived booleans.
+
+  **Grounding-pass (R1):** After the tool-use call returns and passes Zod validation, the extractor runs a per-field grounding check on each prose-derived boolean field (`windHailHurricane.included`, `rentLossActualCostSustained.detected`, `wallsInCoverage.included`, `premiumPaidInFull.paid`). The check confirms the boolean's truthiness is consistent with the captured verbatim `wording` field via stem-matched content-word presence:
+
+  - For `windHailHurricane.included = true` — wording must contain at least one of: `included`, `covered`, `all perils`, `special form`, `comprehensive`, `windstorm`, `hail`, `hurricane`
+  - For `windHailHurricane.included = false` — wording must contain at least one of: `excluded`, `not covered`, `exclusion`, `excludes`
+  - For `rentLossActualCostSustained.detected = true` — wording must contain `actual cost sustained` or `actual loss sustained` (substring match)
+  - For `wallsInCoverage.included = true` — wording must contain `walls-in`, `walls in`, `unit interior`, `bare walls` (any)
+  - For `premiumPaidInFull.paid = true` — wording must contain `paid in full`, `paid receipt`, `premium paid`, `payment in full` (any)
+
+  On mismatch (boolean asserts a conclusion the wording doesn't support), the extractor overrides the field's `confidence` to `0.3` and logs a structured warn. Downstream rule evaluation per §6.3 will then skip the rule via the per-field threshold. This is the equivalent of PC v2 §5.3's source-text grounding step for this validator's inverse pattern (LLM extracts → rule judges).
+
+  Grounding-pass failures are recorded in `extraction_error` as a JSON array of `{ field, conclusion, reason }` entries so operators can audit extraction quality post-hoc.
+
 - `CompositeHoiExtractor` — composes the two per `extractorMode` config.
 
 ### 4.2 `hoi-extractor-worker`
 
 Location: `packages/api/src/workers/hoi-extractor-worker.ts`
 
-Pattern: advisory-lock-guarded polling worker, same shape as `doc-fetch-worker` (Spec 1).
+Pattern: advisory-lock-guarded polling worker, same shape as `doc-fetch-dispatcher` (Spec 1).
 
 - Lock 46, poll interval 5000ms
-- Queries for `documents` rows with `category IN ('hoi-policy', 'flood-cert')` that have no active `document_extractions` row at the current schema_version
+- Queries `ingested_documents` (not `documents` — corrected per C3) rows where `doc_type IN ('Hazard Insurance', 'Homeowner Insurance', 'Flood Certificate', 'Flood Cert')` that have no active `document_extractions` row at the current `schema_version`. The set of matching `doc_type` strings is centralized in a constant `HOI_FLOOD_DOC_TYPES` for symmetry with the NPNQM adapter's classification map (`packages/api/src/ingestion/adapters/npnqm-portal.ts:94` — `classification → docType` mapping).
 - For each: invokes `LlmHoiExtractor` (skip if `extractorMode = 'portal-only'`)
 - Writes result to `document_extractions`
 - Retry policy: 1m → 5m → 30m → 2h → 12h, dead-letter after 5 attempts
 - Dead-lettered extractions emit a `prediction_alerts` row visible in the UI
+
+**Cost observability (P4):** Each successful LLM extraction call emits a Prometheus gauge `hoi_extraction_cost_dollars{tenant_id, extractor_kind, doc_type}` populated from Anthropic's response `usage` object (input tokens × input rate + output tokens × output rate, using the current pricing constants from `packages/api/src/services/predict-conditions/llm/cost.ts` or equivalent). A counter `hoi_extraction_calls_total{tenant_id, extractor_kind, outcome}` (`outcome ∈ {success, malformed, rate_limited, dead_lettered}`) supports cost-per-outcome analysis. Operators can chart per-tenant extraction cost; future budget caps can read from these signals. Pattern mirrors PC v2 §4.4's `dropped_*` counters.
+
+**`ingested_documents.doc_type` provenance (C3):** The `doc_type` column was added in migration 021 (`021-ingested-documents-doc-type.sql`) as `TEXT NOT NULL DEFAULT 'Other'`. Values are free-form strings populated by `LenderAdapter.transformDocumentRequest` from the lender's classification field. The NPNQM adapter at `packages/api/src/ingestion/adapters/npnqm-portal.ts:94` maps the portal's `classification` field to canonical doc-type strings. If the column is empty (only happens on legacy rows pre-migration-021), the worker logs a structured warn and processes zero documents — non-fatal, operator-noticeable.
 
 Starts in `server.ts` when `isDbEnabled()`, mirroring `startSlaMonitor()`.
 
@@ -293,7 +321,25 @@ Location: `packages/api/src/services/predict-conditions/service.ts`
 
 Add `resolveHoiValidatorFindings` to the resolver invocation list within `run()`. New input: fetch `document_extractions` for the loan and pass as a map keyed by `extractor_kind`.
 
-Adjust the existing DELETE-pending-rows step that already excludes `source_list = 'portal-llm'` (Spec 1.5 Task 7) — `hoi-validator` is fine to delete-and-reinsert on each run since extractions are cached upstream; the resolver is deterministic and cheap.
+**R2 — `hoi-validator` rows are idempotent, not delete-and-reinsert.** The existing DELETE-pending-rows step (`AND source_list != 'portal-llm'` per Spec 1.5 Task 7) is extended to also exclude `source_list = 'hoi-validator'`:
+
+```sql
+DELETE FROM predicted_conditions
+WHERE tenant_id = $1 AND loan_id = $2 AND status = 'pending'
+  AND source_list NOT IN ('portal-llm', 'hoi-validator');
+```
+
+Inserts of `hoi-validator` rows use `ON CONFLICT DO NOTHING` against a new partial unique index:
+
+```sql
+CREATE UNIQUE INDEX predicted_conditions_hoi_validator_active
+  ON predicted_conditions (tenant_id, loan_id, source_list, source_rule_id, ((portal_metadata->>'extractionId')))
+  WHERE source_list = 'hoi-validator' AND status = 'pending' AND superseded_at IS NULL;
+```
+
+The `extractionId` (stored in `portal_metadata.extractionId`) is stable across PC v2 re-runs because the upstream `document_extractions` cache is keyed by `(document_id, extractor_kind, schema_version)`. A given extraction produces the same rule-fired output every time, so re-running PC v2 with an unchanged extraction is a no-op on the index. When a document is re-uploaded and the extraction supersedes, the new extraction has a new `extractionId`, and a fresh PC v2 run inserts a new row with a different UUID (the old row's status remains until manually dismissed; the operator sees both rows transiently, which is the correct behavior — the old finding is genuinely stale).
+
+**Why this matters:** the Two-Source UI's partial-failure cleanup banner (PR #7) tracks failed dismiss calls by row UUID. Under the prior delete-and-reinsert semantics, a transient dismiss failure would race with a concurrent PC v2 re-fire that wiped the row, leaving the banner referencing a stale UUID. The idempotent-insert pattern preserves row UUIDs across re-runs, so the Retry-cleanup affordance always targets a live row. This mirrors the established Spec 1.5 portal-llm pattern (versioned via `superseded_at`, not DELETE).
 
 Bump `PC_SCHEMA_VERSION` (memory says: bump on every new source).
 
@@ -354,22 +400,26 @@ No new REST endpoints. Existing `GET /loans/:loanId/predictions` returns the new
 
 All rules are deterministic given their inputs. LLM judgment is confined to extraction (e.g., interpreting "all perils included" wording as `windHailHurricane.included = true`); rule evaluation runs on the boolean.
 
-| # | ruleId | Logic | Severity | Conditional on |
-|---|---|---|---|---|
-| H1 | `hoi.loss-payee.match` | Exact text match by channel (Wholesale = NQM Funding LLC; NDC = lender name + lender loan number; NY = Great Home Mortgage of New York) | fail | always |
-| H2 | `hoi.named-insured.match` | `namedInsured` equals borrower full name (or entity name when entity-vested) | fail | always |
-| H3 | `hoi.property-address.match` | `propertyAddress` equals subject property | fail | always |
-| H4 | `hoi.effective-date.window` | Purchase: effectiveDate ≥ noteDate − 15d; Refi: effectiveDate ≤ noteDate | fail | always |
-| H5 | `hoi.term.12-months` | `termMonths` ≥ 12 | fail | always |
-| H6 | `hoi.premium.paid-in-full` | `premiumPaidInFull = true` OR (paid at closing with invoice in ICD placeholder); Refi: premiums due within 60d of closing must be paid prior/at closing | fail | always |
-| H7 | `hoi.deductible.cap` | `deductiblePct ≤ 0.05` | fail | always |
-| H8 | `hoi.wind-hail-hurricane.included` | `windHailHurricane.included = true` | fail | always |
-| H9 | `hoi.coverage.minimum` | `coverageAmount ≥ min(loanAmount, replacementCost)` | fail | always |
-| H10 | `hoi.dscr.rent-loss-coverage` | `rentLossCoverageMonths ≥ 6` AND `rentLossWording` does not contain "actual cost sustained" | fail | `productKind = DSCR` |
-| H11 | `hoi.condo.walls-in-or-ho6` | `wallsInCoverage = true` OR (`ho6Policy.present = true` AND `ho6Policy.deductiblePct ≤ 0.05`) | fail | `propertyType = Condo` |
-| H12 | `hoi.occupancy.match` | `occupancyOnPolicy` aligns with transaction occupancy; DSCR ≠ Primary | fail | always |
-| F1 | `flood.deductible.cap` | `floodDeductible ≤ $10,000` (or ≤ $25,000 for Condo/PUD) | fail | flood-cert document present on loan |
-| F2 | `flood.coverage.minimum` | `floodCoverage ≥ min(unpaidPrincipalBalance, replacementCost, NFIP max)` | fail | flood-cert document present on loan |
+**Naming convention (P1):** Every rule ID is exactly three dot-separated levels: `<validator>.<rule-category>.<rule-name>`. Future validators (Title, CPL, etc.) follow the same convention.
+
+| # | ruleId | Logic | Severity on fail | Severity on low-confidence | Conditional on |
+|---|---|---|---|---|---|
+| H1 | `hoi.loss-payee.match` | Exact text match by channel (Wholesale = NQM Funding LLC; NDC = lender name + lender loan number; NY = Great Home Mortgage of New York) | fail | — (deterministic) | always |
+| H2 | `hoi.named-insured.match` | `namedInsured` equals borrower full name (or entity name when entity-vested) | fail | — | always |
+| H3 | `hoi.property-address.match` | `propertyAddress` equals subject property | fail | — | always |
+| H4 | `hoi.effective-date.window` | Purchase: effectiveDate ≥ noteDate − 15d; Refi: effectiveDate ≤ noteDate | fail | — | always |
+| H5 | `hoi.term.12-months` | `termMonths` ≥ 12 | fail | — | always |
+| H6 | `hoi.premium.paid-in-full` | `premiumPaidInFull.paid = true` OR (paid at closing with invoice in ICD placeholder); Refi: premiums due within 60d of closing must be paid prior/at closing | fail | warn if `premiumPaidInFull.confidence < 0.7` | always |
+| H7 | `hoi.deductible.cap` | `deductiblePct ≤ 0.05` | fail | — | always |
+| H8 | `hoi.wind-hail-hurricane.included` | `windHailHurricane.included = true` | fail | warn if `windHailHurricane.confidence < 0.7` | always |
+| H9 | `hoi.coverage.minimum` | `coverageAmount ≥ min(loanAmount, replacementCost)` | fail | — | always |
+| H10 | `hoi.dscr.rent-loss-coverage` | `rentLossCoverageMonths ≥ 6` AND `rentLossActualCostSustained.detected = false` | fail | warn if `rentLossActualCostSustained.confidence < 0.7` | `productKind = DSCR` |
+| H11 | `hoi.condo.walls-in-or-ho6` | `wallsInCoverage.included = true` OR (`ho6Policy.present = true` AND `ho6Policy.deductiblePct ≤ 0.05`) | fail | warn if `wallsInCoverage.confidence < 0.7` | `propertyType = Condo` |
+| H12 | `hoi.occupancy.match` | `occupancyOnPolicy` aligns with transaction occupancy; DSCR ≠ Primary | fail | — | always |
+| F1 | `flood.deductible.cap` | `floodDeductible ≤ $10,000` (or ≤ $25,000 for Condo/PUD) | fail | — | flood-cert document present on loan |
+| F2 | `flood.coverage.minimum` | `floodCoverage ≥ min(unpaidPrincipalBalance, replacementCost, NFIP max)` | fail | — | flood-cert document present on loan |
+
+**Severity discipline (C4):** Rules whose underlying field is LLM-derived from prose (H6, H8, H10, H11) escalate to `warn` instead of `fail` when the per-field confidence drops below 0.7 (R1 / §6.3). The `warn` severity is reserved for two purposes in this validator: (a) the R1 grounding-fallback case above; (b) future rules where soft compliance hints are appropriate (e.g., "effective date is 14 days out — close to the 15-day limit"). The other 10 rules emit only `fail` because their inputs are either numeric, ISO-date, or verbatim-text extractions with structurally lower hallucination risk.
 
 **Channel handling for H1:**
 
@@ -383,9 +433,13 @@ Match logic: case-insensitive substring match on the canonical entity name + loa
 
 **Channel handling for H10/H11/H12 conditional firing:**
 
-`productKind = DSCR` derived from `loan.documentationType` (existing field; values include `DSCR > 1.15%`, `DSCR No Ratio`, etc.).
+`productKind = DSCR` derived from `loan.documentationType.toUpperCase().includes("DSCR")` (substring match; existing field values include `DSCR > 1.15%`, `DSCR No Ratio`, etc.). New DSCR-family product names introduced by NPNQM (e.g., `DSCR Lite`, `Investor DSCR Premium`) are picked up automatically. If NPNQM introduces a documentation type containing `DSCR` that should NOT trigger H10/H12 (rent loss, occupancy), add an explicit exclusion list under tenant config (`validators.hoi.dscrProductExclusions`); not anticipated for v1.
 
-`propertyType = Condo` derived from `loan.subjectProperty.propertyType`.
+`propertyType = Condo` derived from `loan.subjectProperty.propertyType` exact match against `"Condo"`. Other condo-like types (e.g., `"Condotel"`, `"Site Condo"`) would need explicit allow-listing — out of scope for v1.
+
+**H1 channel mapping source (P3):** Channel inference uses `loan.channel` (Wholesale / NDC / Retail) and `loan.subjectProperty.state` for the state-variant text selection.
+
+**NDC precondition:** The NDC branch of H1 requires `LoanContext.lenderName` and `LoanContext.lenderLoanNumber`. These fields are not currently in `LoanContext`. If absent at evaluation time, the H1 NDC branch no-ops with a structured warn (`"NDC channel not supported until LoanContext widened with lenderName/lenderLoanNumber"`) — the rule treats this as `skip`, not `fail`, so NDC tenants don't receive false-positive H1 failures during the gap. Widening `LoanContext` is tracked as a v1.1 prerequisite for full NDC channel support.
 
 ---
 
@@ -403,10 +457,43 @@ Match logic: case-insensitive substring match on the canonical entity name + loa
 - Each rule checks input presence first. Missing required input → rule does not fire (no false positives).
 - Trade-off: incomplete extraction produces fewer findings, not noisy findings. Mitigation deferred to v1.1: a "partial extraction — N rules skipped" badge.
 
-### 6.3 Ambiguous policy text
+### 6.3 Ambiguous policy text (per-field confidence + grounding)
 
-- `extraction_confidence < 0.7` for a field → treat as missing (rule skipped).
-- Aggregate `extraction_confidence < 0.4` → emit a `Misc: HOI Policy Review` prediction asking RM to verify; rules still attempt to fire on individual high-confidence fields.
+This validator inherits PC v2 §5.3's `LLM_CONFIDENCE_FLOOR = 0.7` discipline but applies it **per-field** on prose-derived booleans rather than aggregate. The R1 grounding-pass (§4.1) catches hallucinations where the LLM asserts a boolean conclusion unsupported by the wording it captured.
+
+**Per-field thresholds (applied at rule evaluation, not at extraction):**
+
+- For prose-derived booleans (`windHailHurricane`, `rentLossActualCostSustained`, `wallsInCoverage`, `premiumPaidInFull`) — if `<field>.confidence < 0.7`, the corresponding rule (H8, H10, H11, H6) emits with `severity = "warn"` instead of `severity = "fail"`. The warn variant uses the same `ruleId` but carries the low-confidence signal forward to the UI. Rules whose underlying field has `confidence < 0.4` are skipped entirely (no emission).
+- For deterministic fields (`coverageAmount`, `effectiveDate`, `lossPayeeClause`, etc.) — no per-field threshold; rules fire on presence/absence of the value, since LLM hallucination risk on a numeric or verbatim-text extraction is structurally lower.
+
+**Threshold rationale:** The `0.7` floor mirrors PC v2 §5.3's `LLM_CONFIDENCE_FLOOR` so the suite shares one discipline. Calibration deferred to Layer 4 tests when real-LLM fixtures land; adjust based on observed false-positive/false-negative rates in pilot.
+
+**Low aggregate-confidence escape hatch** (`extraction_confidence < 0.4` aggregate, OR ≥3 prose-derived fields fall below 0.4): emit a `Misc: HOI Policy Review` prediction asking RM to verify the policy manually. Specific emission shape:
+
+```ts
+{
+  description: "HOI Policy: Manual Review Required",
+  note: `Automated extraction confidence ${aggConfidence.toFixed(2)}. ${reason}. Verify per-field details manually before clearing the Hazard Insurance condition.`,
+  category: "PTD",
+  sourceList: "hoi-validator",
+  sourceRuleId: "hoi.review.low-confidence",
+  sourceRuleTable: "hoi_validator_rules",
+  emissionKind: "deterministic",
+  metadata: {
+    validationFindings: [{
+      ruleId: "hoi.review.low-confidence",
+      severity: "warn",
+      currentValue: `aggregate_confidence=${aggConfidence.toFixed(2)}`,
+      expectedValue: null,
+      evidence: { documentId, extractionId, fieldPath: "<aggregate>", documentPage: null }
+    }]
+  }
+}
+```
+
+Accepting the prediction creates an "HOI Policy Review" condition that the RM clears after manual verification. The cached extraction remains; the RM can force re-extraction via a future UI control (deferred) or trigger re-extraction by re-uploading the document.
+
+Individual high-confidence fields can still fire their respective rules even when the aggregate hatch fires — the review prediction is **additive**, not a stop-the-world signal.
 
 ### 6.4 Document re-uploads
 
@@ -425,6 +512,28 @@ Match logic: case-insensitive substring match on the canonical entity name + loa
 - Portal-provided extraction wins when present. LLM extraction skipped.
 - Portal extractions are never auto-superseded by LLM. RM can force re-extract via a future UI control (deferred).
 - Future enhancement: TTL-based fallback when portal extraction is stale.
+
+**Cross-source supersede audit (C2):** When a new extraction supersedes an existing one with a *different `source`* (e.g., portal supersedes LLM via re-push, or LLM supersedes portal via future force-refresh control), the cache writer emits a `tenant_audit_log` row:
+
+```ts
+{
+  target_tenant_id: tenantId,
+  actor_id: extractedBy,                                  // 'portal:npnqm' | 'worker:hoi-extractor:v1' | userId
+  action: 'document_extraction.superseded',
+  reason: `extraction source change: ${fromSource} → ${toSource}`,
+  metadata: {
+    document_id: documentId,
+    extractor_kind: extractorKind,
+    schema_version: schemaVersion,
+    from_source: fromSource,
+    to_source: toSource,
+    superseded_extraction_id: priorExtractionId,
+    new_extraction_id: newExtractionId,
+  }
+}
+```
+
+Same-source supersedes (LLM re-runs after schema version bump, portal re-pushes same source) do **not** emit an audit row — they're routine. Cross-source transitions are the interesting signal for future drift-detection or operator UI surfacing, paralleling the `eligibility.disagreement` pattern from Spec 1.5 §7.1.
 
 ### 6.7 Multiple policies on one loan
 
@@ -511,7 +620,7 @@ F1/F2 currently fire only when a flood-cert document exists. Risk: borrower in f
 
 ### 8.4 Premium-paid-in-full evidence
 
-H6 requires evidence "paid receipt OR invoice in ICD placeholder". Detecting "invoice in ICD placeholder" requires checking other documents on the loan. MVP scope: check only `premiumPaidInFull` boolean from extraction; defer the cross-document invoice check to v1.1.
+H6 requires evidence "paid receipt OR invoice in ICD placeholder". Detecting "invoice in ICD placeholder" requires checking other documents on the loan. MVP scope: check only `premiumPaidInFull.paid` from extraction (with grounding-pass per R1); defer the cross-document invoice check to v1.1.
 
 ---
 
