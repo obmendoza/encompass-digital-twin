@@ -2,6 +2,7 @@
 
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   actionAcceptPrediction,
   actionDismissPrediction,
@@ -55,6 +56,17 @@ export function PredictedConditionsPanel({ loanId, predictions, alerts, mode, fi
   const activeAlerts = alerts.filter((a) => a.cleared_at === null);
   const noKbAlert = activeAlerts.find((a) => a.error_class === "NoActiveKbVersionError");
   const pendingGroups = groupByNormalizedDescription(predictions as GroupingPrediction[]);
+
+  const driftProgramNames = new Set(driftData.programs.map((p) => p.program));
+
+  const filteredPendingGroups =
+    filter === "disagreements" && mode === "drift"
+      ? pendingGroups.filter((g) => {
+          const desc = g.displayDescription.toLowerCase();
+          return Array.from(driftProgramNames).some((name) => desc.includes(name.toLowerCase()));
+        })
+      : pendingGroups;
+
   const acceptedItems = predictions.filter((p) => p.status === "accepted");
   const dismissedItems = predictions.filter((p) => p.status === "dismissed");
 
@@ -103,12 +115,20 @@ export function PredictedConditionsPanel({ loanId, predictions, alerts, mode, fi
       />
       <ModeToggle currentMode={mode} basePath={basePath} currentFilter={filter} />
 
-      {pendingGroups.length === 0 ? (
+      {filter === "disagreements" && mode === "drift" && (
+        <div className="mb-2 p-1 text-[11px] bg-[#eef3fa] border border-[#6b7a8f]">
+          Filtered to {driftData.disagreementCount} program{driftData.disagreementCount > 1 ? "s" : ""}.
+          {" "}
+          <Link href={`${basePath}?view=drift`} className="text-[#1f4478] underline">View all</Link>
+        </div>
+      )}
+
+      {filteredPendingGroups.length === 0 ? (
         <div className="text-[11px] text-[#6b7a8f]">No pending predictions.</div>
       ) : (
         <>
-          <div className="text-[11px] font-bold mb-1">Pending ({pendingGroups.length} group{pendingGroups.length !== 1 ? "s" : ""})</div>
-          {pendingGroups.map((group) => (
+          <div className="text-[11px] font-bold mb-1">Pending ({filteredPendingGroups.length} group{filteredPendingGroups.length !== 1 ? "s" : ""})</div>
+          {filteredPendingGroups.map((group) => (
             <GroupedConditionCard
               key={group.normalizedKey}
               group={group}

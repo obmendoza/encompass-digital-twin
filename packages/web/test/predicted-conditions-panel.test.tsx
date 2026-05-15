@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
 import { PredictedConditionsPanel } from "@/components/encompass/PredictedConditionsPanel";
 import { VAPredictedConditionsPanel } from "@/components/encompass/VAPredictedConditionsPanel";
 
@@ -93,5 +93,64 @@ describe("VAPredictedConditionsPanel (VA)", () => {
     render(<VAPredictedConditionsPanel loanId="L-1" predictions={[]} unavailable={true} />);
     expect(screen.getByText(/Predictions temporarily unavailable/)).toBeInTheDocument();
     expect(screen.queryByText(/Pending — operator didn/)).not.toBeInTheDocument();
+  });
+});
+
+describe("PredictedConditionsPanel — disagreement filter", () => {
+  afterEach(() => cleanup());
+
+  it("filter=disagreements narrows pending groups to drift-program matches in Drift mode", () => {
+    const predictions = [
+      { id: "1", status: "pending" as const, description: "Investor DSCR doc", category: "PTA", note: null,
+        source_list: "portal-llm", source_order: 0, acted_by: null, acted_role: null, dismissal_reason: null,
+        accepted_condition_id: null, portal_metadata: null, analysis_hash: null, superseded_at: null },
+      { id: "2", status: "pending" as const, description: "Unrelated doc", category: "PTA", note: null,
+        source_list: "portal-llm", source_order: 0, acted_by: null, acted_role: null, dismissal_reason: null,
+        accepted_condition_id: null, portal_metadata: null, analysis_hash: null, superseded_at: null },
+    ];
+    const driftData = {
+      disagreementCount: 1,
+      programs: [{ program: "Investor DSCR", portalStatus: "PASS", pcV2Status: "FAIL" }],
+    };
+    render(
+      <PredictedConditionsPanel
+        loanId="L-1"
+        predictions={predictions as never}
+        alerts={[] as never}
+        mode="drift"
+        filter="disagreements"
+        basePath="/loan/L-1/transmittal"
+        driftData={driftData}
+      />,
+    );
+    expect(screen.getAllByText(/Investor DSCR doc/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Unrelated doc/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Filtered to 1 program/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /View all/ })).toBeInTheDocument();
+  });
+
+  it("filter=disagreements is ignored in Curation mode (defensive)", () => {
+    const predictions = [
+      { id: "1", status: "pending" as const, description: "Investor DSCR doc", category: "PTA", note: null,
+        source_list: "portal-llm", source_order: 0, acted_by: null, acted_role: null, dismissal_reason: null,
+        accepted_condition_id: null, portal_metadata: null, analysis_hash: null, superseded_at: null },
+      { id: "2", status: "pending" as const, description: "Unrelated doc", category: "PTA", note: null,
+        source_list: "portal-llm", source_order: 0, acted_by: null, acted_role: null, dismissal_reason: null,
+        accepted_condition_id: null, portal_metadata: null, analysis_hash: null, superseded_at: null },
+    ];
+    render(
+      <PredictedConditionsPanel
+        loanId="L-1"
+        predictions={predictions as never}
+        alerts={[] as never}
+        mode="curation"
+        filter="disagreements"
+        basePath="/loan/L-1/transmittal"
+        driftData={{ disagreementCount: 1, programs: [{ program: "Investor DSCR", portalStatus: "PASS", pcV2Status: "FAIL" }] }}
+      />,
+    );
+    expect(screen.getAllByText(/Investor DSCR doc/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Unrelated doc/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Filtered to/)).not.toBeInTheDocument();
   });
 });
