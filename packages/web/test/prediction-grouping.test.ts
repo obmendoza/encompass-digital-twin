@@ -123,7 +123,7 @@ describe("findDriftProgram", () => {
       id: "r1",
       description: "Income Documentation",
       source_list: "portal-llm",
-      portal_metadata: { tags: ["bank-statement", "self-employed"] },
+      portal_metadata: { tags: ["bank statement income", "self-employed"] },
     });
     const g: PredictionGroup = {
       normalizedKey: "incomedocumentation",
