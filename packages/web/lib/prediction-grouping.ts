@@ -1,5 +1,22 @@
 import { normalizeConditionDescription } from "@twin/core";
 
+export interface DriftProgram {
+  program: string;
+  portalStatus: string;
+  pcV2Status: string;
+}
+
+export function findDriftProgram(g: PredictionGroup, driftPrograms: DriftProgram[]): DriftProgram | null {
+  const desc = g.displayDescription.toLowerCase();
+  const tags = (g.portalRow?.portal_metadata?.tags ?? []).map((t) => t.toLowerCase());
+  for (const dp of driftPrograms) {
+    const programLower = dp.program.toLowerCase();
+    if (desc.includes(programLower)) return dp;
+    if (tags.some((t) => t.includes(programLower))) return dp;
+  }
+  return null;
+}
+
 export interface PortalMetadata {
   priority?: "P0" | "P1" | "P2";
   severity?: "HARD-STOP" | "SOFT-STOP";

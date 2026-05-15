@@ -71,6 +71,54 @@ describe("GroupedConditionCard — Drift mode", () => {
     expect(screen.getByRole("button", { name: /Accept portal-llm row/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Accept matrix row/i })).toBeInTheDocument();
   });
+
+  it("renders drift chip with program details when driftProgram is provided", () => {
+    const onAccept = vi.fn(async () => ({ ok: true }));
+    const onDismiss = vi.fn(async () => ({ ok: true }));
+    const driftProgram = { program: "Investor DSCR", portalStatus: "PASS", pcV2Status: "FAIL" };
+    render(
+      <GroupedConditionCard
+        group={mkGroup()}
+        mode="drift"
+        driftProgram={driftProgram}
+        onAccept={onAccept}
+        onDismiss={onDismiss}
+      />
+    );
+    expect(screen.getByTestId("drift-chip")).toBeInTheDocument();
+    expect(screen.getByText(/Drift: Investor DSCR \(Portal PASS, PC v2 FAIL\)/)).toBeInTheDocument();
+  });
+
+  it("does not render drift chip in curation mode even when driftProgram is provided", () => {
+    const onAccept = vi.fn(async () => ({ ok: true }));
+    const onDismiss = vi.fn(async () => ({ ok: true }));
+    const driftProgram = { program: "Investor DSCR", portalStatus: "PASS", pcV2Status: "FAIL" };
+    render(
+      <GroupedConditionCard
+        group={mkGroup()}
+        mode="curation"
+        driftProgram={driftProgram}
+        onAccept={onAccept}
+        onDismiss={onDismiss}
+      />
+    );
+    expect(screen.queryByTestId("drift-chip")).not.toBeInTheDocument();
+  });
+
+  it("does not render drift chip in drift mode when driftProgram is null", () => {
+    const onAccept = vi.fn(async () => ({ ok: true }));
+    const onDismiss = vi.fn(async () => ({ ok: true }));
+    render(
+      <GroupedConditionCard
+        group={mkGroup()}
+        mode="drift"
+        driftProgram={null}
+        onAccept={onAccept}
+        onDismiss={onDismiss}
+      />
+    );
+    expect(screen.queryByTestId("drift-chip")).not.toBeInTheDocument();
+  });
 });
 
 describe("GroupedConditionCard — partial-failure recovery (Spec 1.5-UI §5.1.1)", () => {

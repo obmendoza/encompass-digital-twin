@@ -1,17 +1,18 @@
 "use client";
 import { useState, useTransition } from "react";
-import type { PredictionGroup, PortalMetadata, Prediction } from "@/lib/prediction-grouping";
+import type { PredictionGroup, PortalMetadata, Prediction, DriftProgram } from "@/lib/prediction-grouping";
 
 type ActionResult = { ok: true } | { ok: false; error?: string };
 
 interface Props {
   group: PredictionGroup;
   mode: "curation" | "drift";
+  driftProgram?: DriftProgram | null;
   onAccept: (predictionId: string) => Promise<ActionResult>;
   onDismiss: (predictionId: string, reason: string) => Promise<ActionResult>;
 }
 
-export function GroupedConditionCard({ group, mode, onAccept, onDismiss }: Props): JSX.Element {
+export function GroupedConditionCard({ group, mode, driftProgram = null, onAccept, onDismiss }: Props): JSX.Element {
   const [pending, start] = useTransition();
   const [partialFailure, setPartialFailure] = useState<{ failedPcRowIds: string[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -66,10 +67,12 @@ export function GroupedConditionCard({ group, mode, onAccept, onDismiss }: Props
     });
   };
 
+  const hasDrift = mode === "drift" && driftProgram !== null;
+
   return (
     <div
       data-testid="grouped-condition-card"
-      className={`enc-panel mb-2 ${pending ? "opacity-60 pointer-events-none" : ""}`}
+      className={`enc-panel mb-2 ${hasDrift ? "border-l-4 border-[#8a4b00]" : ""} ${pending ? "opacity-60 pointer-events-none" : ""}`}
       aria-busy={pending}
     >
       <div className="flex items-center justify-between mb-1">
@@ -77,6 +80,14 @@ export function GroupedConditionCard({ group, mode, onAccept, onDismiss }: Props
           {group.displayDescription}
         </div>
         <div className="flex items-center gap-1">
+          {hasDrift && (
+            <span
+              data-testid="drift-chip"
+              className="text-[10px] px-1 bg-[#fff4e6] border border-[#8a4b00] text-[#8a4b00]"
+            >
+              Drift: {driftProgram!.program} (Portal {driftProgram!.portalStatus}, PC v2 {driftProgram!.pcV2Status})
+            </span>
+          )}
           {meta?.priority && <span className="text-[10px] px-1 bg-[#1f4478] text-white">{meta.priority}</span>}
           {meta?.severity && <span className="text-[10px] px-1 bg-[#8a4b00] text-white">{meta.severity}</span>}
           {meta?.document_category && <span className="text-[10px] px-1 bg-[#6b7a8f] text-white">{meta.document_category}</span>}

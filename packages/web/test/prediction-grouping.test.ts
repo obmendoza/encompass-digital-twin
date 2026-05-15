@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { groupByNormalizedDescription, type Prediction } from "@/lib/prediction-grouping";
+import { groupByNormalizedDescription, findDriftProgram, type Prediction, type PredictionGroup, type DriftProgram } from "@/lib/prediction-grouping";
 
 function mkPrediction(p: Partial<Prediction> & { id: string; description: string; source_list: string }): Prediction {
   return {
@@ -88,5 +88,91 @@ describe("groupByNormalizedDescription", () => {
     expect(groups.length).toBe(1);
     expect(groups[0]!.rows.length).toBe(3);
     expect(groups[0]!.pcV2Rows.length).toBe(2);
+  });
+});
+
+function mkGroup(overrides: Partial<PredictionGroup> & { description?: string } = {}): PredictionGroup {
+  const { description = "Credit Report", ...rest } = overrides;
+  const row = mkPrediction({ id: "r1", description, source_list: "portal-llm" });
+  return {
+    normalizedKey: description.toLowerCase().replace(/\s+/g, ""),
+    displayDescription: description,
+    primarySource: "portal-llm",
+    rows: [row],
+    portalRow: row,
+    pcV2Rows: [],
+    hasMultipleSources: false,
+    ...rest,
+  };
+}
+
+describe("findDriftProgram", () => {
+  const programs: DriftProgram[] = [
+    { program: "Investor DSCR", portalStatus: "PASS", pcV2Status: "FAIL" },
+    { program: "Bank Statement", portalStatus: "FAIL", pcV2Status: "PASS" },
+  ];
+
+  it("matches when program name appears in displayDescription", () => {
+    const g = mkGroup({ description: "Investor DSCR — rental income analysis" });
+    const result = findDriftProgram(g, programs);
+    expect(result?.program).toBe("Investor DSCR");
+  });
+
+  it("matches via portal_metadata tags", () => {
+    const row = mkPrediction({
+      id: "r1",
+      description: "Income Documentation",
+      source_list: "portal-llm",
+      portal_metadata: { tags: ["bank-statement", "self-employed"] },
+    });
+    const g: PredictionGroup = {
+      normalizedKey: "incomedocumentation",
+      displayDescription: "Income Documentation",
+      primarySource: "portal-llm",
+      rows: [row],
+      portalRow: row,
+      pcV2Rows: [],
+      hasMultipleSources: false,
+    };
+    const result = findDriftProgram(g, programs);
+    expect(result?.program).toBe("Bank Statement");
+  });
+
+  it("returns null when no program matches description or tags", () => {
+    const g = mkGroup({ description: "Title Insurance" });
+    expect(findDriftProgram(g, programs)).toBeNull();
+  });
+
+  it("returns null when portal_metadata is null (empty-tags edge case)", () => {
+    const row = mkPrediction({ id: "r1", description: "Some doc", source_list: "portal-llm", portal_metadata: null });
+    const g: PredictionGroup = {
+      normalizedKey: "somedoc",
+      displayDescription: "Some doc",
+      primarySource: "portal-llm",
+      rows: [row],
+      portalRow: row,
+      pcV2Rows: [],
+      hasMultipleSources: false,
+    };
+    expect(findDriftProgram(g, programs)).toBeNull();
+  });
+
+  it("returns null when portal_metadata.tags is empty array", () => {
+    const row = mkPrediction({ id: "r1", description: "Some doc", source_list: "portal-llm", portal_metadata: { tags: [] } });
+    const g: PredictionGroup = {
+      normalizedKey: "somedoc",
+      displayDescription: "Some doc",
+      primarySource: "portal-llm",
+      rows: [row],
+      portalRow: row,
+      pcV2Rows: [],
+      hasMultipleSources: false,
+    };
+    expect(findDriftProgram(g, programs)).toBeNull();
+  });
+
+  it("returns null for empty drift programs list", () => {
+    const g = mkGroup({ description: "Investor DSCR — something" });
+    expect(findDriftProgram(g, [])).toBeNull();
   });
 });

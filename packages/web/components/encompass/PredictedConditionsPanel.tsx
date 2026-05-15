@@ -9,7 +9,7 @@ import {
   actionRunPredictions,
   actionClearPredictionAlert,
 } from "@/app/loan/[loanId]/predictions/actions";
-import { groupByNormalizedDescription, type Prediction as GroupingPrediction } from "@/lib/prediction-grouping";
+import { groupByNormalizedDescription, findDriftProgram, type Prediction as GroupingPrediction } from "@/lib/prediction-grouping";
 import type { PortalMetadata } from "@/lib/prediction-grouping";
 import { GroupedConditionCard } from "./GroupedConditionCard";
 import { ModeToggle } from "./ModeToggle";
@@ -128,23 +128,27 @@ export function PredictedConditionsPanel({ loanId, predictions, alerts, mode, fi
       ) : (
         <>
           <div className="text-[11px] font-bold mb-1">Pending ({filteredPendingGroups.length} group{filteredPendingGroups.length !== 1 ? "s" : ""})</div>
-          {filteredPendingGroups.map((group) => (
-            <GroupedConditionCard
-              key={group.normalizedKey}
-              group={group}
-              mode={mode}
-              onAccept={async (predictionId) => {
-                const r = await actionAcceptPrediction(loanId, predictionId);
-                router.refresh();
-                return r;
-              }}
-              onDismiss={async (predictionId, reason) => {
-                const r = await actionDismissPrediction(loanId, predictionId, reason);
-                router.refresh();
-                return r;
-              }}
-            />
-          ))}
+          {filteredPendingGroups.map((group) => {
+            const driftProgram = mode === "drift" ? findDriftProgram(group, driftData.programs) : null;
+            return (
+              <GroupedConditionCard
+                key={group.normalizedKey}
+                group={group}
+                mode={mode}
+                driftProgram={driftProgram}
+                onAccept={async (predictionId) => {
+                  const r = await actionAcceptPrediction(loanId, predictionId);
+                  router.refresh();
+                  return r;
+                }}
+                onDismiss={async (predictionId, reason) => {
+                  const r = await actionDismissPrediction(loanId, predictionId, reason);
+                  router.refresh();
+                  return r;
+                }}
+              />
+            );
+          })}
         </>
       )}
 
