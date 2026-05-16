@@ -1,7 +1,10 @@
 import { describe, test, expect } from "vitest";
 import { H1_lossPayeeMatch, H2_namedInsuredMatch, H3_propertyAddressMatch } from "../src/services/validators/hoi/rules/identity.js";
 import { H4_effectiveDateWindow, H5_term12Months } from "../src/services/validators/hoi/rules/dates.js";
+import { H6_premiumPaidInFull } from "../src/services/validators/hoi/rules/coverage.js";
 import type { RuleContext } from "../src/services/validators/hoi/rules/types.js";
+
+const DAY = 24 * 60 * 60 * 1000;
 
 const baseExtraction = {
   carrier: null, policyNumber: null, namedInsured: null, propertyAddress: null,
@@ -313,5 +316,81 @@ describe("H5: hoi.term.12-months", () => {
       loanNumber: "X",
     };
     expect(H5_term12Months(ctx).fired).toBe(false);
+  });
+});
+
+describe("H6: hoi.premium.paid-in-full", () => {
+  // Clock-safe relative closing date for the refi test (case 4).
+  // premiumDueDays=30 means dueBy = Date.now() + 30d; closingDate is also +30d from now,
+  // so dueBy ≈ close, which is always within ±60d.
+  const closingDate = new Date(Date.now() + 30 * DAY).toISOString().slice(0, 10);
+
+  test("paid=true, confidence=0.9 → pass (fired: false)", () => {
+    const ctx: RuleContext = {
+      hoi: { ...baseExtraction, premiumPaidInFull: { paid: true, confidence: 0.9 } },
+      flood: null,
+      loan: baseLoan,
+      documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
+      extractionId: "00000000-0000-0000-0000-000000000060",
+      loanNumber: "X",
+    };
+    expect(H6_premiumPaidInFull(ctx).fired).toBe(false);
+  });
+
+  test("paid=false, confidence=0.9, Purchase → fail", () => {
+    const ctx: RuleContext = {
+      hoi: { ...baseExtraction, premiumPaidInFull: { paid: false, confidence: 0.9 } },
+      flood: null,
+      loan: { ...baseLoan, loanPurpose: "Purchase" },
+      documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
+      extractionId: "00000000-0000-0000-0000-000000000061",
+      loanNumber: "X",
+    };
+    const r = H6_premiumPaidInFull(ctx);
+    expect(r.fired).toBe(true);
+    expect(r.finding?.severity).toBe("fail");
+    expect(r.finding?.ruleId).toBe("hoi.premium.paid-in-full");
+  });
+
+  test("paid=true, confidence=0.5, Purchase → warn (low-confidence paid claim)", () => {
+    const ctx: RuleContext = {
+      hoi: { ...baseExtraction, premiumPaidInFull: { paid: true, confidence: 0.5 } },
+      flood: null,
+      loan: { ...baseLoan, loanPurpose: "Purchase" },
+      documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
+      extractionId: "00000000-0000-0000-0000-000000000062",
+      loanNumber: "X",
+    };
+    const r = H6_premiumPaidInFull(ctx);
+    expect(r.fired).toBe(true);
+    expect(r.finding?.severity).toBe("warn");
+    expect(r.finding?.ruleId).toBe("hoi.premium.paid-in-full");
+  });
+
+  test("Refi, paid=false, confidence=0.9, premium due within 60d of closing → fail", () => {
+    const ctx: RuleContext = {
+      hoi: { ...baseExtraction, premiumPaidInFull: { paid: false, confidence: 0.9 }, premiumDueDays: 30 },
+      flood: null,
+      loan: { ...baseLoan, loanPurpose: "Rate & Term Refinance", closingDate },
+      documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
+      extractionId: "00000000-0000-0000-0000-000000000063",
+      loanNumber: "X",
+    };
+    const r = H6_premiumPaidInFull(ctx);
+    expect(r.fired).toBe(true);
+    expect(r.finding?.severity).toBe("fail");
+    expect(r.finding?.ruleId).toBe("hoi.premium.paid-in-full");
+  });
+
+  test("premiumPaidInFull=null → skip (fired: false)", () => {
+    const ctx: RuleContext = {
+      hoi: { ...baseExtraction, premiumPaidInFull: null },
+      flood: null,
+      loan: baseLoan,
+      documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
+      extractionId: "00000000-0000-0000-0000-000000000064",
+      loanNumber: "X",
+    };
+    expect(H6_premiumPaidInFull(ctx).fired).toBe(false);
   });
 });
