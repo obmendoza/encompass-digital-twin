@@ -40,6 +40,29 @@ export interface LoanContext {
   dti?: number;
   reservesMonths?: number;
   noteRate?: number;
+  // ── HOI/Flood validator additions (Task 5) ──
+  /** Loan channel — drives H1 mortgagee-clause selection.
+   *  Note: LoanContextExtras.channel is z.string() (loose); a future ingestion
+   *  task should narrow the extras enum or add a narrow-cast on merge. */
+  channel?: "Wholesale" | "NDC" | "Retail";
+  /** Borrower's full legal name — drives H2 named-insured match. */
+  borrowerFullName?: string;
+  /** Entity name if entity-vested — drives H2 alternate match. */
+  entityName?: string;
+  /** Subject property full address — drives H3. */
+  subjectPropertyAddress?: { line1: string; line2?: string; city: string; state: string; zip: string };
+  /** Note date (ISO YYYY-MM-DD) — drives H4 effective-date window. */
+  noteDate?: string;
+  /** Closing date (ISO YYYY-MM-DD) — drives H6 premium-due rule on refis. */
+  closingDate?: string;
+  /** Unpaid principal balance — drives F2 on refis. */
+  unpaidPrincipalBalance?: number;
+  /** Replacement cost insured value — drives F2 fallback. */
+  replacementCost?: number;
+  /** Lender name (NDC channel only); v1.1 — H1 NDC branch no-ops if absent. */
+  lenderName?: string;
+  /** Lender loan number (NDC channel only); v1.1. */
+  lenderLoanNumber?: string;
 }
 
 export interface ResolveResult {
