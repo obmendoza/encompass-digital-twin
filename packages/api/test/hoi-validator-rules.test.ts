@@ -3,6 +3,7 @@ import { H1_lossPayeeMatch, H2_namedInsuredMatch, H3_propertyAddressMatch } from
 import { H4_effectiveDateWindow, H5_term12Months } from "../src/services/validators/hoi/rules/dates.js";
 import { H6_premiumPaidInFull, H7_deductibleCap, H8_windHailIncluded, H9_coverageMinimum } from "../src/services/validators/hoi/rules/coverage.js";
 import { H10_dscrRentLoss, H11_condoWallsInOrHo6, H12_occupancyMatch } from "../src/services/validators/hoi/rules/conditional.js";
+import { F1_floodDeductibleCap, F2_floodCoverageMinimum } from "../src/services/validators/hoi/rules/flood.js";
 import type { RuleContext } from "../src/services/validators/hoi/rules/types.js";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -773,5 +774,137 @@ describe("H12: hoi.occupancy.match", () => {
     expect(r.fired).toBe(true);
     expect(r.finding?.severity).toBe("fail");
     expect(r.finding?.ruleId).toBe("hoi.occupancy.match");
+  });
+});
+
+const baseFloodExtraction = {
+  carrier: null, policyNumber: null, namedInsured: null, propertyAddress: null,
+  effectiveDate: null, expirationDate: null, termMonths: null,
+  floodZone: null, floodCoverage: null, floodDeductible: null,
+  isNfip: null, nfipMaxApplied: null, evidence: [],
+};
+
+const baseFloodDoc = {
+  tenantId: "t", loanId: "l", documentId: "df", category: "flood-cert" as const, storageUrl: "x",
+};
+
+describe("F1: flood.deductible.cap", () => {
+  test("SFR, floodDeductible=8000 → skip (≤ $10K cap, pass)", () => {
+    const ctx: RuleContext = {
+      hoi: null,
+      flood: { ...baseFloodExtraction, floodDeductible: 8_000 },
+      loan: { ...baseLoan, propertyType: "SFR" },
+      documents: { hoi: null, floodCert: baseFloodDoc },
+      extractionId: "00000000-0000-0000-0000-000000000200",
+      loanNumber: "X",
+    };
+    expect(F1_floodDeductibleCap(ctx).fired).toBe(false);
+  });
+
+  test("SFR, floodDeductible=12000 → fail (> $10K cap)", () => {
+    const ctx: RuleContext = {
+      hoi: null,
+      flood: { ...baseFloodExtraction, floodDeductible: 12_000 },
+      loan: { ...baseLoan, propertyType: "SFR" },
+      documents: { hoi: null, floodCert: baseFloodDoc },
+      extractionId: "00000000-0000-0000-0000-000000000201",
+      loanNumber: "X",
+    };
+    const r = F1_floodDeductibleCap(ctx);
+    expect(r.fired).toBe(true);
+    expect(r.finding?.severity).toBe("fail");
+    expect(r.finding?.ruleId).toBe("flood.deductible.cap");
+  });
+
+  test("Condo, floodDeductible=22000 → skip (≤ $25K cap, pass)", () => {
+    const ctx: RuleContext = {
+      hoi: null,
+      flood: { ...baseFloodExtraction, floodDeductible: 22_000 },
+      loan: { ...baseLoan, propertyType: "Condo" },
+      documents: { hoi: null, floodCert: baseFloodDoc },
+      extractionId: "00000000-0000-0000-0000-000000000202",
+      loanNumber: "X",
+    };
+    expect(F1_floodDeductibleCap(ctx).fired).toBe(false);
+  });
+
+  test("Condo, floodDeductible=30000 → fail (> $25K cap)", () => {
+    const ctx: RuleContext = {
+      hoi: null,
+      flood: { ...baseFloodExtraction, floodDeductible: 30_000 },
+      loan: { ...baseLoan, propertyType: "Condo" },
+      documents: { hoi: null, floodCert: baseFloodDoc },
+      extractionId: "00000000-0000-0000-0000-000000000203",
+      loanNumber: "X",
+    };
+    const r = F1_floodDeductibleCap(ctx);
+    expect(r.fired).toBe(true);
+    expect(r.finding?.severity).toBe("fail");
+    expect(r.finding?.ruleId).toBe("flood.deductible.cap");
+  });
+
+  test("no flood-cert (ctx.flood=null) → skip", () => {
+    const ctx: RuleContext = {
+      hoi: null,
+      flood: null,
+      loan: { ...baseLoan, propertyType: "SFR" },
+      documents: { hoi: null, floodCert: null },
+      extractionId: "00000000-0000-0000-0000-000000000204",
+      loanNumber: "X",
+    };
+    expect(F1_floodDeductibleCap(ctx).fired).toBe(false);
+  });
+});
+
+describe("F2: flood.coverage.minimum", () => {
+  test("floodCoverage=250000, loanAmount=200000, replacementCost=300000, SFR → skip (≥ min(200K,300K,250K)=200K, pass)", () => {
+    const ctx: RuleContext = {
+      hoi: null,
+      flood: { ...baseFloodExtraction, floodCoverage: 250_000 },
+      loan: { ...baseLoan, propertyType: "SFR", loanAmount: 200_000, replacementCost: 300_000 },
+      documents: { hoi: null, floodCert: baseFloodDoc },
+      extractionId: "00000000-0000-0000-0000-000000000210",
+      loanNumber: "X",
+    };
+    expect(F2_floodCoverageMinimum(ctx).fired).toBe(false);
+  });
+
+  test("floodCoverage=100000, loanAmount=200000, SFR → fail (below min)", () => {
+    const ctx: RuleContext = {
+      hoi: null,
+      flood: { ...baseFloodExtraction, floodCoverage: 100_000 },
+      loan: { ...baseLoan, propertyType: "SFR", loanAmount: 200_000 },
+      documents: { hoi: null, floodCert: baseFloodDoc },
+      extractionId: "00000000-0000-0000-0000-000000000211",
+      loanNumber: "X",
+    };
+    const r = F2_floodCoverageMinimum(ctx);
+    expect(r.fired).toBe(true);
+    expect(r.finding?.severity).toBe("fail");
+    expect(r.finding?.ruleId).toBe("flood.coverage.minimum");
+  });
+
+  test("no flood-cert → skip", () => {
+    const ctx: RuleContext = {
+      hoi: null,
+      flood: null,
+      loan: { ...baseLoan, propertyType: "SFR", loanAmount: 200_000 },
+      documents: { hoi: null, floodCert: null },
+      extractionId: "00000000-0000-0000-0000-000000000212",
+      loanNumber: "X",
+    };
+    expect(F2_floodCoverageMinimum(ctx).fired).toBe(false);
+  });
+
+  test("flood-cert present but floodCoverage=null → skip", () => {
+    const ctx: RuleContext = {
+      hoi: null,
+      flood: { ...baseFloodExtraction, floodCoverage: null },
+      loan: { ...baseLoan, propertyType: "SFR", loanAmount: 200_000 },
+      documents: { hoi: null, floodCert: baseFloodDoc },
+      extractionId: "00000000-0000-0000-0000-000000000213",
+      loanNumber: "X",
+    };
+    expect(F2_floodCoverageMinimum(ctx).fired).toBe(false);
   });
 });
