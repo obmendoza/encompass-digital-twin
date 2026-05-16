@@ -7,6 +7,7 @@ import {
   type FloodCertFields,
 } from "@twin/core";
 import type { DocumentRef, HoiExtractionResult, HoiFieldExtractor } from "./extractor.js";
+import { groundingPass } from "./grounding.js";
 
 // ---------------------------------------------------------------------------
 // Tool definitions
@@ -222,10 +223,15 @@ export class LlmHoiExtractor implements HoiFieldExtractor {
       return this.failedExtraction(`zod_validation_failed: ${msg}`);
     }
 
-    const aggregateConfidence = computeAggregateConfidence(parsed.data);
+    // R1 grounding-pass — only for HOI policies (flood cert has no prose-derived booleans)
+    const grounded = doc.category === "hoi-policy"
+      ? groundingPass(parsed.data as HoiPolicyFields)
+      : { fields: parsed.data, groundingErrors: [] as Array<{ field: string; conclusion: string; reason: string }> };
+
+    const aggregateConfidence = computeAggregateConfidence(grounded.fields);
 
     return {
-      fields: parsed.data,
+      fields: grounded.fields,
       source: "llm-extractor",
       confidence: aggregateConfidence,
       extractedBy: `worker:hoi-extractor:v${HOI_SCHEMA_VERSION}`,
@@ -233,6 +239,8 @@ export class LlmHoiExtractor implements HoiFieldExtractor {
       // after the DB INSERT returns the row's UUID.
       extractionId: "",
       schemaVersion: HOI_SCHEMA_VERSION,
+      // Append grounding errors as extractionError if any were found
+      ...(grounded.groundingErrors.length > 0 ? { extractionError: JSON.stringify(grounded.groundingErrors) } : {}),
     };
   }
 
