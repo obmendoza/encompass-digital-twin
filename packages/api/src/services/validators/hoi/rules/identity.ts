@@ -14,6 +14,59 @@ function expectedLossPayee(loan: RuleContext["loan"]): string | null {
   return "NQM Funding, LLC";
 }
 
+export const H2_namedInsuredMatch: Rule = (ctx: RuleContext): RuleResult => {
+  const skip: RuleResult = { ruleId: "hoi.named-insured.match", fired: false, finding: null };
+  if (!ctx.hoi?.namedInsured) return skip;
+  const got = normalize(ctx.hoi.namedInsured);
+  const expectedName = ctx.loan.entityName ?? ctx.loan.borrowerFullName;
+  if (!expectedName) return skip;
+  if (got.includes(normalize(expectedName))) return skip;
+  return {
+    ruleId: "hoi.named-insured.match",
+    fired: true,
+    finding: {
+      ruleId: "hoi.named-insured.match",
+      severity: "fail",
+      currentValue: ctx.hoi.namedInsured,
+      expectedValue: expectedName,
+      evidence: {
+        documentId: ctx.documents.hoi!.documentId,
+        extractionId: ctx.extractionId,
+        fieldPath: "namedInsured",
+        documentPage: ctx.hoi.evidence.find((e) => e.fieldPath === "namedInsured")?.documentPage ?? null,
+      },
+    },
+  };
+};
+
+export const H3_propertyAddressMatch: Rule = (ctx: RuleContext): RuleResult => {
+  const skip: RuleResult = { ruleId: "hoi.property-address.match", fired: false, finding: null };
+  if (!ctx.hoi?.propertyAddress || !ctx.loan.subjectPropertyAddress) return skip;
+  const got = ctx.hoi.propertyAddress;
+  const want = ctx.loan.subjectPropertyAddress;
+  const lineOk = normalize(got.line1) === normalize(want.line1);
+  const cityOk = normalize(got.city) === normalize(want.city);
+  const stateOk = normalize(got.state) === normalize(want.state);
+  const zipOk = got.zip.replace(/\D/g, "").slice(0, 5) === want.zip.replace(/\D/g, "").slice(0, 5);
+  if (lineOk && cityOk && stateOk && zipOk) return skip;
+  return {
+    ruleId: "hoi.property-address.match",
+    fired: true,
+    finding: {
+      ruleId: "hoi.property-address.match",
+      severity: "fail",
+      currentValue: `${got.line1}, ${got.city}, ${got.state} ${got.zip}`,
+      expectedValue: `${want.line1}, ${want.city}, ${want.state} ${want.zip}`,
+      evidence: {
+        documentId: ctx.documents.hoi!.documentId,
+        extractionId: ctx.extractionId,
+        fieldPath: "propertyAddress",
+        documentPage: ctx.hoi.evidence.find((e) => e.fieldPath === "propertyAddress")?.documentPage ?? null,
+      },
+    },
+  };
+};
+
 export const H1_lossPayeeMatch: Rule = (ctx: RuleContext): RuleResult => {
   const skip: RuleResult = { ruleId: "hoi.loss-payee.match", fired: false, finding: null };
   if (!ctx.hoi?.lossPayeeClause) return skip;
