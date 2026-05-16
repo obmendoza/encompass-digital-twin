@@ -28,7 +28,8 @@ CREATE INDEX IF NOT EXISTS document_extractions_loan
   WHERE superseded_at IS NULL;
 
 ALTER TABLE document_extractions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE document_extractions FORCE ROW LEVEL SECURITY;
 
-DROP POLICY IF EXISTS document_extractions_tenant_isolation ON document_extractions;
-CREATE POLICY document_extractions_tenant_isolation ON document_extractions
+DROP POLICY IF EXISTS tenant_isolation ON document_extractions;
+CREATE POLICY tenant_isolation ON document_extractions
   USING (tenant_id = current_setting('app.current_tenant', true)::uuid);
