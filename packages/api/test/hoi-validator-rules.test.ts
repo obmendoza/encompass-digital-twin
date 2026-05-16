@@ -2,6 +2,7 @@ import { describe, test, expect } from "vitest";
 import { H1_lossPayeeMatch, H2_namedInsuredMatch, H3_propertyAddressMatch } from "../src/services/validators/hoi/rules/identity.js";
 import { H4_effectiveDateWindow, H5_term12Months } from "../src/services/validators/hoi/rules/dates.js";
 import { H6_premiumPaidInFull, H7_deductibleCap, H8_windHailIncluded, H9_coverageMinimum } from "../src/services/validators/hoi/rules/coverage.js";
+import { H10_dscrRentLoss, H11_condoWallsInOrHo6, H12_occupancyMatch } from "../src/services/validators/hoi/rules/conditional.js";
 import type { RuleContext } from "../src/services/validators/hoi/rules/types.js";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -580,5 +581,197 @@ describe("H9: hoi.coverage.minimum", () => {
       loanNumber: "X",
     };
     expect(H9_coverageMinimum(ctx).fired).toBe(false);
+  });
+});
+
+describe("H10: hoi.dscr.rent-loss-coverage", () => {
+  const dscrLoan = { ...baseLoan, incomeDocType: "DSCR > 1.15%" };
+  const hoiDoc = { tenantId: "t", loanId: "l", documentId: "d-h", category: "hoi-policy" as const, storageUrl: "x" };
+
+  test("DSCR, rentLossCoverageMonths=6, rentLossActualCostSustained=null → skip (pass)", () => {
+    const ctx: RuleContext = {
+      hoi: { ...baseExtraction, rentLossCoverageMonths: 6, rentLossActualCostSustained: null },
+      flood: null,
+      loan: dscrLoan,
+      documents: { hoi: hoiDoc, floodCert: null },
+      extractionId: "00000000-0000-0000-0000-000000000100",
+      loanNumber: "X",
+    };
+    expect(H10_dscrRentLoss(ctx).fired).toBe(false);
+  });
+
+  test("DSCR, rentLossCoverageMonths=3 → fail", () => {
+    const ctx: RuleContext = {
+      hoi: { ...baseExtraction, rentLossCoverageMonths: 3, rentLossActualCostSustained: null },
+      flood: null,
+      loan: dscrLoan,
+      documents: { hoi: hoiDoc, floodCert: null },
+      extractionId: "00000000-0000-0000-0000-000000000101",
+      loanNumber: "X",
+    };
+    const r = H10_dscrRentLoss(ctx);
+    expect(r.fired).toBe(true);
+    expect(r.finding?.severity).toBe("fail");
+    expect(r.finding?.ruleId).toBe("hoi.dscr.rent-loss-coverage");
+  });
+
+  test("DSCR, rentLossActualCostSustained={detected:true, confidence:0.9}, rentLossCoverageMonths=6 → fail", () => {
+    const ctx: RuleContext = {
+      hoi: { ...baseExtraction, rentLossCoverageMonths: 6, rentLossActualCostSustained: { detected: true, confidence: 0.9 } },
+      flood: null,
+      loan: dscrLoan,
+      documents: { hoi: hoiDoc, floodCert: null },
+      extractionId: "00000000-0000-0000-0000-000000000102",
+      loanNumber: "X",
+    };
+    const r = H10_dscrRentLoss(ctx);
+    expect(r.fired).toBe(true);
+    expect(r.finding?.severity).toBe("fail");
+    expect(r.finding?.ruleId).toBe("hoi.dscr.rent-loss-coverage");
+  });
+
+  test("non-DSCR loan (incomeDocType='Full Doc') → skip (rule doesn't fire)", () => {
+    const ctx: RuleContext = {
+      hoi: { ...baseExtraction, rentLossCoverageMonths: 3, rentLossActualCostSustained: null },
+      flood: null,
+      loan: { ...baseLoan, incomeDocType: "Full Doc" },
+      documents: { hoi: hoiDoc, floodCert: null },
+      extractionId: "00000000-0000-0000-0000-000000000103",
+      loanNumber: "X",
+    };
+    expect(H10_dscrRentLoss(ctx).fired).toBe(false);
+  });
+
+  test("DSCR, rentLossActualCostSustained={detected:true, confidence:0.5}, rentLossCoverageMonths=6 → warn", () => {
+    const ctx: RuleContext = {
+      hoi: { ...baseExtraction, rentLossCoverageMonths: 6, rentLossActualCostSustained: { detected: true, confidence: 0.5 } },
+      flood: null,
+      loan: dscrLoan,
+      documents: { hoi: hoiDoc, floodCert: null },
+      extractionId: "00000000-0000-0000-0000-000000000104",
+      loanNumber: "X",
+    };
+    const r = H10_dscrRentLoss(ctx);
+    expect(r.fired).toBe(true);
+    expect(r.finding?.severity).toBe("warn");
+    expect(r.finding?.ruleId).toBe("hoi.dscr.rent-loss-coverage");
+  });
+});
+
+describe("H11: hoi.condo.walls-in-or-ho6", () => {
+  const condoLoan = { ...baseLoan, propertyType: "Condo" };
+  const hoiDoc = { tenantId: "t", loanId: "l", documentId: "d-h", category: "hoi-policy" as const, storageUrl: "x" };
+
+  test("Condo, wallsInCoverage={included:true, confidence:0.9} → skip (pass)", () => {
+    const ctx: RuleContext = {
+      hoi: { ...baseExtraction, wallsInCoverage: { included: true, confidence: 0.9 }, ho6Policy: null },
+      flood: null,
+      loan: condoLoan,
+      documents: { hoi: hoiDoc, floodCert: null },
+      extractionId: "00000000-0000-0000-0000-000000000110",
+      loanNumber: "X",
+    };
+    expect(H11_condoWallsInOrHo6(ctx).fired).toBe(false);
+  });
+
+  test("Condo, wallsInCoverage={included:false, confidence:0.9}, no HO6 → fail", () => {
+    const ctx: RuleContext = {
+      hoi: { ...baseExtraction, wallsInCoverage: { included: false, confidence: 0.9 }, ho6Policy: null },
+      flood: null,
+      loan: condoLoan,
+      documents: { hoi: hoiDoc, floodCert: null },
+      extractionId: "00000000-0000-0000-0000-000000000111",
+      loanNumber: "X",
+    };
+    const r = H11_condoWallsInOrHo6(ctx);
+    expect(r.fired).toBe(true);
+    expect(r.finding?.severity).toBe("fail");
+    expect(r.finding?.ruleId).toBe("hoi.condo.walls-in-or-ho6");
+  });
+
+  test("Condo, wallsInCoverage=null, ho6Policy={present:true, deductiblePct:0.06, coverageAmount:100000} → fail (HO6 deductible > 5%)", () => {
+    const ctx: RuleContext = {
+      hoi: { ...baseExtraction, wallsInCoverage: null, ho6Policy: { present: true, deductiblePct: 0.06, coverageAmount: 100000 } },
+      flood: null,
+      loan: condoLoan,
+      documents: { hoi: hoiDoc, floodCert: null },
+      extractionId: "00000000-0000-0000-0000-000000000112",
+      loanNumber: "X",
+    };
+    const r = H11_condoWallsInOrHo6(ctx);
+    expect(r.fired).toBe(true);
+    expect(r.finding?.severity).toBe("fail");
+    expect(r.finding?.ruleId).toBe("hoi.condo.walls-in-or-ho6");
+  });
+
+  test("non-Condo (propertyType='Detached') → skip (rule doesn't fire)", () => {
+    const ctx: RuleContext = {
+      hoi: { ...baseExtraction, wallsInCoverage: null, ho6Policy: null },
+      flood: null,
+      loan: { ...baseLoan, propertyType: "Detached" },
+      documents: { hoi: hoiDoc, floodCert: null },
+      extractionId: "00000000-0000-0000-0000-000000000113",
+      loanNumber: "X",
+    };
+    expect(H11_condoWallsInOrHo6(ctx).fired).toBe(false);
+  });
+});
+
+describe("H12: hoi.occupancy.match", () => {
+  const dscrLoan = { ...baseLoan, incomeDocType: "DSCR > 1.15%" };
+  const hoiDoc = { tenantId: "t", loanId: "l", documentId: "d-h", category: "hoi-policy" as const, storageUrl: "x" };
+
+  test("DSCR loan, occupancyOnPolicy='Investment' → skip (pass)", () => {
+    const ctx: RuleContext = {
+      hoi: { ...baseExtraction, occupancyOnPolicy: "Investment" },
+      flood: null,
+      loan: dscrLoan,
+      documents: { hoi: hoiDoc, floodCert: null },
+      extractionId: "00000000-0000-0000-0000-000000000120",
+      loanNumber: "X",
+    };
+    expect(H12_occupancyMatch(ctx).fired).toBe(false);
+  });
+
+  test("DSCR loan, occupancyOnPolicy='Primary' → fail (DSCR != Primary)", () => {
+    const ctx: RuleContext = {
+      hoi: { ...baseExtraction, occupancyOnPolicy: "Primary" },
+      flood: null,
+      loan: dscrLoan,
+      documents: { hoi: hoiDoc, floodCert: null },
+      extractionId: "00000000-0000-0000-0000-000000000121",
+      loanNumber: "X",
+    };
+    const r = H12_occupancyMatch(ctx);
+    expect(r.fired).toBe(true);
+    expect(r.finding?.severity).toBe("fail");
+    expect(r.finding?.ruleId).toBe("hoi.occupancy.match");
+  });
+
+  test("non-DSCR, occupancy='primary', occupancyOnPolicy='Primary Residence' → skip (pass; case-insensitive)", () => {
+    const ctx: RuleContext = {
+      hoi: { ...baseExtraction, occupancyOnPolicy: "Primary Residence" },
+      flood: null,
+      loan: { ...baseLoan, occupancy: "primary", incomeDocType: "Full Doc" },
+      documents: { hoi: hoiDoc, floodCert: null },
+      extractionId: "00000000-0000-0000-0000-000000000122",
+      loanNumber: "X",
+    };
+    expect(H12_occupancyMatch(ctx).fired).toBe(false);
+  });
+
+  test("non-DSCR, occupancy='primary', occupancyOnPolicy='Investment' → fail (mismatch)", () => {
+    const ctx: RuleContext = {
+      hoi: { ...baseExtraction, occupancyOnPolicy: "Investment" },
+      flood: null,
+      loan: { ...baseLoan, occupancy: "primary", incomeDocType: "Full Doc" },
+      documents: { hoi: hoiDoc, floodCert: null },
+      extractionId: "00000000-0000-0000-0000-000000000123",
+      loanNumber: "X",
+    };
+    const r = H12_occupancyMatch(ctx);
+    expect(r.fired).toBe(true);
+    expect(r.finding?.severity).toBe("fail");
+    expect(r.finding?.ruleId).toBe("hoi.occupancy.match");
   });
 });
