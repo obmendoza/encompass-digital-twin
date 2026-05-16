@@ -69,3 +69,76 @@ function failPremium(ctx: RuleContext, reason: string): RuleResult {
     },
   };
 }
+
+export const H7_deductibleCap: Rule = (ctx: RuleContext): RuleResult => {
+  const skip: RuleResult = { ruleId: "hoi.deductible.cap", fired: false, finding: null };
+  if (ctx.hoi?.deductiblePct == null) return skip;
+  if (ctx.hoi.deductiblePct <= 0.05) return skip;
+  return {
+    ruleId: "hoi.deductible.cap",
+    fired: true,
+    finding: {
+      ruleId: "hoi.deductible.cap",
+      severity: "fail",
+      currentValue: `${(ctx.hoi.deductiblePct * 100).toFixed(2)}%`,
+      expectedValue: "≤ 5% of face value",
+      evidence: {
+        documentId: ctx.documents.hoi!.documentId,
+        extractionId: ctx.extractionId,
+        fieldPath: "deductiblePct",
+        documentPage: ctx.hoi.evidence.find((e) => e.fieldPath === "deductiblePct")?.documentPage ?? null,
+      },
+    },
+  };
+};
+
+export const H8_windHailIncluded: Rule = (ctx: RuleContext): RuleResult => {
+  const skip: RuleResult = { ruleId: "hoi.wind-hail-hurricane.included", fired: false, finding: null };
+  const w = ctx.hoi?.windHailHurricane;
+  if (!w) return skip;
+  if (w.confidence < CONF_SKIP_THRESHOLD) return skip;
+  if (w.included && w.confidence >= CONF_FAIL_THRESHOLD) return skip;
+  const severity: "fail" | "warn" =
+    !w.included && w.confidence >= CONF_FAIL_THRESHOLD ? "fail" : "warn";
+  return {
+    ruleId: "hoi.wind-hail-hurricane.included",
+    fired: true,
+    finding: {
+      ruleId: "hoi.wind-hail-hurricane.included",
+      severity,
+      currentValue: w.wording ?? (w.included ? "included" : "excluded"),
+      expectedValue: "wind, hail, and hurricane coverage included (special form, all perils, or separate policy)",
+      evidence: {
+        documentId: ctx.documents.hoi!.documentId,
+        extractionId: ctx.extractionId,
+        fieldPath: "windHailHurricane",
+        documentPage: ctx.hoi!.evidence.find((e) => e.fieldPath === "windHailHurricane")?.documentPage ?? null,
+      },
+    },
+  };
+};
+
+export const H9_coverageMinimum: Rule = (ctx: RuleContext): RuleResult => {
+  const skip: RuleResult = { ruleId: "hoi.coverage.minimum", fired: false, finding: null };
+  if (ctx.hoi?.coverageAmount == null) return skip;
+  if (ctx.loan.loanAmount == null) return skip;
+  const rc = ctx.hoi.replacementCost ?? ctx.loan.replacementCost;
+  const required = rc != null ? Math.min(ctx.loan.loanAmount, rc) : ctx.loan.loanAmount;
+  if (ctx.hoi.coverageAmount >= required) return skip;
+  return {
+    ruleId: "hoi.coverage.minimum",
+    fired: true,
+    finding: {
+      ruleId: "hoi.coverage.minimum",
+      severity: "fail",
+      currentValue: `$${ctx.hoi.coverageAmount.toLocaleString()}`,
+      expectedValue: `≥ $${required.toLocaleString()} (lesser of loan amount / replacement cost)`,
+      evidence: {
+        documentId: ctx.documents.hoi!.documentId,
+        extractionId: ctx.extractionId,
+        fieldPath: "coverageAmount",
+        documentPage: ctx.hoi.evidence.find((e) => e.fieldPath === "coverageAmount")?.documentPage ?? null,
+      },
+    },
+  };
+};

@@ -1,7 +1,7 @@
 import { describe, test, expect } from "vitest";
 import { H1_lossPayeeMatch, H2_namedInsuredMatch, H3_propertyAddressMatch } from "../src/services/validators/hoi/rules/identity.js";
 import { H4_effectiveDateWindow, H5_term12Months } from "../src/services/validators/hoi/rules/dates.js";
-import { H6_premiumPaidInFull } from "../src/services/validators/hoi/rules/coverage.js";
+import { H6_premiumPaidInFull, H7_deductibleCap, H8_windHailIncluded, H9_coverageMinimum } from "../src/services/validators/hoi/rules/coverage.js";
 import type { RuleContext } from "../src/services/validators/hoi/rules/types.js";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -392,5 +392,193 @@ describe("H6: hoi.premium.paid-in-full", () => {
       loanNumber: "X",
     };
     expect(H6_premiumPaidInFull(ctx).fired).toBe(false);
+  });
+});
+
+describe("H7: hoi.deductible.cap", () => {
+  test("deductiblePct=0.045 (4.5%) → pass (fired: false)", () => {
+    const ctx: RuleContext = {
+      hoi: { ...baseExtraction, deductiblePct: 0.045 },
+      flood: null,
+      loan: baseLoan,
+      documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
+      extractionId: "00000000-0000-0000-0000-000000000070",
+      loanNumber: "X",
+    };
+    expect(H7_deductibleCap(ctx).fired).toBe(false);
+  });
+
+  test("deductiblePct=0.05 (exactly 5%) → pass (boundary, fired: false)", () => {
+    const ctx: RuleContext = {
+      hoi: { ...baseExtraction, deductiblePct: 0.05 },
+      flood: null,
+      loan: baseLoan,
+      documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
+      extractionId: "00000000-0000-0000-0000-000000000071",
+      loanNumber: "X",
+    };
+    expect(H7_deductibleCap(ctx).fired).toBe(false);
+  });
+
+  test("deductiblePct=0.06 (6%) → fail", () => {
+    const ctx: RuleContext = {
+      hoi: { ...baseExtraction, deductiblePct: 0.06 },
+      flood: null,
+      loan: baseLoan,
+      documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
+      extractionId: "00000000-0000-0000-0000-000000000072",
+      loanNumber: "X",
+    };
+    const r = H7_deductibleCap(ctx);
+    expect(r.fired).toBe(true);
+    expect(r.finding?.severity).toBe("fail");
+    expect(r.finding?.ruleId).toBe("hoi.deductible.cap");
+    expect(r.finding?.currentValue).toBe("6.00%");
+  });
+
+  test("deductiblePct=null → skip (fired: false)", () => {
+    const ctx: RuleContext = {
+      hoi: { ...baseExtraction, deductiblePct: null },
+      flood: null,
+      loan: baseLoan,
+      documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
+      extractionId: "00000000-0000-0000-0000-000000000073",
+      loanNumber: "X",
+    };
+    expect(H7_deductibleCap(ctx).fired).toBe(false);
+  });
+});
+
+describe("H8: hoi.wind-hail-hurricane.included", () => {
+  test("included=true, confidence=0.9 → pass (fired: false)", () => {
+    const ctx: RuleContext = {
+      hoi: { ...baseExtraction, windHailHurricane: { included: true, wording: null, separatePolicy: false, confidence: 0.9 } },
+      flood: null,
+      loan: baseLoan,
+      documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
+      extractionId: "00000000-0000-0000-0000-000000000080",
+      loanNumber: "X",
+    };
+    expect(H8_windHailIncluded(ctx).fired).toBe(false);
+  });
+
+  test("included=false, confidence=0.9 → fail", () => {
+    const ctx: RuleContext = {
+      hoi: { ...baseExtraction, windHailHurricane: { included: false, wording: "excluded", separatePolicy: false, confidence: 0.9 } },
+      flood: null,
+      loan: baseLoan,
+      documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
+      extractionId: "00000000-0000-0000-0000-000000000081",
+      loanNumber: "X",
+    };
+    const r = H8_windHailIncluded(ctx);
+    expect(r.fired).toBe(true);
+    expect(r.finding?.severity).toBe("fail");
+    expect(r.finding?.ruleId).toBe("hoi.wind-hail-hurricane.included");
+  });
+
+  test("included=true, confidence=0.5 (low-conf claim) → warn", () => {
+    const ctx: RuleContext = {
+      hoi: { ...baseExtraction, windHailHurricane: { included: true, wording: null, separatePolicy: false, confidence: 0.5 } },
+      flood: null,
+      loan: baseLoan,
+      documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
+      extractionId: "00000000-0000-0000-0000-000000000082",
+      loanNumber: "X",
+    };
+    const r = H8_windHailIncluded(ctx);
+    expect(r.fired).toBe(true);
+    expect(r.finding?.severity).toBe("warn");
+    expect(r.finding?.ruleId).toBe("hoi.wind-hail-hurricane.included");
+  });
+
+  test("windHailHurricane=null → skip (fired: false)", () => {
+    const ctx: RuleContext = {
+      hoi: { ...baseExtraction, windHailHurricane: null },
+      flood: null,
+      loan: baseLoan,
+      documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
+      extractionId: "00000000-0000-0000-0000-000000000083",
+      loanNumber: "X",
+    };
+    expect(H8_windHailIncluded(ctx).fired).toBe(false);
+  });
+
+  test("confidence below skip threshold (0.3) → skip even if excluded", () => {
+    const ctx: RuleContext = {
+      hoi: { ...baseExtraction, windHailHurricane: { included: false, wording: null, separatePolicy: false, confidence: 0.3 } },
+      flood: null,
+      loan: baseLoan,
+      documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
+      extractionId: "00000000-0000-0000-0000-000000000084",
+      loanNumber: "X",
+    };
+    expect(H8_windHailIncluded(ctx).fired).toBe(false);
+  });
+});
+
+describe("H9: hoi.coverage.minimum", () => {
+  test("coverageAmount >= loanAmount (no replacementCost) → pass", () => {
+    const ctx: RuleContext = {
+      hoi: { ...baseExtraction, coverageAmount: 400_000 },
+      flood: null,
+      loan: { ...baseLoan, loanAmount: 350_000 },
+      documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
+      extractionId: "00000000-0000-0000-0000-000000000090",
+      loanNumber: "X",
+    };
+    expect(H9_coverageMinimum(ctx).fired).toBe(false);
+  });
+
+  test("coverageAmount >= min(loanAmount, replacementCost) on hoi → pass", () => {
+    // min(350_000, 320_000) = 320_000; coverageAmount=320_000 exactly meets required
+    const ctx: RuleContext = {
+      hoi: { ...baseExtraction, coverageAmount: 320_000, replacementCost: 320_000 },
+      flood: null,
+      loan: { ...baseLoan, loanAmount: 350_000 },
+      documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
+      extractionId: "00000000-0000-0000-0000-000000000091",
+      loanNumber: "X",
+    };
+    expect(H9_coverageMinimum(ctx).fired).toBe(false);
+  });
+
+  test("coverageAmount below loanAmount → fail", () => {
+    const ctx: RuleContext = {
+      hoi: { ...baseExtraction, coverageAmount: 200_000 },
+      flood: null,
+      loan: { ...baseLoan, loanAmount: 350_000 },
+      documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
+      extractionId: "00000000-0000-0000-0000-000000000092",
+      loanNumber: "X",
+    };
+    const r = H9_coverageMinimum(ctx);
+    expect(r.fired).toBe(true);
+    expect(r.finding?.severity).toBe("fail");
+    expect(r.finding?.ruleId).toBe("hoi.coverage.minimum");
+  });
+
+  test("coverageAmount null → skip", () => {
+    const ctx: RuleContext = {
+      hoi: { ...baseExtraction, coverageAmount: null },
+      flood: null,
+      loan: { ...baseLoan, loanAmount: 350_000 },
+      documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
+      extractionId: "00000000-0000-0000-0000-000000000093",
+      loanNumber: "X",
+    };
+    expect(H9_coverageMinimum(ctx).fired).toBe(false);
+  });
+
+  test("loanAmount missing → skip", () => {
+    const ctx: RuleContext = {
+      hoi: { ...baseExtraction, coverageAmount: 200_000 },
+      flood: null,
+      loan: { ...baseLoan },
+      documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
+      extractionId: "00000000-0000-0000-0000-000000000094",
+      loanNumber: "X",
+    };
+    expect(H9_coverageMinimum(ctx).fired).toBe(false);
   });
 });
