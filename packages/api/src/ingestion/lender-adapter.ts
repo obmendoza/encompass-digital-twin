@@ -92,6 +92,14 @@ export interface PortalAnalysisStats {
   byStatus: Record<string, number>;
 }
 
+export interface ExtractedDocumentPayload {
+  documentExternalId: string;
+  extractorKind: "hoi-policy" | "flood-cert";
+  schemaVersion: number;
+  fields: unknown;
+  extractedAt: string;
+}
+
 export interface TransformAnalysisOutput {
   loan: Partial<Loan>;
   extras: Partial<LoanContextExtras>;
@@ -99,6 +107,7 @@ export interface TransformAnalysisOutput {
   eligibilityVerdict: EligibilityVerdict;
   seenConflicts: string[];
   stats: PortalAnalysisStats;
+  extractedDocuments: ExtractedDocumentPayload[];
 }
 
 export class MissingExternalIdError extends Error {

@@ -2,6 +2,20 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { createHash, randomUUID } from "node:crypto";
 import { withTenantTx } from "../db/pool.js";
+
+/**
+ * Derive a stable UUID from an ingested_documents.document_id TEXT string.
+ * ingested_documents has no surrogate UUID column, so we deterministically
+ * derive one via SHA-256 and format it as UUID v4.
+ * The HOI resolver (Task 18) uses the same function to build DocumentRef.documentId.
+ */
+export function documentIdToUuid(textDocumentId: string): string {
+  const h = createHash("sha256").update(textDocumentId).digest("hex");
+  // Format as RFC-4122 UUID v4 (version bits forced to 4 and variant to 10xx).
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-${(
+    (parseInt(h[16]!, 16) & 0x3) | 0x8
+  ).toString(16)}${h.slice(17, 20)}-${h.slice(20, 32)}`;
+}
 import { apiKeyAuthHook } from "../middleware/api-key-auth.js";
 import { runInTenantContext } from "../tenant-context.js";
 import { getAdapter } from "../ingestion/adapter-registry.js";
@@ -152,6 +166,34 @@ export function registerAnalysisOutputIngestRoutes(app: FastifyInstance, store: 
                  VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)`,
                 [tenantId, loanId, ev.program, ev.status, ev.passedCount, ev.failedCount,
                  JSON.stringify(ev.failedRules), analysisHash],
+              );
+            });
+          }
+
+          // Persist portal-provided extracted_documents[] → document_extractions.
+          // Missing external_id → warn + skip (non-fatal per spec §4.3).
+          for (const ed of result.extractedDocuments) {
+            await withTenantTx(tenantId, async (c) => {
+              const { rows: docRows } = await c.query<{ document_id: string }>(
+                `SELECT document_id FROM ingested_documents
+                   WHERE tenant_id = $1 AND loan_id = $2 AND external_id = $3 LIMIT 1`,
+                [tenantId, loanId, ed.documentExternalId],
+              );
+              if (docRows.length === 0) {
+                req.log?.warn?.(
+                  { tenantId, loanId, documentExternalId: ed.documentExternalId },
+                  "[analysis-output] extracted_document references missing ingested_documents external_id",
+                );
+                return;
+              }
+              const documentUuid = documentIdToUuid(docRows[0]!.document_id);
+              await c.query(
+                `INSERT INTO document_extractions
+                   (tenant_id, loan_id, document_id, extractor_kind, schema_version, source, extracted_by, fields)
+                 VALUES ($1, $2, $3, $4, $5, 'portal', 'portal:npnqm', $6::jsonb)
+                 ON CONFLICT (tenant_id, document_id, extractor_kind, schema_version) WHERE superseded_at IS NULL
+                   DO NOTHING`,
+                [tenantId, loanId, documentUuid, ed.extractorKind, ed.schemaVersion, JSON.stringify(ed.fields)],
               );
             });
           }
