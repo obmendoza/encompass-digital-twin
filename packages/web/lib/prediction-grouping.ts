@@ -17,6 +17,19 @@ export function findDriftProgram(g: PredictionGroup, driftPrograms: DriftProgram
   return null;
 }
 
+export interface ValidationFinding {
+  ruleId: string;
+  severity: "fail" | "warn";
+  currentValue: string | null;
+  expectedValue: string | null;
+  evidence: {
+    documentId: string;
+    extractionId: string;
+    fieldPath: string;
+    documentPage: number | null;
+  };
+}
+
 export interface PortalMetadata {
   priority?: "P0" | "P1" | "P2";
   severity?: "HARD-STOP" | "SOFT-STOP";
@@ -29,6 +42,8 @@ export interface PortalMetadata {
   source_module?: string;
   applies_to?: string;
   portal_status?: string;
+  validationFindings?: ValidationFinding[];
+  extractionId?: string;
 }
 
 export interface Prediction {
