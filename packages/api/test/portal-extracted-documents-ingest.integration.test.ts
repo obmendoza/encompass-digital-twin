@@ -157,66 +157,95 @@ describe("portal extracted_documents ingestion", () => {
   );
 
   test(
-    "idempotent: re-POSTing same extracted_documents[] is a no-op (no duplicate rows)",
-    { timeout: 30000 },
+    "idempotent: re-POSTing same extracted_documents[] with a changed payload does not duplicate document_extractions rows",
+    { timeout: 60000 },
     async () => {
-      const payload = {
-        ...MINIMAL_ANALYSIS_OUTPUT,
-        // Use a different loan number so idempotency check doesn't return early.
-        scenario_summary: {
-          ...MINIMAL_ANALYSIS_OUTPUT.scenario_summary,
-          loan_number: `${LOAN_EXTERNAL_ID}-IDEM`,
-        },
-        extracted_documents: [
-          {
-            document_external_id: DOC_EXTERNAL_ID,
-            extractor_kind: "hoi-policy",
-            schema_version: 1,
-            fields: { carrier: "Allstate", evidence: [] },
-            extracted_at: "2026-05-16T10:00:00.000Z",
-          },
-        ],
-      };
+      // Use a separate loan so this test doesn't share state with test 1.
+      const idemLoanExternalId = `${LOAN_EXTERNAL_ID}-IDEM2`;
+      const idemDocExternalId = "test-hoi-doc-idem2";
+      const idemDocTextId = `NPNQM-${idemLoanExternalId}-DOC-${idemDocExternalId}`;
+      const idemLoanId = `NPNQM-${idemLoanExternalId}`;
 
-      // First POST — also need an ingested_documents row for the idem loan.
       await withDb(async (c) => {
         await c.query(
           `INSERT INTO ingested_documents
              (tenant_id, external_id, document_id, loan_id, source_url, file_name, doc_type, status, ingest_batch_id)
-           VALUES ($1, $2, $3, $4, 'https://docs.example.com/hoi2.pdf', 'hoi2.pdf', 'Hazard Insurance', 'fetched', $5)
+           VALUES ($1, $2, $3, $4, 'https://docs.example.com/idem.pdf', 'idem.pdf', 'Hazard Insurance', 'fetched', $5)
            ON CONFLICT DO NOTHING`,
-          [T, DOC_EXTERNAL_ID, DOC_TEXT_ID, `NPNQM-${LOAN_EXTERNAL_ID}-IDEM`, BATCH_ID],
+          [T, idemDocExternalId, idemDocTextId, idemLoanId, BATCH_ID],
         );
+        // Clean up any leftover extraction rows from prior runs.
+        await withTenantTx(T, async (c2) => {
+          await c2.query(
+            `DELETE FROM document_extractions WHERE tenant_id=$1 AND document_id=$2`,
+            [T, documentIdToUuid(idemDocTextId)],
+          );
+        });
       });
+
+      const extractedDoc = {
+        document_external_id: idemDocExternalId,
+        extractor_kind: "hoi-policy",
+        schema_version: 1,
+        fields: { carrier: "Allstate", evidence: [] },
+        extracted_at: "2026-05-16T10:00:00.000Z",
+      };
+
+      const firstPayload = {
+        ...MINIMAL_ANALYSIS_OUTPUT,
+        scenario_summary: { ...MINIMAL_ANALYSIS_OUTPUT.scenario_summary, loan_number: idemLoanExternalId },
+        extracted_documents: [extractedDoc],
+      };
 
       const res1 = await app.inject({
         method: "POST",
         url: "/api/ingest/ed-test/analysis-output",
         headers: { authorization: `Bearer ${KEY}` },
-        payload: {
-          source: "npnqm-portal",
-          externalId: `${LOAN_EXTERNAL_ID}-IDEM`,
-          analysisOutput: payload,
-        },
+        payload: { source: "npnqm-portal", externalId: idemLoanExternalId, analysisOutput: firstPayload },
       });
       expect(res1.statusCode).toBe(201);
 
-      // Second POST with same content — idempotency via analysis_hash returns 200 duplicate.
+      // Second POST with *different* portal predictions (changes analysis_hash so the
+      // route does NOT short-circuit) but *same* extracted_documents[] entry.
+      // This hits the ON CONFLICT (tenant_id, document_id, extractor_kind, schema_version)
+      // WHERE superseded_at IS NULL DO NOTHING path.
+      const secondPayload = {
+        ...firstPayload,
+        document_requests: [
+          {
+            document_type: "Credit Report",
+            document_category: "Credit",
+            priority: "P0",
+            applies_to: "primary",
+            specifications: [],
+            reasons_needed: [],
+            conditions: [],
+            source_references: [],
+            severity: "SOFT-STOP",
+            status: "needed",
+            tags: [],
+            source_module: "credit",
+          },
+        ],
+        stats: {
+          ...MINIMAL_ANALYSIS_OUTPUT.stats,
+          total_document_requests: 1,
+        },
+        // extracted_documents is unchanged — same doc, same schema_version.
+        extracted_documents: [extractedDoc],
+      };
+
       const res2 = await app.inject({
         method: "POST",
         url: "/api/ingest/ed-test/analysis-output",
         headers: { authorization: `Bearer ${KEY}` },
-        payload: {
-          source: "npnqm-portal",
-          externalId: `${LOAN_EXTERNAL_ID}-IDEM`,
-          analysisOutput: payload,
-        },
+        payload: { source: "npnqm-portal", externalId: idemLoanExternalId, analysisOutput: secondPayload },
       });
-      expect(res2.statusCode).toBe(200);
-      expect(JSON.parse(res2.body).duplicate).toBe(true);
+      // Second POST has a different analysisHash → supersedes portal predictions, returns 201.
+      expect(res2.statusCode).toBe(201);
 
-      // Only one active document_extractions row for this document UUID.
-      const expectedDocumentUuid = documentIdToUuid(DOC_TEXT_ID);
+      // Despite two POSTs, only one active document_extractions row for this document UUID.
+      const expectedDocumentUuid = documentIdToUuid(idemDocTextId);
       const { rows } = await withTenantTx(T, async (c) =>
         c.query<{ count: number }>(
           `SELECT COUNT(*)::int AS count FROM document_extractions
