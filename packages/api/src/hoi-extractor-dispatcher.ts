@@ -1,4 +1,5 @@
 import { withDb } from "./db/pool.js";
+import { handleExtractionCrossSourceSupersede } from "./db/extraction-audit.js";
 import type { HoiFieldExtractor } from "./services/validators/hoi/extractor.js";
 import { LlmHoiExtractor } from "./services/validators/hoi/llm-extractor.js";
 import { PortalProvidedHoiExtractor } from "./services/validators/hoi/portal-provided-extractor.js";
@@ -116,6 +117,18 @@ export async function runHoiExtractorOnce(): Promise<void> {
             storageUrl: doc.source_url,
           });
 
+          // Cross-source supersede check (C2): if a different source already has
+          // an active extraction, mark it superseded and emit an audit row.
+          await handleExtractionCrossSourceSupersede({
+            c,
+            tenantId: doc.tenant_id,
+            loanId: doc.loan_id,
+            documentUuid,
+            extractorKind: category,
+            schemaVersion: HOI_SCHEMA_VERSION,
+            newSource: result.source,
+            actorId: `worker:hoi-extractor:v${HOI_SCHEMA_VERSION}`,
+          });
           await c.query(
             `INSERT INTO document_extractions
                (id, tenant_id, loan_id, document_id, extractor_kind, schema_version,

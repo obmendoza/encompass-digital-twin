@@ -16,6 +16,7 @@ export function documentIdToUuid(textDocumentId: string): string {
     (parseInt(h[16]!, 16) & 0x3) | 0x8
   ).toString(16)}${h.slice(17, 20)}-${h.slice(20, 32)}`;
 }
+import { handleExtractionCrossSourceSupersede } from "../db/extraction-audit.js";
 import { apiKeyAuthHook } from "../middleware/api-key-auth.js";
 import { runInTenantContext } from "../tenant-context.js";
 import { getAdapter } from "../ingestion/adapter-registry.js";
@@ -187,6 +188,18 @@ export function registerAnalysisOutputIngestRoutes(app: FastifyInstance, store: 
                 return;
               }
               const documentUuid = documentIdToUuid(docRows[0]!.document_id);
+              // Cross-source supersede check (C2): if a different source already has an
+              // active extraction, mark it superseded and emit a tenant_audit_log row.
+              await handleExtractionCrossSourceSupersede({
+                c,
+                tenantId,
+                loanId,
+                documentUuid,
+                extractorKind: ed.extractorKind,
+                schemaVersion: ed.schemaVersion,
+                newSource: "portal",
+                actorId: "api-ingest",
+              });
               await c.query(
                 `INSERT INTO document_extractions
                    (tenant_id, loan_id, document_id, extractor_kind, schema_version, source, extracted_by, fields)
