@@ -34,6 +34,18 @@ export const DEFAULT_SLA_CONFIG: SlaConfig = {
   maxTotalTimeMinutes: 240,
 };
 
+// ── Validators Config ──────────────────────────────────────────────
+export interface HoiValidatorConfig {
+  enabled: boolean;
+  extractorMode: "auto" | "portal-only" | "llm-only";
+  schemaVersion: number;
+  dscrProductExclusions: string[];
+}
+
+export interface ValidatorsConfig {
+  hoi?: HoiValidatorConfig;
+}
+
 // ── Tenant Settings ────────────────────────────────────────────────
 export interface TenantSettings {
   sla: SlaConfig;
@@ -48,6 +60,7 @@ export interface TenantSettings {
     primaryColor?: string;
     companyName?: string;
   };
+  validators?: ValidatorsConfig;
 }
 
 // ── Tenant ─────────────────────────────────────────────────────────
