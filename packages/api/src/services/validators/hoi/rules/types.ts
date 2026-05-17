@@ -14,8 +14,10 @@ export interface RuleContext {
   flood: FloodCertFields | null;
   loan: LoanContext;
   documents: { hoi: DocumentRef | null; floodCert: DocumentRef | null };
-  /** The active extraction's UUID — embedded in finding evidence + portal_metadata. */
-  extractionId: string;
+  /** HOI extraction UUID — embedded in H1-H12 finding evidence + portal_metadata. Null when no HOI policy extraction exists. */
+  hoiExtractionId: string | null;
+  /** Flood-cert extraction UUID — embedded in F1/F2 finding evidence + portal_metadata. Null when no flood-cert extraction exists. */
+  floodExtractionId: string | null;
   /** Loan's external number (NQMF / Lender) for H1 channel-specific matching. */
   loanNumber: string;
 }

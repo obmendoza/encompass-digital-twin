@@ -31,7 +31,7 @@ export const H2_namedInsuredMatch: Rule = (ctx: RuleContext): RuleResult => {
       expectedValue: expectedName,
       evidence: {
         documentId: ctx.documents.hoi!.documentId,
-        extractionId: ctx.extractionId,
+        extractionId: ctx.hoiExtractionId!,
         fieldPath: "namedInsured",
         documentPage: ctx.hoi.evidence.find((e) => e.fieldPath === "namedInsured")?.documentPage ?? null,
       },
@@ -59,7 +59,7 @@ export const H3_propertyAddressMatch: Rule = (ctx: RuleContext): RuleResult => {
       expectedValue: `${want.line1}, ${want.city}, ${want.state} ${want.zip}`,
       evidence: {
         documentId: ctx.documents.hoi!.documentId,
-        extractionId: ctx.extractionId,
+        extractionId: ctx.hoiExtractionId!,
         fieldPath: "propertyAddress",
         documentPage: ctx.hoi.evidence.find((e) => e.fieldPath === "propertyAddress")?.documentPage ?? null,
       },
@@ -93,7 +93,7 @@ export const H1_lossPayeeMatch: Rule = (ctx: RuleContext): RuleResult => {
       expectedValue: `${expected} (with loan number ${ctx.loanNumber})`,
       evidence: {
         documentId: ctx.documents.hoi!.documentId,
-        extractionId: ctx.extractionId,
+        extractionId: ctx.hoiExtractionId!,
         fieldPath: "lossPayeeClause",
         documentPage: ctx.hoi.evidence.find((e) => e.fieldPath === "lossPayeeClause")?.documentPage ?? null,
       },

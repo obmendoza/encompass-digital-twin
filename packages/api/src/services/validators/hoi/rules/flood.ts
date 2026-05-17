@@ -20,7 +20,7 @@ export const F1_floodDeductibleCap: Rule = (ctx: RuleContext): RuleResult => {
       expectedValue: `≤ $${cap.toLocaleString()} for ${propertyType}`,
       evidence: {
         documentId: ctx.documents.floodCert.documentId,
-        extractionId: ctx.extractionId,
+        extractionId: ctx.floodExtractionId!,
         fieldPath: "floodDeductible",
         documentPage: ctx.flood.evidence.find((e) => e.fieldPath === "floodDeductible")?.documentPage ?? null,
       },
@@ -50,7 +50,7 @@ export const F2_floodCoverageMinimum: Rule = (ctx: RuleContext): RuleResult => {
       expectedValue: `≥ $${required.toLocaleString()} (lesser of UPB / RC / NFIP max)`,
       evidence: {
         documentId: ctx.documents.floodCert.documentId,
-        extractionId: ctx.extractionId,
+        extractionId: ctx.floodExtractionId!,
         fieldPath: "floodCoverage",
         documentPage: ctx.flood.evidence.find((e) => e.fieldPath === "floodCoverage")?.documentPage ?? null,
       },
