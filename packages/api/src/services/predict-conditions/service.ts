@@ -14,6 +14,7 @@ import {
 import { categoryInference } from "./category-inference.js";
 import { insertAuditDedup } from "./audit-helpers.js";
 import { runPreUnderwriter, type Finding, type KbVersionContext } from "./pre-underwriter.js";
+import { resolveHoiValidatorFindings } from "./resolvers/hoi-validator-resolver.js";
 import type {
   RunResult,
   RunSource,
@@ -61,8 +62,9 @@ export function __testOnly_setThrowAfterDispatch(e: Error | null): void {
  *   v1: doc-checklist only (minimum + income from program_doc_checklist)
  *   v2: + matrix (program_matrix_tiers) + geographic (geographic_restrictions)
  *       + requirements (program_requirements, deterministic + LLM backstop)
+ *   v3: + hoi-validator (document_extractions / HOI rules H1-H12 + F1-F2)
  */
-const PC_SCHEMA_VERSION = 2;
+const PC_SCHEMA_VERSION = 3;
 
 function canonicalizeContext(loan: LoanContext): string {
   // Canonical JSON for hashing: sort top-level keys deterministically.
@@ -140,13 +142,16 @@ export async function run(
       }
     }
 
-    // DELETE existing pending PC v1/v2 rows that don't match (hash or kb_version_id changed).
+    // DELETE existing pending PC v1/v2/v3 rows that don't match (hash or kb_version_id changed).
     // Portal-LLM rows (source_list='portal-llm') are versioned via superseded_at, not DELETE;
     // exclude them here so the analysis-output ingest's portal predictions survive PC v2 auto-fire.
+    // HOI-validator rows (source_list='hoi-validator') use ON CONFLICT DO NOTHING for idempotency
+    // (R2) and are keyed by extractionId, not source_input_hash; exclude them from the blanket DELETE
+    // so we can manage them explicitly in the idempotent INSERT below.
     await c.query(
       `DELETE FROM predicted_conditions
         WHERE tenant_id = $1 AND loan_id = $2 AND status = 'pending'
-          AND source_list != 'portal-llm'`,
+          AND source_list NOT IN ('portal-llm', 'hoi-validator')`,
       [tenantId, loanId],
     );
 
@@ -246,6 +251,24 @@ export async function run(
     const orchestratorResult = await runPreUnderwriter(c, tenantId, kbCtx, docChecklistFindings, loan);
     const findings = orchestratorResult.findings;
 
+    // ── HOI Validator (Task 19) ──────────────────────────────────────────────
+    // Read tenant's hoi.enabled flag. Done here (not upfront) so the early-return
+    // reuse path is unaffected; the schema-bump (v2→v3) already invalidates the
+    // hash so first run always reaches this branch.
+    const { rows: tRows } = await c.query<{ settings: { validators?: { hoi?: { enabled?: boolean } } } }>(
+      `SELECT settings FROM tenants WHERE id = $1`,
+      [tenantId],
+    );
+    const hoiEnabled = tRows[0]?.settings?.validators?.hoi?.enabled === true;
+
+    // Invoke the HOI resolver. loanId is the store/DB loan id (the external-id-derived
+    // string like "QL-123"). The resolver queries document_extractions by loan_id.
+    const hoiFindings = await resolveHoiValidatorFindings(c, tenantId, kbCtx, loan, {
+      hoiEnabled,
+      loanExternalId: loanId,
+      loanNumber: loanId, // loanId is the external ID; LoanContext has no loanNumber field
+    });
+
     // Skip already-acted predictions (Codex round-4 fix preserved). Key shape:
     // '<source_list>::<source_rule_id>::<description>' to avoid false collisions
     // between findings from different rules that share the same description text.
@@ -260,6 +283,8 @@ export async function run(
     const runId = randomUUID();
     let skippedActed = 0;
     let insertedCount = 0;
+
+    // Insert non-HOI findings (standard INSERT — no idempotency constraint needed).
     for (let idx = 0; idx < findings.length; idx++) {
       const finding = findings[idx]!;
       if (actedKeys.has(`${finding.sourceList}::${finding.sourceRuleId ?? ""}::${finding.description}`)) {
@@ -282,6 +307,49 @@ export async function run(
         ],
       );
       insertedCount++;
+    }
+
+    // Insert HOI-validator findings with idempotent ON CONFLICT DO NOTHING (R2).
+    // These are keyed by (tenant_id, loan_id, source_list, source_rule_id, extractionId)
+    // via the partial unique index from migration 026. Re-running PC v2 with the same
+    // extraction silently no-ops; a new extraction (new doc upload) produces a new row
+    // because the extractionId differs.
+    let hoiInserted = 0;
+    for (let idx = 0; idx < hoiFindings.length; idx++) {
+      const finding = hoiFindings[idx]!;
+      if (actedKeys.has(`${finding.sourceList}::${finding.sourceRuleId ?? ""}::${finding.description}`)) {
+        skippedActed++;
+        continue;
+      }
+      const extractionId = (finding.metadata?.extractionId as string | undefined) ?? null;
+      const portalMetadata = finding.metadata
+        ? JSON.stringify(finding.metadata)
+        : null;
+      const result = await c.query<{ id: string }>(
+        `INSERT INTO predicted_conditions
+           (tenant_id, loan_id, prediction_run_id, source_input_hash, predicted_by,
+            kb_version_id, resolved_income_type, category, description, note,
+            source_list, source_order, status,
+            source_rule_table, source_rule_id, emission_kind,
+            portal_metadata)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'pending', $13, $14, $15, $16::jsonb)
+         ON CONFLICT (tenant_id, loan_id, source_list, source_rule_id, ((portal_metadata->>'extractionId')))
+           WHERE source_list = 'hoi-validator' AND status = 'pending' AND superseded_at IS NULL
+           DO NOTHING
+         RETURNING id`,
+        [
+          tenantId, loanId, runId, sourceInputHash, source,
+          docs.kbVersionId, docs.resolvedIncomeType,
+          finding.category, finding.description, finding.note,
+          finding.sourceList, findings.length + idx,
+          finding.sourceRuleTable, finding.sourceRuleId, finding.emissionKind,
+          portalMetadata,
+        ],
+      );
+      if (result.rowCount && result.rowCount > 0) {
+        hoiInserted++;
+        insertedCount++;
+      }
     }
 
     // Auto-clear any active alerts for this loan, with audit rows per alert.
@@ -328,7 +396,9 @@ export async function run(
             requirements_deterministic: findings.filter((f) => f.sourceList === "requirements" && f.emissionKind === "deterministic").length,
             requirements_llm: findings.filter((f) => f.sourceList === "requirements" && f.emissionKind === "llm").length,
             geographic: findings.filter((f) => f.sourceList === "geographic").length,
+            hoi_validator: hoiInserted,
           },
+          hoi_enabled: hoiEnabled,
           ...(orchestratorResult.llm !== null
             ? {
                 llm: {

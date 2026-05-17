@@ -9,3 +9,4 @@ export * from "./learning-schemas.js";
 export * from "./va-schemas.js";
 export * from "./adapter-config.js";
 export { normalizeConditionDescription } from "./normalize-condition-description.js";
+export * from "./hoi-extraction-schemas.js";

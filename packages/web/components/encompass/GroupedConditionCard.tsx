@@ -1,6 +1,6 @@
 "use client";
 import { useState, useTransition } from "react";
-import type { PredictionGroup, PortalMetadata, Prediction, DriftProgram } from "@/lib/prediction-grouping";
+import type { PredictionGroup, PortalMetadata, Prediction, DriftProgram, ValidationFinding } from "@/lib/prediction-grouping";
 
 type ActionResult = { ok: true } | { ok: false; error?: string };
 
@@ -147,6 +147,36 @@ export function GroupedConditionCard({ group, mode, driftProgram = null, onAccep
   );
 }
 
+function renderValidationFindings(rows: Prediction[]): JSX.Element | null {
+  const findings: ValidationFinding[] = rows.flatMap(
+    (p) => p.portal_metadata?.validationFindings ?? []
+  );
+  if (findings.length === 0) return null;
+  return (
+    <div className="mt-2 border-l-4 border-[#8a1a1a] pl-2">
+      <div className="text-[11px] font-bold text-[#8a1a1a]">Validation findings</div>
+      {findings.map((f, i) => (
+        <div key={`${f.ruleId}-${i}`} className="text-[11px] mt-1">
+          <span
+            className={`inline-block px-1 mr-1 text-white text-[9px] ${
+              f.severity === "fail" ? "bg-[#8a1a1a]" : "bg-[#8a4b00]"
+            }`}
+          >
+            {f.severity.toUpperCase()}
+          </span>
+          <span className="font-bold">{f.ruleId}</span>
+          {f.currentValue && f.expectedValue && (
+            <div className="ml-3 text-[#6b7a8f]">
+              Found: <span className="text-[#1a2b4a]">{f.currentValue}</span>
+              <br />Expected: <span className="text-[#1a2b4a]">{f.expectedValue}</span>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function renderCuration(group: PredictionGroup, meta: PortalMetadata | null): JSX.Element {
   return (
     <div className="text-[11px]">
@@ -171,6 +201,7 @@ function renderCuration(group: PredictionGroup, meta: PortalMetadata | null): JS
           +{group.pcV2Rows.length} source ({group.pcV2Rows.map((r) => r.source_list).join(", ")})
         </div>
       )}
+      {renderValidationFindings(group.rows)}
     </div>
   );
 }

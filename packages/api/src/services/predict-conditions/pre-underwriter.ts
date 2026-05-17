@@ -26,10 +26,12 @@ export interface Finding {
   description: string;
   note: string | null;
   category: "PTA" | "PTD" | "PTF" | "PTP";
-  sourceList: "minimum" | "income" | "matrix" | "requirements" | "geographic";
-  sourceRuleTable: "program_matrix_tiers" | "program_requirements" | "geographic_restrictions" | null;
+  sourceList: "minimum" | "income" | "matrix" | "requirements" | "geographic" | "hoi-validator";
+  sourceRuleTable: "program_matrix_tiers" | "program_requirements" | "geographic_restrictions" | "hoi_validator_rules" | null;
   sourceRuleId: string | null;
   emissionKind: "deterministic" | "llm";
+  /** Resolver-specific metadata. Service layer reads this to populate portal_metadata, etc. */
+  metadata?: Record<string, unknown>;
 }
 
 export interface OrchestratorResult {
@@ -50,6 +52,7 @@ const PRIORITY: Record<Finding["sourceList"], number> = {
   matrix: 3,
   geographic: 4,
   requirements: 5,
+  "hoi-validator": 6,
 };
 
 /**

@@ -1,10 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, test } from "vitest";
 import {
   TenantSlugSchema,
   SlaConfigSchema,
   CreateTenantSchema,
   GuidelineRulesSchema,
   IngestLoanRequestSchema,
+  TenantSettingsSchema,
 } from "../src/tenant-schemas.js";
 import { RESERVED_SLUGS } from "../src/tenant-types.js";
 
@@ -144,6 +145,28 @@ describe("GuidelineRulesSchema", () => {
       tenantContext: { lenderNotes: "x".repeat(2000) },
     });
     expect(result.tenantContext?.lenderNotes).toHaveLength(2000);
+  });
+});
+
+// ── TenantSettings validators.hoi ─────────────────────────────────
+describe("TenantSettings validators.hoi", () => {
+  test("defaults to enabled=false when validators block absent", () => {
+    const parsed = TenantSettingsSchema.parse({});
+    expect(parsed.validators?.hoi?.enabled).toBeUndefined();
+  });
+
+  test("accepts validators.hoi config", () => {
+    const parsed = TenantSettingsSchema.parse({
+      validators: { hoi: { enabled: true, extractorMode: "auto", schemaVersion: 1 } },
+    });
+    expect(parsed.validators?.hoi?.enabled).toBe(true);
+    expect(parsed.validators?.hoi?.extractorMode).toBe("auto");
+  });
+
+  test("extractorMode enum is enforced", () => {
+    expect(() =>
+      TenantSettingsSchema.parse({ validators: { hoi: { enabled: true, extractorMode: "invalid" } } }),
+    ).toThrow();
   });
 });
 

@@ -44,6 +44,7 @@ import { redactPayloadMiddleware } from "./ingestion/pii-middleware.js";
 import { startLearningWorker } from "./learning-worker.js";
 import { startVAOutboxDispatcher } from "./services/va-outbox-dispatcher.js";
 import { startDocFetchDispatcher } from "./doc-fetch-dispatcher.js";
+import { startHoiExtractorDispatcher } from "./hoi-extractor-dispatcher.js";
 import { getDemoTenantId, getTenantType } from "./tenant-cache.js";
 
 export interface BuildOpts {
@@ -174,6 +175,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 
     if (isDbEnabled()) startSlaMonitor();
     if (isDbEnabled()) startLearningWorker();
+    if (isDbEnabled()) startHoiExtractorDispatcher();
     if (isDbEnabled() && process.env.NODE_ENV !== "test") {
       void startVAOutboxDispatcher();
     }

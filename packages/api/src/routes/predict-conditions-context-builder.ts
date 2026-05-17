@@ -62,6 +62,25 @@ export async function buildLoanContextFromLoan(loan: Loan): Promise<LoanContext>
     dti: loan.qualifying.totalDti,
     reservesMonths: loan.assets.reservesMonths,
     noteRate: loan.transaction.noteRate,
+    // ── HOI/Flood validator additions (Task 5) — graceful undefined for fields
+    // not yet surfaced on Loan; populated when the relevant ingestion adapter
+    // widens and the extras overlay picks them up. ──
+    channel: undefined,                  // wired when adapter surfaces Loan.channel
+    borrowerFullName: loan.borrower.fullName,
+    entityName: undefined,               // wired when entity-vesting modeled on Loan
+    subjectPropertyAddress: {
+      // PropertySummary has street/city/state/zip; no line2 on the type.
+      line1: loan.property.street,
+      city: loan.property.city,
+      state: loan.property.state,
+      zip: loan.property.zip,
+    },
+    noteDate: undefined,                 // wired when Loan.transaction gains noteDate
+    closingDate: undefined,              // wired when Loan.transaction gains closingDate
+    unpaidPrincipalBalance: undefined,   // wired when Loan gains UPB field
+    replacementCost: undefined,          // wired when appraisal/insurance data surfaced
+    lenderName: undefined,               // wired when NDC channel context available
+    lenderLoanNumber: undefined,         // wired when NDC channel context available
   };
   if (!loan.tenantId) return base;
   const extras = await loadExtras(loan.tenantId, loan.id);

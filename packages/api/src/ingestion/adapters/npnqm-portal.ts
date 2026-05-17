@@ -9,6 +9,7 @@ import {
   type EligibilityVerdict,
   type PortalAnalysisStats,
   type TransformAnalysisOutput,
+  type ExtractedDocumentPayload,
 } from "../lender-adapter.js";
 
 type Raw = Record<string, unknown>;
@@ -168,7 +169,17 @@ export class NPNQMPortalAdapter extends LenderAdapter {
       byPriority: (stats.by_priority ?? {}) as Record<string, number>,
       byStatus: (stats.by_status ?? {}) as Record<string, number>,
     };
-    return { loan, extras, portalPredictions, eligibilityVerdict, seenConflicts, stats: statsTyped };
+
+    const rawExtracted = (ao.extracted_documents ?? []) as Array<Raw>;
+    const extractedDocuments: ExtractedDocumentPayload[] = rawExtracted.map((e) => ({
+      documentExternalId: String(e.document_external_id ?? ""),
+      extractorKind: (e.extractor_kind as "hoi-policy" | "flood-cert"),
+      schemaVersion: Number(e.schema_version ?? 1),
+      fields: e.fields ?? {},
+      extractedAt: String(e.extracted_at ?? new Date().toISOString()),
+    }));
+
+    return { loan, extras, portalPredictions, eligibilityVerdict, seenConflicts, stats: statsTyped, extractedDocuments };
   }
 
   private scenarioToLoan(scenario: Raw, config: AdapterConfig): Partial<Loan> {

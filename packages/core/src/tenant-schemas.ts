@@ -34,6 +34,20 @@ export const WebhookConfigSchema = z.object({
   active: z.boolean().default(true),
 });
 
+// ── Validators Config ──────────────────────────────────────────────
+export const HoiValidatorConfigSchema = z.object({
+  enabled: z.boolean(),
+  extractorMode: z.enum(["auto", "portal-only", "llm-only"]).default("auto"),
+  schemaVersion: z.number().int().positive().default(1),
+  dscrProductExclusions: z.array(z.string()).default([]),
+});
+
+export const ValidatorsConfigSchema = z
+  .object({
+    hoi: HoiValidatorConfigSchema.optional(),
+  })
+  .optional();
+
 // ── Tenant Settings ────────────────────────────────────────────────
 export const TenantSettingsSchema = z.object({
   sla: SlaConfigSchema.default({
@@ -53,6 +67,7 @@ export const TenantSettingsSchema = z.object({
     primaryColor: z.string().optional(),
     companyName: z.string().optional(),
   }).optional(),
+  validators: ValidatorsConfigSchema,
 });
 
 // ── Create Tenant ──────────────────────────────────────────────────
