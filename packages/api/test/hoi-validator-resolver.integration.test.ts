@@ -25,7 +25,7 @@ import { runMigrations } from "../src/db/migrations.js";
 import { run } from "../src/services/predict-conditions/service.js";
 import { documentIdToUuid } from "../src/routes/analysis-output-ingest.js";
 import { HOI_SCHEMA_VERSION, createStore } from "@twin/core";
-import type { Store, HoiPolicyFields } from "@twin/core";
+import type { Store, HoiPolicyFields, FloodCertFields } from "@twin/core";
 import { scenarios } from "@twin/fixtures";
 import type { LoanContext } from "../src/services/doc-requirements.js";
 
@@ -107,6 +107,55 @@ async function seedHoiExtraction(opts: {
       const { rows: ex } = await c.query<{ id: string }>(
         `SELECT id FROM document_extractions
           WHERE tenant_id = $1 AND document_id = $2 AND extractor_kind = 'hoi-policy'
+            AND schema_version = $3 AND superseded_at IS NULL
+          LIMIT 1`,
+        [T, documentUuid, HOI_SCHEMA_VERSION],
+      );
+      extractionId = ex[0]?.id ?? "";
+    }
+  });
+
+  return { documentId, documentUuid, extractionId };
+}
+
+/** Insert ingested_documents + document_extractions rows for a flood-cert test loan. */
+async function seedFloodExtraction(opts: {
+  loanId: string;
+  fields: FloodCertFields;
+  confidence?: number;
+}): Promise<{ documentId: string; documentUuid: string; extractionId: string }> {
+  const { loanId, fields, confidence = 0.92 } = opts;
+  const documentId = `FLOOD-L3-${loanId}`;
+  const documentUuid = documentIdToUuid(documentId);
+  let extractionId = "";
+
+  await withTenantTx(T, async (c) => {
+    // ingested_documents row
+    await c.query(
+      `INSERT INTO ingested_documents
+         (tenant_id, external_id, document_id, loan_id, source_url, file_name, status, doc_type, ingest_batch_id)
+       VALUES ($1, $2, $3, $4, 'https://example.com/flood.pdf', 'flood.pdf', 'fetched', 'Flood Insurance', gen_random_uuid())
+       ON CONFLICT (tenant_id, external_id) DO NOTHING`,
+      [T, documentId, documentId, loanId],
+    );
+    // document_extractions row
+    const { rows } = await c.query<{ id: string }>(
+      `INSERT INTO document_extractions
+         (tenant_id, loan_id, document_id, extractor_kind, schema_version, source,
+          extracted_by, fields, extraction_confidence)
+       VALUES ($1, $2, $3, 'flood-cert', $4, 'portal', 'portal:test', $5::jsonb, $6)
+       ON CONFLICT (tenant_id, document_id, extractor_kind, schema_version)
+         WHERE superseded_at IS NULL
+         DO NOTHING
+       RETURNING id`,
+      [T, loanId, documentUuid, HOI_SCHEMA_VERSION, JSON.stringify(fields), confidence],
+    );
+    extractionId = rows[0]?.id ?? "";
+    // If DO NOTHING fired, fetch existing id
+    if (!extractionId) {
+      const { rows: ex } = await c.query<{ id: string }>(
+        `SELECT id FROM document_extractions
+          WHERE tenant_id = $1 AND document_id = $2 AND extractor_kind = 'flood-cert'
             AND schema_version = $3 AND superseded_at IS NULL
           LIMIT 1`,
         [T, documentUuid, HOI_SCHEMA_VERSION],
@@ -520,5 +569,87 @@ describe("HOI Validator resolver — Layer 3 integration (PC v2 run cycle)", () 
 
     const ruleIds = rows.map((r) => r.source_rule_id);
     expect(ruleIds).toContain("hoi.dscr.rent-loss-coverage");
+  });
+
+  test("Scenario 4: HOI + Flood coexistence — each finding carries its own extractionId (Finding B)", async () => {
+    const loanId = "HOI-L3-FINDING-B-COEXIST";
+    await cleanLoan(loanId);
+
+    // HOI policy: only wrong loss-payee triggers H1; all other HOI fields pass.
+    const hoiFields: HoiPolicyFields = {
+      carrier: "Carrier D",
+      policyNumber: "POL-COEXIST-HOI",
+      namedInsured: "Jane Borrower",
+      propertyAddress: { line1: "123 Main St", line2: null, city: "Austin", state: "TX", zip: "78701" },
+      effectiveDate: "2026-06-01",
+      expirationDate: "2027-06-01",
+      termMonths: 12,
+      // H1: wrong loss payee fires
+      lossPayeeClause: "Wrong Entity LLC ISAOA",
+      loanNumberOnPolicy: loanId,
+      coverageAmount: 350000,
+      replacementCost: 350000,
+      deductiblePct: 0.02,
+      deductibleAmount: 7000,
+      windHailHurricane: { included: true, wording: "included", separatePolicy: false, confidence: 0.95 },
+      rentLossCoverageMonths: 6,
+      rentLossWording: null,
+      rentLossActualCostSustained: null,
+      occupancyOnPolicy: "Primary",
+      premiumPaidInFull: { paid: true, confidence: 0.92 },
+      premiumDueDays: null,
+      wallsInCoverage: null,
+      ho6Policy: null,
+      evidence: [],
+    };
+
+    // Flood cert: floodDeductible=12000 > $10K SFR cap → F1 fires.
+    // floodCoverage=250000 >= min(300K, NFIP_MAX_SFR=250K)=250K → F2 passes.
+    const floodFields: FloodCertFields = {
+      carrier: null,
+      policyNumber: null,
+      namedInsured: null,
+      propertyAddress: null,
+      effectiveDate: null,
+      expirationDate: null,
+      termMonths: null,
+      floodZone: null,
+      floodCoverage: 250000,
+      floodDeductible: 12000,
+      isNfip: null,
+      nfipMaxApplied: null,
+      evidence: [],
+    };
+
+    const { extractionId: hoiExtractionId } = await seedHoiExtraction({ loanId, fields: hoiFields });
+    const { extractionId: floodExtractionId } = await seedFloodExtraction({ loanId, fields: floodFields });
+    await seedLoanInStore(store, loanId, BASE_LOAN);
+
+    await run(T, loanId, BASE_LOAN, "system:test");
+
+    const { rows } = await withTenantTx(T, async (c) =>
+      c.query<{ source_rule_id: string; portal_metadata: Record<string, unknown> }>(
+        `SELECT source_rule_id, portal_metadata
+           FROM predicted_conditions
+          WHERE tenant_id = $1 AND loan_id = $2 AND source_list = 'hoi-validator'
+            AND superseded_at IS NULL
+          ORDER BY source_rule_id`,
+        [T, loanId],
+      ),
+    );
+
+    // Exactly 2 hoi-validator findings
+    expect(rows.length).toBe(2);
+
+    const hoiFinding = rows.find((r) => r.source_rule_id === "hoi.loss-payee.match");
+    const floodFinding = rows.find((r) => r.source_rule_id === "flood.deductible.cap");
+    expect(hoiFinding).toBeDefined();
+    expect(floodFinding).toBeDefined();
+
+    // H1 finding must carry the HOI extraction UUID
+    expect((hoiFinding!.portal_metadata)["extractionId"]).toBe(hoiExtractionId);
+    // F1 finding must carry the Flood extraction UUID — different from HOI's
+    expect((floodFinding!.portal_metadata)["extractionId"]).toBe(floodExtractionId);
+    expect(hoiExtractionId).not.toBe(floodExtractionId);
   });
 });

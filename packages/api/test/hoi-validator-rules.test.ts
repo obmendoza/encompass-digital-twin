@@ -95,6 +95,21 @@ describe("H1: hoi.loss-payee.match", () => {
     };
     expect(H1_lossPayeeMatch(ctx).fired).toBe(false);
   });
+
+  test("H1 uses hoiExtractionId in finding evidence when both HOI + Flood IDs present", () => {
+    const ctx: RuleContext = {
+      hoi: { ...baseExtraction, lossPayeeClause: "Wrong Entity LLC", loanNumberOnPolicy: "X" },
+      flood: null,
+      loan: baseLoan,
+      documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d-h", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
+      hoiExtractionId: "00000000-0000-0000-0000-0000000000aa",
+      floodExtractionId: "00000000-0000-0000-0000-0000000000bb",
+      loanNumber: "X",
+    };
+    const r = H1_lossPayeeMatch(ctx);
+    expect(r.fired).toBe(true);
+    expect(r.finding?.evidence.extractionId).toBe("00000000-0000-0000-0000-0000000000aa");
+  });
 });
 
 describe("H2: hoi.named-insured.match", () => {
@@ -941,6 +956,21 @@ describe("F1: flood.deductible.cap", () => {
       loanNumber: "X",
     };
     expect(F1_floodDeductibleCap(ctx).fired).toBe(false);
+  });
+
+  test("F1 uses floodExtractionId in finding evidence when both HOI + Flood IDs present", () => {
+    const ctx: RuleContext = {
+      hoi: null,
+      flood: { ...baseFloodExtraction, floodDeductible: 12000 },
+      loan: baseLoan,
+      documents: { hoi: null, floodCert: baseFloodDoc },
+      hoiExtractionId: "00000000-0000-0000-0000-0000000000aa",
+      floodExtractionId: "00000000-0000-0000-0000-0000000000bb",
+      loanNumber: "X",
+    };
+    const r = F1_floodDeductibleCap(ctx);
+    expect(r.fired).toBe(true);
+    expect(r.finding?.evidence.extractionId).toBe("00000000-0000-0000-0000-0000000000bb");
   });
 });
 
