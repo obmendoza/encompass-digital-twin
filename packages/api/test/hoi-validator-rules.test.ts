@@ -775,6 +775,33 @@ describe("H12: hoi.occupancy.match", () => {
     expect(r.finding?.severity).toBe("fail");
     expect(r.finding?.ruleId).toBe("hoi.occupancy.match");
   });
+
+  test("H12 non-DSCR with capitalized 'Primary' occupancy + Investment policy → fail (case-insensitive)", () => {
+    const ctx: RuleContext = {
+      hoi: { ...baseExtraction, occupancyOnPolicy: "Investment" },
+      flood: null,
+      loan: { ...baseLoan, occupancy: "Primary" as never },
+      documents: { hoi: hoiDoc, floodCert: null },
+      extractionId: "00000000-0000-0000-0000-000000000040",
+      loanNumber: "X",
+    };
+    const r = H12_occupancyMatch(ctx);
+    expect(r.fired).toBe(true);
+    expect(r.finding?.severity).toBe("fail");
+  });
+
+  test("H12 non-DSCR with all-caps 'PRIMARY' occupancy + Investment policy → fail", () => {
+    const ctx: RuleContext = {
+      hoi: { ...baseExtraction, occupancyOnPolicy: "Investment" },
+      flood: null,
+      loan: { ...baseLoan, occupancy: "PRIMARY" as never },
+      documents: { hoi: hoiDoc, floodCert: null },
+      extractionId: "00000000-0000-0000-0000-000000000041",
+      loanNumber: "X",
+    };
+    const r = H12_occupancyMatch(ctx);
+    expect(r.fired).toBe(true);
+  });
 });
 
 const baseFloodExtraction = {

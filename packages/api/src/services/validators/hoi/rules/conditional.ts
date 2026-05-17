@@ -108,7 +108,7 @@ export const H12_occupancyMatch: Rule = (ctx: RuleContext): RuleResult => {
       };
     }
   }
-  if (!isDscr(ctx.loan) && ctx.loan.occupancy === "primary" && !policyOcc.includes("primary") && !policyOcc.includes("owner")) {
+  if (!isDscr(ctx.loan) && ctx.loan.occupancy?.toLowerCase() === "primary" && !policyOcc.includes("primary") && !policyOcc.includes("owner")) {
     return {
       ruleId: "hoi.occupancy.match",
       fired: true,
