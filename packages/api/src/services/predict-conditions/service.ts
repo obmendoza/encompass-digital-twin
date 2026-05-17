@@ -1,6 +1,7 @@
 // Predict-conditions service. See spec §3 (service layer) + §5 (data flow).
 
 import { createHash, randomUUID } from "node:crypto";
+import type pg from "pg";
 import { withTenantTx } from "../../db/pool.js";
 import { withStoreSnapshot } from "../../store-db-consistency.js";
 import {
@@ -85,6 +86,61 @@ function hashInput(loan: LoanContext): string {
 interface PendingMatch {
   prediction_run_id: string;
   count: number;
+}
+
+async function insertHoiValidatorFindings(
+  c: pg.PoolClient,
+  tenantId: string,
+  loanId: string,
+  hoiFindings: Finding[],
+  actedKeys: Set<string>,
+  startingSourceOrder: number,
+  runContext: {
+    predictionRunId: string;
+    sourceInputHash: string;
+    predictedBy: string;
+    kbVersionId: number;
+    resolvedIncomeType: string;
+  },
+): Promise<{ inserted: number; skipped: number }> {
+  let inserted = 0;
+  let skipped = 0;
+  for (let idx = 0; idx < hoiFindings.length; idx++) {
+    const finding = hoiFindings[idx]!;
+    if (actedKeys.has(`${finding.sourceList}::${finding.sourceRuleId ?? ""}::${finding.description}`)) {
+      skipped++;
+      continue;
+    }
+    const extractionId = (finding.metadata?.extractionId as string | undefined) ?? null;
+    const portalMetadata = finding.metadata
+      ? JSON.stringify(finding.metadata)
+      : null;
+    const result = await c.query<{ id: string }>(
+      `INSERT INTO predicted_conditions
+         (tenant_id, loan_id, prediction_run_id, source_input_hash, predicted_by,
+          kb_version_id, resolved_income_type, category, description, note,
+          source_list, source_order, status,
+          source_rule_table, source_rule_id, emission_kind,
+          portal_metadata)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'pending', $13, $14, $15, $16::jsonb)
+       ON CONFLICT (tenant_id, loan_id, source_list, source_rule_id, ((portal_metadata->>'extractionId')))
+         WHERE source_list = 'hoi-validator' AND status = 'pending' AND superseded_at IS NULL
+         DO NOTHING
+       RETURNING id`,
+      [
+        tenantId, loanId, runContext.predictionRunId, runContext.sourceInputHash, runContext.predictedBy,
+        runContext.kbVersionId, runContext.resolvedIncomeType,
+        finding.category, finding.description, finding.note,
+        finding.sourceList, startingSourceOrder + idx,
+        finding.sourceRuleTable, finding.sourceRuleId, finding.emissionKind,
+        portalMetadata,
+      ],
+    );
+    if (result.rowCount && result.rowCount > 0) {
+      inserted++;
+    }
+  }
+  return { inserted, skipped };
 }
 
 export async function run(
@@ -314,43 +370,19 @@ export async function run(
     // via the partial unique index from migration 026. Re-running PC v2 with the same
     // extraction silently no-ops; a new extraction (new doc upload) produces a new row
     // because the extractionId differs.
-    let hoiInserted = 0;
-    for (let idx = 0; idx < hoiFindings.length; idx++) {
-      const finding = hoiFindings[idx]!;
-      if (actedKeys.has(`${finding.sourceList}::${finding.sourceRuleId ?? ""}::${finding.description}`)) {
-        skippedActed++;
-        continue;
-      }
-      const extractionId = (finding.metadata?.extractionId as string | undefined) ?? null;
-      const portalMetadata = finding.metadata
-        ? JSON.stringify(finding.metadata)
-        : null;
-      const result = await c.query<{ id: string }>(
-        `INSERT INTO predicted_conditions
-           (tenant_id, loan_id, prediction_run_id, source_input_hash, predicted_by,
-            kb_version_id, resolved_income_type, category, description, note,
-            source_list, source_order, status,
-            source_rule_table, source_rule_id, emission_kind,
-            portal_metadata)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'pending', $13, $14, $15, $16::jsonb)
-         ON CONFLICT (tenant_id, loan_id, source_list, source_rule_id, ((portal_metadata->>'extractionId')))
-           WHERE source_list = 'hoi-validator' AND status = 'pending' AND superseded_at IS NULL
-           DO NOTHING
-         RETURNING id`,
-        [
-          tenantId, loanId, runId, sourceInputHash, source,
-          docs.kbVersionId, docs.resolvedIncomeType,
-          finding.category, finding.description, finding.note,
-          finding.sourceList, findings.length + idx,
-          finding.sourceRuleTable, finding.sourceRuleId, finding.emissionKind,
-          portalMetadata,
-        ],
-      );
-      if (result.rowCount && result.rowCount > 0) {
-        hoiInserted++;
-        insertedCount++;
-      }
-    }
+    const hoiResult = await insertHoiValidatorFindings(
+      c, tenantId, loanId, hoiFindings, actedKeys, findings.length,
+      {
+        predictionRunId: runId,
+        sourceInputHash,
+        predictedBy: source,
+        kbVersionId: docs.kbVersionId,
+        resolvedIncomeType: docs.resolvedIncomeType,
+      },
+    );
+    const hoiInserted = hoiResult.inserted;
+    insertedCount += hoiResult.inserted;
+    skippedActed += hoiResult.skipped;
 
     // Auto-clear any active alerts for this loan, with audit rows per alert.
     const { rows: alertsToClear } = await c.query<{ id: string }>(
