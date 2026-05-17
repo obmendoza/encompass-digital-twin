@@ -652,4 +652,147 @@ describe("HOI Validator resolver — Layer 3 integration (PC v2 run cycle)", () 
     expect((floodFinding!.portal_metadata)["extractionId"]).toBe(floodExtractionId);
     expect(hoiExtractionId).not.toBe(floodExtractionId);
   });
+
+  test("Scenario 5: loan with existing pending v3 batch + new HOI extraction → hoi-validator finding inserted on reuse path", async () => {
+    // Finding A (codex v1.1 P1): HOI resolver must fire even when the reuse-batch
+    // early-return path is taken. Steps:
+    //   1. run() once with NO HOI extraction → full-run path, creates pending batch
+    //   2. Insert HOI extraction with wrong loss-payee
+    //   3. run() again with identical LoanContext → reuse-batch path activates
+    //   4. Assert: the existing pending rows are still present AND a new hoi-validator row exists
+    const loanId = "HOI-L3-REUSE-FINDING-A";
+    await cleanLoan(loanId);
+    await seedLoanInStore(store, loanId, BASE_LOAN);
+
+    // Step 1: first run — no HOI extraction present, full-run path.
+    const firstResult = await run(T, loanId, BASE_LOAN, "system:test");
+    expect(firstResult.reused).toBe(false);
+
+    // Capture pre-existing pending row count (excludes hoi-validator).
+    const { rows: baseRows } = await withTenantTx(T, async (c) =>
+      c.query<{ id: string }>(
+        `SELECT id FROM predicted_conditions
+          WHERE tenant_id = $1 AND loan_id = $2 AND status = 'pending'
+            AND source_list != 'hoi-validator'`,
+        [T, loanId],
+      ),
+    );
+    const baseCount = baseRows.length;
+
+    // Step 2: insert HOI extraction with wrong loss-payee.
+    const badLossPayeeFields: HoiPolicyFields = {
+      carrier: "Carrier Reuse",
+      policyNumber: "POL-REUSE",
+      namedInsured: "Jane Borrower",
+      propertyAddress: { line1: "123 Main St", line2: null, city: "Austin", state: "TX", zip: "78701" },
+      effectiveDate: "2026-06-01",
+      expirationDate: "2027-06-01",
+      termMonths: 12,
+      // H1: wrong loss payee → rule fires
+      lossPayeeClause: "Wrong Entity LLC",
+      loanNumberOnPolicy: loanId,
+      coverageAmount: 350000,
+      replacementCost: 350000,
+      deductiblePct: 0.02,
+      deductibleAmount: 7000,
+      windHailHurricane: { included: true, wording: "included", separatePolicy: false, confidence: 0.95 },
+      rentLossCoverageMonths: 6,
+      rentLossWording: null,
+      rentLossActualCostSustained: null,
+      occupancyOnPolicy: "Primary",
+      premiumPaidInFull: { paid: true, confidence: 0.92 },
+      premiumDueDays: null,
+      wallsInCoverage: null,
+      ho6Policy: null,
+      evidence: [],
+    };
+    const { extractionId } = await seedHoiExtraction({ loanId, fields: badLossPayeeFields });
+
+    // Step 3: second run with identical LoanContext → reuse-batch path.
+    const secondResult = await run(T, loanId, BASE_LOAN, "system:test");
+    expect(secondResult.reused).toBe(true);
+
+    // Step 4: assert pre-existing pending rows are still present.
+    const { rows: afterBaseRows } = await withTenantTx(T, async (c) =>
+      c.query<{ id: string }>(
+        `SELECT id FROM predicted_conditions
+          WHERE tenant_id = $1 AND loan_id = $2 AND status = 'pending'
+            AND source_list != 'hoi-validator'`,
+        [T, loanId],
+      ),
+    );
+    expect(afterBaseRows.length).toBe(baseCount);
+
+    // Assert: at least 1 new hoi-validator row was inserted on the reuse path.
+    const { rows: hoiRows } = await withTenantTx(T, async (c) =>
+      c.query<{ source_rule_id: string; portal_metadata: Record<string, unknown> }>(
+        `SELECT source_rule_id, portal_metadata
+           FROM predicted_conditions
+          WHERE tenant_id = $1 AND loan_id = $2 AND source_list = 'hoi-validator'
+            AND status = 'pending' AND superseded_at IS NULL`,
+        [T, loanId],
+      ),
+    );
+    expect(hoiRows.length).toBeGreaterThanOrEqual(1);
+    const lossPayeeRow = hoiRows.find((r) => r.source_rule_id === "hoi.loss-payee.match");
+    expect(lossPayeeRow).toBeDefined();
+    expect((lossPayeeRow!.portal_metadata)["extractionId"]).toBe(extractionId);
+  });
+
+  test("Scenario 6: running run() twice on same loan with same HOI extraction → idempotent (exactly 1 hoi-validator row)", async () => {
+    // Idempotency on the reuse path: the first run (full-run path) inserts the HOI finding;
+    // the second run (reuse-batch path) calls insertHoiValidatorFindings again and ON CONFLICT
+    // DO NOTHING silently skips it. End state must be exactly 1 hoi-validator row.
+    const loanId = "HOI-L3-REUSE-IDEMPOTENT";
+    await cleanLoan(loanId);
+    await seedLoanInStore(store, loanId, BASE_LOAN);
+
+    const badLossPayeeFields: HoiPolicyFields = {
+      carrier: "Carrier Idempotent",
+      policyNumber: "POL-IDEM",
+      namedInsured: "Jane Borrower",
+      propertyAddress: { line1: "123 Main St", line2: null, city: "Austin", state: "TX", zip: "78701" },
+      effectiveDate: "2026-06-01",
+      expirationDate: "2027-06-01",
+      termMonths: 12,
+      // H1: wrong loss payee → rule fires
+      lossPayeeClause: "Wrong Entity LLC",
+      loanNumberOnPolicy: loanId,
+      coverageAmount: 350000,
+      replacementCost: 350000,
+      deductiblePct: 0.02,
+      deductibleAmount: 7000,
+      windHailHurricane: { included: true, wording: "included", separatePolicy: false, confidence: 0.95 },
+      rentLossCoverageMonths: 6,
+      rentLossWording: null,
+      rentLossActualCostSustained: null,
+      occupancyOnPolicy: "Primary",
+      premiumPaidInFull: { paid: true, confidence: 0.92 },
+      premiumDueDays: null,
+      wallsInCoverage: null,
+      ho6Policy: null,
+      evidence: [],
+    };
+    await seedHoiExtraction({ loanId, fields: badLossPayeeFields });
+
+    // First run: full-run path (no prior pending batch). Inserts HOI finding.
+    const firstResult = await run(T, loanId, BASE_LOAN, "system:test");
+    expect(firstResult.reused).toBe(false);
+
+    // Second run: reuse-batch path. insertHoiValidatorFindings ON CONFLICT DO NOTHING fires.
+    const secondResult = await run(T, loanId, BASE_LOAN, "system:test");
+    expect(secondResult.reused).toBe(true);
+
+    // Exactly 1 hoi-validator row — no duplicate inserted.
+    const { rows } = await withTenantTx(T, async (c) =>
+      c.query<{ id: string }>(
+        `SELECT id FROM predicted_conditions
+          WHERE tenant_id = $1 AND loan_id = $2 AND source_list = 'hoi-validator'
+            AND source_rule_id = 'hoi.loss-payee.match' AND status = 'pending'
+            AND superseded_at IS NULL`,
+        [T, loanId],
+      ),
+    );
+    expect(rows.length).toBe(1);
+  });
 });

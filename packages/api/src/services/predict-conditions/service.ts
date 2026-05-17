@@ -85,6 +85,7 @@ function hashInput(loan: LoanContext): string {
 
 interface PendingMatch {
   prediction_run_id: string;
+  resolved_income_type: string | null;
   count: number;
 }
 
@@ -162,10 +163,29 @@ export async function run(
     );
     const activeKbId = kbRows[0]?.id ?? null;
 
+    // Read HOI enabled flag and invoke the HOI resolver BEFORE the reuse-batch
+    // early-return check. This ensures a loan with a pre-existing pending batch
+    // (same hash + kb_version_id) still gets HOI findings inserted when a fresh
+    // HOI extraction lands — the primary production failure mode (codex v1.1 P1
+    // Finding A). The resolver short-circuits cheaply when hoiEnabled=false or
+    // there are no extractions.
+    const { rows: tRows } = await c.query<{ settings: { validators?: { hoi?: { enabled?: boolean } } } }>(
+      `SELECT settings FROM tenants WHERE id = $1`,
+      [tenantId],
+    );
+    const hoiEnabled = tRows[0]?.settings?.validators?.hoi?.enabled === true;
+
+    const hoiFindings = await resolveHoiValidatorFindings(
+      c, tenantId,
+      { rowId: activeKbId ?? 0, versionNumber: 0 }, // resolver ignores _kbCtx
+      loan,
+      { hoiEnabled, loanExternalId: loanId, loanNumber: loanId },
+    );
+
     // If we have an active KB, check for an existing pending batch with matching hash + kb_version_id.
     if (activeKbId !== null) {
       const { rows: existingRows } = await c.query<PendingMatch>(
-        `SELECT prediction_run_id, COUNT(*)::int AS count
+        `SELECT prediction_run_id, MAX(resolved_income_type) AS resolved_income_type, COUNT(*)::int AS count
            FROM predicted_conditions
           WHERE tenant_id = $1 AND loan_id = $2 AND status = 'pending'
             AND source_input_hash = $3 AND kb_version_id = $4
@@ -174,6 +194,32 @@ export async function run(
       );
       const existing = existingRows[0];
       if (existing && existing.count > 0) {
+        // HOI findings may be new (new extraction uploaded since the batch was created);
+        // insert them now with ON CONFLICT DO NOTHING idempotency so duplicates are silently
+        // skipped. Use the existing batch's run_id and caller's source for audit lineage.
+        let hoiInsertedOnReuse = 0;
+        if (hoiEnabled && hoiFindings.length > 0) {
+          // Query acted keys so we don't re-insert predictions the user already accepted/dismissed.
+          const { rows: actedRowsForReuse } = await c.query<{ source_list: string; source_rule_id: string | null; description: string }>(
+            `SELECT source_list, source_rule_id, description
+               FROM predicted_conditions
+              WHERE tenant_id = $1 AND loan_id = $2 AND status IN ('accepted', 'dismissed')`,
+            [tenantId, loanId],
+          );
+          const actedKeysForReuse = new Set(actedRowsForReuse.map((r) => `${r.source_list}::${r.source_rule_id ?? ""}::${r.description}`));
+          const hoiReuseResult = await insertHoiValidatorFindings(
+            c, tenantId, loanId, hoiFindings, actedKeysForReuse, 0,
+            {
+              predictionRunId: existing.prediction_run_id,
+              sourceInputHash,
+              predictedBy: source,
+              kbVersionId: activeKbId,
+              resolvedIncomeType: existing.resolved_income_type ?? loan.incomeDocType,
+            },
+          );
+          hoiInsertedOnReuse = hoiReuseResult.inserted;
+        }
+
         // Write an audit row so the reused-run path is still traceable.
         // Codex round-4 P2: the previous early return left a compliance gap
         // where repeated manual reruns had no record of who triggered them.
@@ -191,6 +237,7 @@ export async function run(
               outcome: "reused",
               count: existing.count,
               reused: true,
+              hoi_inserted: hoiInsertedOnReuse,
             }),
           ],
         );
@@ -307,23 +354,8 @@ export async function run(
     const orchestratorResult = await runPreUnderwriter(c, tenantId, kbCtx, docChecklistFindings, loan);
     const findings = orchestratorResult.findings;
 
-    // ── HOI Validator (Task 19) ──────────────────────────────────────────────
-    // Read tenant's hoi.enabled flag. Done here (not upfront) so the early-return
-    // reuse path is unaffected; the schema-bump (v2→v3) already invalidates the
-    // hash so first run always reaches this branch.
-    const { rows: tRows } = await c.query<{ settings: { validators?: { hoi?: { enabled?: boolean } } } }>(
-      `SELECT settings FROM tenants WHERE id = $1`,
-      [tenantId],
-    );
-    const hoiEnabled = tRows[0]?.settings?.validators?.hoi?.enabled === true;
-
-    // Invoke the HOI resolver. loanId is the store/DB loan id (the external-id-derived
-    // string like "QL-123"). The resolver queries document_extractions by loan_id.
-    const hoiFindings = await resolveHoiValidatorFindings(c, tenantId, kbCtx, loan, {
-      hoiEnabled,
-      loanExternalId: loanId,
-      loanNumber: loanId, // loanId is the external ID; LoanContext has no loanNumber field
-    });
+    // hoiEnabled and hoiFindings were already resolved before the reuse-batch check
+    // (codex v1.1 P1 Finding A fix). Re-use the values in scope here.
 
     // Skip already-acted predictions (Codex round-4 fix preserved). Key shape:
     // '<source_list>::<source_rule_id>::<description>' to avoid false collisions
