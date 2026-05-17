@@ -38,7 +38,7 @@ export const H10_dscrRentLoss: Rule = (ctx: RuleContext): RuleResult => {
       expectedValue: "≥ 6 months PITIA rent loss (not 'actual cost sustained')",
       evidence: {
         documentId: ctx.documents.hoi!.documentId,
-        extractionId: ctx.extractionId,
+        extractionId: ctx.hoiExtractionId!,
         fieldPath: "rentLossCoverageMonths",
         documentPage: ctx.hoi!.evidence.find((e) => e.fieldPath === "rentLossCoverageMonths")?.documentPage ?? null,
       },
@@ -76,7 +76,7 @@ export const H11_condoWallsInOrHo6: Rule = (ctx: RuleContext): RuleResult => {
       expectedValue: "master policy walls-in coverage OR separate HO6 with deductible ≤ 5% of dwelling",
       evidence: {
         documentId: ctx.documents.hoi!.documentId,
-        extractionId: ctx.extractionId,
+        extractionId: ctx.hoiExtractionId!,
         fieldPath: "wallsInCoverage",
         documentPage: ctx.hoi!.evidence.find((e) => e.fieldPath === "wallsInCoverage")?.documentPage ?? null,
       },
@@ -100,7 +100,7 @@ export const H12_occupancyMatch: Rule = (ctx: RuleContext): RuleResult => {
           expectedValue: "DSCR loans require non-owner-occupied policy (Investment / Rental)",
           evidence: {
             documentId: ctx.documents.hoi!.documentId,
-            extractionId: ctx.extractionId,
+            extractionId: ctx.hoiExtractionId!,
             fieldPath: "occupancyOnPolicy",
             documentPage: ctx.hoi.evidence.find((e) => e.fieldPath === "occupancyOnPolicy")?.documentPage ?? null,
           },
@@ -108,7 +108,7 @@ export const H12_occupancyMatch: Rule = (ctx: RuleContext): RuleResult => {
       };
     }
   }
-  if (!isDscr(ctx.loan) && ctx.loan.occupancy === "primary" && !policyOcc.includes("primary") && !policyOcc.includes("owner")) {
+  if (!isDscr(ctx.loan) && ctx.loan.occupancy?.toLowerCase() === "primary" && !policyOcc.includes("primary") && !policyOcc.includes("owner")) {
     return {
       ruleId: "hoi.occupancy.match",
       fired: true,
@@ -119,7 +119,7 @@ export const H12_occupancyMatch: Rule = (ctx: RuleContext): RuleResult => {
         expectedValue: "policy occupancy should reflect Primary / Owner-Occupied for primary residence loans",
         evidence: {
           documentId: ctx.documents.hoi!.documentId,
-          extractionId: ctx.extractionId,
+          extractionId: ctx.hoiExtractionId!,
           fieldPath: "occupancyOnPolicy",
           documentPage: ctx.hoi.evidence.find((e) => e.fieldPath === "occupancyOnPolicy")?.documentPage ?? null,
         },

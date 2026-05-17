@@ -34,7 +34,8 @@ describe("H1: hoi.loss-payee.match", () => {
       flood: null,
       loan: baseLoan,
       documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d-h", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000010",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000010",
+      floodExtractionId: null,
       loanNumber: "92010207238",
     };
     expect(H1_lossPayeeMatch(ctx).fired).toBe(false);
@@ -46,7 +47,8 @@ describe("H1: hoi.loss-payee.match", () => {
       flood: null,
       loan: { ...baseLoan, state: "NY" },
       documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000011",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000011",
+      floodExtractionId: null,
       loanNumber: "X1",
     };
     expect(H1_lossPayeeMatch(ctx).fired).toBe(false);
@@ -58,7 +60,8 @@ describe("H1: hoi.loss-payee.match", () => {
       flood: null,
       loan: baseLoan,
       documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000012",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000012",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     const r = H1_lossPayeeMatch(ctx);
@@ -73,7 +76,8 @@ describe("H1: hoi.loss-payee.match", () => {
       flood: null,
       loan: { ...baseLoan, channel: "NDC" as const },
       documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000013",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000013",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     expect(H1_lossPayeeMatch(ctx).fired).toBe(false);
@@ -85,10 +89,26 @@ describe("H1: hoi.loss-payee.match", () => {
       flood: null,
       loan: baseLoan,
       documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000014",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000014",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     expect(H1_lossPayeeMatch(ctx).fired).toBe(false);
+  });
+
+  test("H1 uses hoiExtractionId in finding evidence when both HOI + Flood IDs present", () => {
+    const ctx: RuleContext = {
+      hoi: { ...baseExtraction, lossPayeeClause: "Wrong Entity LLC", loanNumberOnPolicy: "X" },
+      flood: null,
+      loan: baseLoan,
+      documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d-h", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
+      hoiExtractionId: "00000000-0000-0000-0000-0000000000aa",
+      floodExtractionId: "00000000-0000-0000-0000-0000000000bb",
+      loanNumber: "X",
+    };
+    const r = H1_lossPayeeMatch(ctx);
+    expect(r.fired).toBe(true);
+    expect(r.finding?.evidence.extractionId).toBe("00000000-0000-0000-0000-0000000000aa");
   });
 });
 
@@ -99,7 +119,8 @@ describe("H2: hoi.named-insured.match", () => {
       flood: null,
       loan: { ...baseLoan, borrowerFullName: "Chad D Clark" },
       documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000020",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000020",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     expect(H2_namedInsuredMatch(ctx).fired).toBe(false);
@@ -111,7 +132,8 @@ describe("H2: hoi.named-insured.match", () => {
       flood: null,
       loan: { ...baseLoan, borrowerFullName: "Chad D Clark" },
       documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000021",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000021",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     const r = H2_namedInsuredMatch(ctx);
@@ -126,7 +148,8 @@ describe("H2: hoi.named-insured.match", () => {
       flood: null,
       loan: { ...baseLoan, llcOrLegalEntity: true, entityName: "Sunrise Realty LLC" },
       documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000022",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000022",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     expect(H2_namedInsuredMatch(ctx).fired).toBe(false);
@@ -138,7 +161,8 @@ describe("H2: hoi.named-insured.match", () => {
       flood: null,
       loan: { ...baseLoan, borrowerFullName: "Chad D Clark" },
       documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000023",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000023",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     expect(H2_namedInsuredMatch(ctx).fired).toBe(false);
@@ -152,7 +176,8 @@ describe("H3: hoi.property-address.match", () => {
       flood: null,
       loan: { ...baseLoan, subjectPropertyAddress: { line1: "123 Main St", city: "Austin", state: "TX", zip: "78701" } },
       documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000030",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000030",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     expect(H3_propertyAddressMatch(ctx).fired).toBe(false);
@@ -164,7 +189,8 @@ describe("H3: hoi.property-address.match", () => {
       flood: null,
       loan: { ...baseLoan, subjectPropertyAddress: { line1: "123 Main St", city: "Austin", state: "TX", zip: "78701" } },
       documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000031",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000031",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     const r = H3_propertyAddressMatch(ctx);
@@ -179,7 +205,8 @@ describe("H3: hoi.property-address.match", () => {
       flood: null,
       loan: { ...baseLoan, subjectPropertyAddress: { line1: "789 Elm Rd", city: "Rockport", state: "TX", zip: "78382" } },
       documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000032",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000032",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     expect(H3_propertyAddressMatch(ctx).fired).toBe(false);
@@ -191,7 +218,8 @@ describe("H3: hoi.property-address.match", () => {
       flood: null,
       loan: { ...baseLoan, subjectPropertyAddress: { line1: "123 Main St", city: "Austin", state: "TX", zip: "78701" } },
       documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000033",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000033",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     expect(H3_propertyAddressMatch(ctx).fired).toBe(false);
@@ -207,7 +235,8 @@ describe("H4: hoi.effective-date.window", () => {
       flood: null,
       loan: { ...baseLoan, loanPurpose: "Purchase", noteDate },
       documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000040",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000040",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     expect(H4_effectiveDateWindow(ctx).fired).toBe(false);
@@ -219,7 +248,8 @@ describe("H4: hoi.effective-date.window", () => {
       flood: null,
       loan: { ...baseLoan, loanPurpose: "Purchase", noteDate },
       documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000041",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000041",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     const r = H4_effectiveDateWindow(ctx);
@@ -234,7 +264,8 @@ describe("H4: hoi.effective-date.window", () => {
       flood: null,
       loan: { ...baseLoan, loanPurpose: "Rate & Term Refinance", noteDate },
       documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000042",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000042",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     expect(H4_effectiveDateWindow(ctx).fired).toBe(false);
@@ -246,7 +277,8 @@ describe("H4: hoi.effective-date.window", () => {
       flood: null,
       loan: { ...baseLoan, loanPurpose: "Cash-Out Refinance", noteDate },
       documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000043",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000043",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     const r = H4_effectiveDateWindow(ctx);
@@ -261,7 +293,8 @@ describe("H4: hoi.effective-date.window", () => {
       flood: null,
       loan: { ...baseLoan, loanPurpose: "Purchase" },
       documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000044",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000044",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     expect(H4_effectiveDateWindow(ctx).fired).toBe(false);
@@ -275,7 +308,8 @@ describe("H5: hoi.term.12-months", () => {
       flood: null,
       loan: baseLoan,
       documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000050",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000050",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     expect(H5_term12Months(ctx).fired).toBe(false);
@@ -287,7 +321,8 @@ describe("H5: hoi.term.12-months", () => {
       flood: null,
       loan: baseLoan,
       documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000051",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000051",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     expect(H5_term12Months(ctx).fired).toBe(false);
@@ -299,7 +334,8 @@ describe("H5: hoi.term.12-months", () => {
       flood: null,
       loan: baseLoan,
       documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000052",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000052",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     const r = H5_term12Months(ctx);
@@ -314,7 +350,8 @@ describe("H5: hoi.term.12-months", () => {
       flood: null,
       loan: baseLoan,
       documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000053",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000053",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     expect(H5_term12Months(ctx).fired).toBe(false);
@@ -333,7 +370,8 @@ describe("H6: hoi.premium.paid-in-full", () => {
       flood: null,
       loan: baseLoan,
       documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000060",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000060",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     expect(H6_premiumPaidInFull(ctx).fired).toBe(false);
@@ -345,7 +383,8 @@ describe("H6: hoi.premium.paid-in-full", () => {
       flood: null,
       loan: { ...baseLoan, loanPurpose: "Purchase" },
       documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000061",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000061",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     const r = H6_premiumPaidInFull(ctx);
@@ -360,7 +399,8 @@ describe("H6: hoi.premium.paid-in-full", () => {
       flood: null,
       loan: { ...baseLoan, loanPurpose: "Purchase" },
       documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000062",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000062",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     const r = H6_premiumPaidInFull(ctx);
@@ -375,7 +415,8 @@ describe("H6: hoi.premium.paid-in-full", () => {
       flood: null,
       loan: { ...baseLoan, loanPurpose: "Rate & Term Refinance", closingDate },
       documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000063",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000063",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     const r = H6_premiumPaidInFull(ctx);
@@ -390,7 +431,8 @@ describe("H6: hoi.premium.paid-in-full", () => {
       flood: null,
       loan: baseLoan,
       documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000064",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000064",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     expect(H6_premiumPaidInFull(ctx).fired).toBe(false);
@@ -404,7 +446,8 @@ describe("H7: hoi.deductible.cap", () => {
       flood: null,
       loan: baseLoan,
       documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000070",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000070",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     expect(H7_deductibleCap(ctx).fired).toBe(false);
@@ -416,7 +459,8 @@ describe("H7: hoi.deductible.cap", () => {
       flood: null,
       loan: baseLoan,
       documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000071",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000071",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     expect(H7_deductibleCap(ctx).fired).toBe(false);
@@ -428,7 +472,8 @@ describe("H7: hoi.deductible.cap", () => {
       flood: null,
       loan: baseLoan,
       documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000072",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000072",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     const r = H7_deductibleCap(ctx);
@@ -444,7 +489,8 @@ describe("H7: hoi.deductible.cap", () => {
       flood: null,
       loan: baseLoan,
       documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000073",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000073",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     expect(H7_deductibleCap(ctx).fired).toBe(false);
@@ -458,7 +504,8 @@ describe("H8: hoi.wind-hail-hurricane.included", () => {
       flood: null,
       loan: baseLoan,
       documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000080",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000080",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     expect(H8_windHailIncluded(ctx).fired).toBe(false);
@@ -470,7 +517,8 @@ describe("H8: hoi.wind-hail-hurricane.included", () => {
       flood: null,
       loan: baseLoan,
       documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000081",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000081",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     const r = H8_windHailIncluded(ctx);
@@ -485,7 +533,8 @@ describe("H8: hoi.wind-hail-hurricane.included", () => {
       flood: null,
       loan: baseLoan,
       documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000082",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000082",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     const r = H8_windHailIncluded(ctx);
@@ -500,7 +549,8 @@ describe("H8: hoi.wind-hail-hurricane.included", () => {
       flood: null,
       loan: baseLoan,
       documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000083",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000083",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     expect(H8_windHailIncluded(ctx).fired).toBe(false);
@@ -512,7 +562,8 @@ describe("H8: hoi.wind-hail-hurricane.included", () => {
       flood: null,
       loan: baseLoan,
       documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000084",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000084",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     expect(H8_windHailIncluded(ctx).fired).toBe(false);
@@ -526,7 +577,8 @@ describe("H9: hoi.coverage.minimum", () => {
       flood: null,
       loan: { ...baseLoan, loanAmount: 350_000 },
       documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000090",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000090",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     expect(H9_coverageMinimum(ctx).fired).toBe(false);
@@ -539,7 +591,8 @@ describe("H9: hoi.coverage.minimum", () => {
       flood: null,
       loan: { ...baseLoan, loanAmount: 350_000 },
       documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000091",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000091",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     expect(H9_coverageMinimum(ctx).fired).toBe(false);
@@ -551,7 +604,8 @@ describe("H9: hoi.coverage.minimum", () => {
       flood: null,
       loan: { ...baseLoan, loanAmount: 350_000 },
       documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000092",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000092",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     const r = H9_coverageMinimum(ctx);
@@ -566,7 +620,8 @@ describe("H9: hoi.coverage.minimum", () => {
       flood: null,
       loan: { ...baseLoan, loanAmount: 350_000 },
       documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000093",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000093",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     expect(H9_coverageMinimum(ctx).fired).toBe(false);
@@ -578,7 +633,8 @@ describe("H9: hoi.coverage.minimum", () => {
       flood: null,
       loan: { ...baseLoan },
       documents: { hoi: { tenantId: "t", loanId: "l", documentId: "d", category: "hoi-policy", storageUrl: "x" }, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000094",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000094",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     expect(H9_coverageMinimum(ctx).fired).toBe(false);
@@ -595,7 +651,8 @@ describe("H10: hoi.dscr.rent-loss-coverage", () => {
       flood: null,
       loan: dscrLoan,
       documents: { hoi: hoiDoc, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000100",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000100",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     expect(H10_dscrRentLoss(ctx).fired).toBe(false);
@@ -607,7 +664,8 @@ describe("H10: hoi.dscr.rent-loss-coverage", () => {
       flood: null,
       loan: dscrLoan,
       documents: { hoi: hoiDoc, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000101",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000101",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     const r = H10_dscrRentLoss(ctx);
@@ -622,7 +680,8 @@ describe("H10: hoi.dscr.rent-loss-coverage", () => {
       flood: null,
       loan: dscrLoan,
       documents: { hoi: hoiDoc, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000102",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000102",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     const r = H10_dscrRentLoss(ctx);
@@ -637,7 +696,8 @@ describe("H10: hoi.dscr.rent-loss-coverage", () => {
       flood: null,
       loan: { ...baseLoan, incomeDocType: "Full Doc" },
       documents: { hoi: hoiDoc, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000103",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000103",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     expect(H10_dscrRentLoss(ctx).fired).toBe(false);
@@ -649,7 +709,8 @@ describe("H10: hoi.dscr.rent-loss-coverage", () => {
       flood: null,
       loan: dscrLoan,
       documents: { hoi: hoiDoc, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000104",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000104",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     const r = H10_dscrRentLoss(ctx);
@@ -669,7 +730,8 @@ describe("H11: hoi.condo.walls-in-or-ho6", () => {
       flood: null,
       loan: condoLoan,
       documents: { hoi: hoiDoc, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000110",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000110",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     expect(H11_condoWallsInOrHo6(ctx).fired).toBe(false);
@@ -681,7 +743,8 @@ describe("H11: hoi.condo.walls-in-or-ho6", () => {
       flood: null,
       loan: condoLoan,
       documents: { hoi: hoiDoc, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000111",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000111",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     const r = H11_condoWallsInOrHo6(ctx);
@@ -696,7 +759,8 @@ describe("H11: hoi.condo.walls-in-or-ho6", () => {
       flood: null,
       loan: condoLoan,
       documents: { hoi: hoiDoc, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000112",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000112",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     const r = H11_condoWallsInOrHo6(ctx);
@@ -711,7 +775,8 @@ describe("H11: hoi.condo.walls-in-or-ho6", () => {
       flood: null,
       loan: { ...baseLoan, propertyType: "Detached" },
       documents: { hoi: hoiDoc, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000113",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000113",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     expect(H11_condoWallsInOrHo6(ctx).fired).toBe(false);
@@ -728,7 +793,8 @@ describe("H12: hoi.occupancy.match", () => {
       flood: null,
       loan: dscrLoan,
       documents: { hoi: hoiDoc, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000120",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000120",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     expect(H12_occupancyMatch(ctx).fired).toBe(false);
@@ -740,7 +806,8 @@ describe("H12: hoi.occupancy.match", () => {
       flood: null,
       loan: dscrLoan,
       documents: { hoi: hoiDoc, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000121",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000121",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     const r = H12_occupancyMatch(ctx);
@@ -755,7 +822,8 @@ describe("H12: hoi.occupancy.match", () => {
       flood: null,
       loan: { ...baseLoan, occupancy: "primary", incomeDocType: "Full Doc" },
       documents: { hoi: hoiDoc, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000122",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000122",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     expect(H12_occupancyMatch(ctx).fired).toBe(false);
@@ -767,13 +835,43 @@ describe("H12: hoi.occupancy.match", () => {
       flood: null,
       loan: { ...baseLoan, occupancy: "primary", incomeDocType: "Full Doc" },
       documents: { hoi: hoiDoc, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000123",
+      hoiExtractionId: "00000000-0000-0000-0000-000000000123",
+      floodExtractionId: null,
       loanNumber: "X",
     };
     const r = H12_occupancyMatch(ctx);
     expect(r.fired).toBe(true);
     expect(r.finding?.severity).toBe("fail");
     expect(r.finding?.ruleId).toBe("hoi.occupancy.match");
+  });
+
+  test("H12 non-DSCR with capitalized 'Primary' occupancy + Investment policy → fail (case-insensitive)", () => {
+    const ctx: RuleContext = {
+      hoi: { ...baseExtraction, occupancyOnPolicy: "Investment" },
+      flood: null,
+      loan: { ...baseLoan, occupancy: "Primary" as never },
+      documents: { hoi: hoiDoc, floodCert: null },
+      hoiExtractionId: "00000000-0000-0000-0000-000000000040",
+      floodExtractionId: null,
+      loanNumber: "X",
+    };
+    const r = H12_occupancyMatch(ctx);
+    expect(r.fired).toBe(true);
+    expect(r.finding?.severity).toBe("fail");
+  });
+
+  test("H12 non-DSCR with all-caps 'PRIMARY' occupancy + Investment policy → fail", () => {
+    const ctx: RuleContext = {
+      hoi: { ...baseExtraction, occupancyOnPolicy: "Investment" },
+      flood: null,
+      loan: { ...baseLoan, occupancy: "PRIMARY" as never },
+      documents: { hoi: hoiDoc, floodCert: null },
+      hoiExtractionId: "00000000-0000-0000-0000-000000000041",
+      floodExtractionId: null,
+      loanNumber: "X",
+    };
+    const r = H12_occupancyMatch(ctx);
+    expect(r.fired).toBe(true);
   });
 });
 
@@ -795,7 +893,8 @@ describe("F1: flood.deductible.cap", () => {
       flood: { ...baseFloodExtraction, floodDeductible: 8_000 },
       loan: { ...baseLoan, propertyType: "SFR" },
       documents: { hoi: null, floodCert: baseFloodDoc },
-      extractionId: "00000000-0000-0000-0000-000000000200",
+      hoiExtractionId: null,
+      floodExtractionId: "00000000-0000-0000-0000-000000000200",
       loanNumber: "X",
     };
     expect(F1_floodDeductibleCap(ctx).fired).toBe(false);
@@ -807,7 +906,8 @@ describe("F1: flood.deductible.cap", () => {
       flood: { ...baseFloodExtraction, floodDeductible: 12_000 },
       loan: { ...baseLoan, propertyType: "SFR" },
       documents: { hoi: null, floodCert: baseFloodDoc },
-      extractionId: "00000000-0000-0000-0000-000000000201",
+      hoiExtractionId: null,
+      floodExtractionId: "00000000-0000-0000-0000-000000000201",
       loanNumber: "X",
     };
     const r = F1_floodDeductibleCap(ctx);
@@ -822,7 +922,8 @@ describe("F1: flood.deductible.cap", () => {
       flood: { ...baseFloodExtraction, floodDeductible: 22_000 },
       loan: { ...baseLoan, propertyType: "Condo" },
       documents: { hoi: null, floodCert: baseFloodDoc },
-      extractionId: "00000000-0000-0000-0000-000000000202",
+      hoiExtractionId: null,
+      floodExtractionId: "00000000-0000-0000-0000-000000000202",
       loanNumber: "X",
     };
     expect(F1_floodDeductibleCap(ctx).fired).toBe(false);
@@ -834,7 +935,8 @@ describe("F1: flood.deductible.cap", () => {
       flood: { ...baseFloodExtraction, floodDeductible: 30_000 },
       loan: { ...baseLoan, propertyType: "Condo" },
       documents: { hoi: null, floodCert: baseFloodDoc },
-      extractionId: "00000000-0000-0000-0000-000000000203",
+      hoiExtractionId: null,
+      floodExtractionId: "00000000-0000-0000-0000-000000000203",
       loanNumber: "X",
     };
     const r = F1_floodDeductibleCap(ctx);
@@ -849,10 +951,26 @@ describe("F1: flood.deductible.cap", () => {
       flood: null,
       loan: { ...baseLoan, propertyType: "SFR" },
       documents: { hoi: null, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000204",
+      hoiExtractionId: null,
+      floodExtractionId: "00000000-0000-0000-0000-000000000204",
       loanNumber: "X",
     };
     expect(F1_floodDeductibleCap(ctx).fired).toBe(false);
+  });
+
+  test("F1 uses floodExtractionId in finding evidence when both HOI + Flood IDs present", () => {
+    const ctx: RuleContext = {
+      hoi: null,
+      flood: { ...baseFloodExtraction, floodDeductible: 12000 },
+      loan: baseLoan,
+      documents: { hoi: null, floodCert: baseFloodDoc },
+      hoiExtractionId: "00000000-0000-0000-0000-0000000000aa",
+      floodExtractionId: "00000000-0000-0000-0000-0000000000bb",
+      loanNumber: "X",
+    };
+    const r = F1_floodDeductibleCap(ctx);
+    expect(r.fired).toBe(true);
+    expect(r.finding?.evidence.extractionId).toBe("00000000-0000-0000-0000-0000000000bb");
   });
 });
 
@@ -863,7 +981,8 @@ describe("F2: flood.coverage.minimum", () => {
       flood: { ...baseFloodExtraction, floodCoverage: 250_000 },
       loan: { ...baseLoan, propertyType: "SFR", loanAmount: 200_000, replacementCost: 300_000 },
       documents: { hoi: null, floodCert: baseFloodDoc },
-      extractionId: "00000000-0000-0000-0000-000000000210",
+      hoiExtractionId: null,
+      floodExtractionId: "00000000-0000-0000-0000-000000000210",
       loanNumber: "X",
     };
     expect(F2_floodCoverageMinimum(ctx).fired).toBe(false);
@@ -875,7 +994,8 @@ describe("F2: flood.coverage.minimum", () => {
       flood: { ...baseFloodExtraction, floodCoverage: 100_000 },
       loan: { ...baseLoan, propertyType: "SFR", loanAmount: 200_000 },
       documents: { hoi: null, floodCert: baseFloodDoc },
-      extractionId: "00000000-0000-0000-0000-000000000211",
+      hoiExtractionId: null,
+      floodExtractionId: "00000000-0000-0000-0000-000000000211",
       loanNumber: "X",
     };
     const r = F2_floodCoverageMinimum(ctx);
@@ -890,7 +1010,8 @@ describe("F2: flood.coverage.minimum", () => {
       flood: null,
       loan: { ...baseLoan, propertyType: "SFR", loanAmount: 200_000 },
       documents: { hoi: null, floodCert: null },
-      extractionId: "00000000-0000-0000-0000-000000000212",
+      hoiExtractionId: null,
+      floodExtractionId: "00000000-0000-0000-0000-000000000212",
       loanNumber: "X",
     };
     expect(F2_floodCoverageMinimum(ctx).fired).toBe(false);
@@ -902,7 +1023,8 @@ describe("F2: flood.coverage.minimum", () => {
       flood: { ...baseFloodExtraction, floodCoverage: null },
       loan: { ...baseLoan, propertyType: "SFR", loanAmount: 200_000 },
       documents: { hoi: null, floodCert: baseFloodDoc },
-      extractionId: "00000000-0000-0000-0000-000000000213",
+      hoiExtractionId: null,
+      floodExtractionId: "00000000-0000-0000-0000-000000000213",
       loanNumber: "X",
     };
     expect(F2_floodCoverageMinimum(ctx).fired).toBe(false);

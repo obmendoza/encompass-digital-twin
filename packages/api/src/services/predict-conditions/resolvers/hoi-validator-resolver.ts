@@ -85,7 +85,8 @@ export async function resolveHoiValidatorFindings(
     flood: floodRow ? (floodRow.fields as FloodCertFields) : null,
     loan,
     documents,
-    extractionId: hoiRow?.id ?? floodRow?.id ?? "",
+    hoiExtractionId: hoiRow?.id ?? null,
+    floodExtractionId: floodRow?.id ?? null,
     loanNumber: args.loanNumber,
   };
 
@@ -103,7 +104,7 @@ export async function resolveHoiValidatorFindings(
         emissionKind: "deterministic",
         metadata: {
           validationFindings: [r.finding],
-          extractionId: ctx.extractionId,
+          extractionId: r.finding.evidence.extractionId,
         },
       });
     }

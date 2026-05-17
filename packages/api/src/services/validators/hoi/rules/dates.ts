@@ -24,7 +24,7 @@ export const H4_effectiveDateWindow: Rule = (ctx: RuleContext): RuleResult => {
         : `≤ ${ctx.loan.noteDate} (note date)`,
       evidence: {
         documentId: ctx.documents.hoi!.documentId,
-        extractionId: ctx.extractionId,
+        extractionId: ctx.hoiExtractionId!,
         fieldPath: "effectiveDate",
         documentPage: ctx.hoi.evidence.find((e) => e.fieldPath === "effectiveDate")?.documentPage ?? null,
       },
@@ -46,7 +46,7 @@ export const H5_term12Months: Rule = (ctx: RuleContext): RuleResult => {
       expectedValue: "≥ 12 months",
       evidence: {
         documentId: ctx.documents.hoi!.documentId,
-        extractionId: ctx.extractionId,
+        extractionId: ctx.hoiExtractionId!,
         fieldPath: "termMonths",
         documentPage: ctx.hoi.evidence.find((e) => e.fieldPath === "termMonths")?.documentPage ?? null,
       },

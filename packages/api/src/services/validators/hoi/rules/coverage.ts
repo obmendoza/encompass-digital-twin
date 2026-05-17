@@ -32,7 +32,7 @@ export const H6_premiumPaidInFull: Rule = (ctx: RuleContext): RuleResult => {
           expectedValue: "paid in full (high confidence)",
           evidence: {
             documentId: ctx.documents.hoi!.documentId,
-            extractionId: ctx.extractionId,
+            extractionId: ctx.hoiExtractionId!,
             fieldPath: "premiumPaidInFull",
             documentPage: ctx.hoi!.evidence.find((e) => e.fieldPath === "premiumPaidInFull")?.documentPage ?? null,
           },
@@ -62,7 +62,7 @@ function failPremium(ctx: RuleContext, reason: string): RuleResult {
       expectedValue: reason,
       evidence: {
         documentId: ctx.documents.hoi!.documentId,
-        extractionId: ctx.extractionId,
+        extractionId: ctx.hoiExtractionId!,
         fieldPath: "premiumPaidInFull",
         documentPage: ctx.hoi!.evidence.find((e) => e.fieldPath === "premiumPaidInFull")?.documentPage ?? null,
       },
@@ -84,7 +84,7 @@ export const H7_deductibleCap: Rule = (ctx: RuleContext): RuleResult => {
       expectedValue: "≤ 5% of face value",
       evidence: {
         documentId: ctx.documents.hoi!.documentId,
-        extractionId: ctx.extractionId,
+        extractionId: ctx.hoiExtractionId!,
         fieldPath: "deductiblePct",
         documentPage: ctx.hoi.evidence.find((e) => e.fieldPath === "deductiblePct")?.documentPage ?? null,
       },
@@ -110,7 +110,7 @@ export const H8_windHailIncluded: Rule = (ctx: RuleContext): RuleResult => {
       expectedValue: "wind, hail, and hurricane coverage included (special form, all perils, or separate policy)",
       evidence: {
         documentId: ctx.documents.hoi!.documentId,
-        extractionId: ctx.extractionId,
+        extractionId: ctx.hoiExtractionId!,
         fieldPath: "windHailHurricane",
         documentPage: ctx.hoi!.evidence.find((e) => e.fieldPath === "windHailHurricane")?.documentPage ?? null,
       },
@@ -135,7 +135,7 @@ export const H9_coverageMinimum: Rule = (ctx: RuleContext): RuleResult => {
       expectedValue: `≥ $${required.toLocaleString()} (lesser of loan amount / replacement cost)`,
       evidence: {
         documentId: ctx.documents.hoi!.documentId,
-        extractionId: ctx.extractionId,
+        extractionId: ctx.hoiExtractionId!,
         fieldPath: "coverageAmount",
         documentPage: ctx.hoi.evidence.find((e) => e.fieldPath === "coverageAmount")?.documentPage ?? null,
       },
